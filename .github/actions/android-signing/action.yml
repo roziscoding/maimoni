@@ -1,0 +1,29 @@
+name: Android release signing
+description: Writes apps/mobile/android/key.properties so release builds are signed with the app's release key.
+
+inputs:
+  keystore:
+    description: The release keystore (PKCS12), base64-encoded.
+    required: true
+  password:
+    description: Password of the keystore and of its key.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Write key.properties
+      shell: bash
+      working-directory: apps/mobile/android
+      env:
+        KEYSTORE: ${{ inputs.keystore }}
+        PASSWORD: ${{ inputs.password }}
+      run: |
+        # Without it the build falls back to the debug key, and installed apps would refuse the update.
+        if [[ -z $KEYSTORE || -z $PASSWORD ]]; then
+          echo "::error::The ANDROID_KEYSTORE and ANDROID_KEYSTORE_PASSWORD secrets are required"
+          exit 1
+        fi
+        base64 --decode <<<"$KEYSTORE" >"$RUNNER_TEMP/release.jks"
+        printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=maimoni\nkeyPassword=%s\n' \
+          "$RUNNER_TEMP/release.jks" "$PASSWORD" "$PASSWORD" >key.properties

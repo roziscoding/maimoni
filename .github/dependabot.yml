@@ -1,0 +1,89 @@
+# Weekly version updates. Each new version waits 7 days after its release before it's proposed.
+# Commit prefixes keep these out of semantic-release: chore and ci don't release the mobile app.
+#
+# Not covered: the tools pinned in mise.toml (Bun, Flutter, Java, Node, Android SDK), which
+# Dependabot doesn't read. The Dockerfiles only use oven/bun, which follows mise.toml's Bun
+# version, so they have no entry either.
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: ci
+      include: scope
+    groups:
+      github-actions:
+        patterns: ['*']
+
+  # Root bun.lock: backend, frontend, shared and the root tooling.
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      bun-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: pub
+    directory: /apps/mobile
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      pub-minor-and-patch:
+        update-types: [minor, patch]
+
+  # Android Gradle plugin and Kotlin majors depend on the Flutter version; upgrade them with it.
+  - package-ecosystem: gradle
+    directory: /apps/mobile/android
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      gradle:
+        patterns: ['*']
+    ignore:
+      - dependency-name: '*'
+        update-types: [version-update:semver-major]
+
+  # compose.yaml and compose.dev.yaml. Postgres majors need a data migration, so only minor and
+  # patch updates are proposed; the maimoni-* images are built locally, with nothing to look up.
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      docker-compose:
+        patterns: ['*']
+    ignore:
+      - dependency-name: postgres
+        update-types: [version-update:semver-major]
+      - dependency-name: maimoni-*

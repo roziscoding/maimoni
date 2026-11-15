@@ -1,0 +1,183 @@
+name: Mobile publish
+
+# Runs on beta or stable (started by the Mobile release workflow). semantic-release picks the
+# version from the commits that touch the mobile app (X.Y.Z-beta.N on beta, X.Y.Z on stable); the
+# Android APK and the iOS build are made with it. Only when both succeed is the mobile-vX.Y.Z tag
+# and GitHub release (with the APK, a prerelease on beta) published, and only then does the iOS
+# build go to TestFlight. A failed run never reaches testers, so it can run again with the same
+# build number. The analyzer and tests run earlier, on pull requests and main (Mobile check).
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: mobile-publish
+
+permissions:
+  contents: read
+
+env:
+  # Each job installs only the tools it needs (mise-action's install_args); without this, `mise run`
+  # would install the rest of mise.toml before every task.
+  MISE_TASK_RUN_AUTO_INSTALL: 'false'
+
+jobs:
+  plan:
+    name: Version
+    if: github.ref_name == 'beta' || github.ref_name == 'stable'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.semantic-release.outputs.version }}
+      ios_version: ${{ steps.semantic-release.outputs.ios_version }}
+      code: ${{ steps.semantic-release.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          install_args: node bun
+      - name: Determine the version (dry run)
+        id: semantic-release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: mise run mobile:semantic-release -- --dry-run
+
+  android:
+    name: Android
+    needs: plan
+    if: needs.plan.outputs.version != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          install_args: flutter java android-sdk
+      # Gradle's downloads (Android Gradle plugin, Kotlin, plugin dependencies) and wrapper.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('apps/mobile/android/**/*.gradle.kts', 'apps/mobile/android/gradle/wrapper/gradle-wrapper.properties', 'apps/mobile/pubspec.lock') }}
+          restore-keys: gradle-${{ runner.os }}-
+      - id: secrets
+        uses: 1password/load-secrets-action@eb2efd0703da22a93c467f2d1ffbb6826c11e19c # v4.1.1
+        with:
+          export-env: false
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          ANDROID_KEYSTORE: op://maimoni/mobile-signing/android/keystore
+          ANDROID_KEYSTORE_PASSWORD: op://maimoni/mobile-signing/android/password
+      - uses: ./.github/actions/android-signing
+        with:
+          keystore: ${{ steps.secrets.outputs.ANDROID_KEYSTORE }}
+          password: ${{ steps.secrets.outputs.ANDROID_KEYSTORE_PASSWORD }}
+      - name: Build the APK
+        run: >-
+          mise run mobile:build:android --
+          --build-name=${{ needs.plan.outputs.version }}
+          --build-number=${{ needs.plan.outputs.code }}
+      - name: Name the APK
+        run: |
+          mkdir -p dist
+          cp apps/mobile/build/app/outputs/flutter-apk/app-release.apk "dist/maimoni-${{ needs.plan.outputs.version }}.apk"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: android
+          path: dist/
+          if-no-files-found: error
+
+  ios:
+    name: iOS
+    needs: plan
+    if: needs.plan.outputs.version != ''
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          install_args: flutter
+      - id: secrets
+        uses: 1password/load-secrets-action@eb2efd0703da22a93c467f2d1ffbb6826c11e19c # v4.1.1
+        with:
+          export-env: false
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          APP_STORE_CONNECT_ISSUER_ID: op://maimoni/mobile-signing/apple/issuer-id
+          APP_STORE_CONNECT_KEY_ID: op://maimoni/mobile-signing/apple/key-id
+          APP_STORE_CONNECT_PRIVATE_KEY: op://maimoni/mobile-signing/apple/api-key
+          IOS_CERTIFICATE_PRIVATE_KEY: op://maimoni/mobile-signing/apple/certificate-key
+      - id: signing
+        uses: ./.github/actions/ios-signing
+        with:
+          issuer-id: ${{ steps.secrets.outputs.APP_STORE_CONNECT_ISSUER_ID }}
+          key-id: ${{ steps.secrets.outputs.APP_STORE_CONNECT_KEY_ID }}
+          private-key: ${{ steps.secrets.outputs.APP_STORE_CONNECT_PRIVATE_KEY }}
+          certificate-key: ${{ steps.secrets.outputs.IOS_CERTIFICATE_PRIVATE_KEY }}
+      - name: Build the IPA
+        run: >-
+          mise run mobile:build:ipa --
+          --build-name=${{ needs.plan.outputs.ios_version }}
+          --build-number=${{ needs.plan.outputs.code }}
+          --export-options-plist=${{ steps.signing.outputs.export-options-plist }}
+      # Kept only for the TestFlight job; it isn't attached to the GitHub release.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios
+          path: apps/mobile/build/ios/ipa/*.ipa
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish
+    needs: [plan, android, ios]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          install_args: node bun
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: android
+          path: apps/mobile/dist
+      - name: Tag and publish the GitHub release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: mise run mobile:semantic-release
+
+  testflight:
+    name: TestFlight
+    needs: publish
+    runs-on: macos-latest
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ios
+          path: ipa
+      - id: secrets
+        uses: 1password/load-secrets-action@eb2efd0703da22a93c467f2d1ffbb6826c11e19c # v4.1.1
+        with:
+          export-env: false
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          APP_STORE_CONNECT_ISSUER_ID: op://maimoni/mobile-signing/apple/issuer-id
+          APP_STORE_CONNECT_KEY_ID: op://maimoni/mobile-signing/apple/key-id
+          APP_STORE_CONNECT_PRIVATE_KEY: op://maimoni/mobile-signing/apple/api-key
+      # Internal testers get it once App Store Connect finishes processing; no review involved.
+      # If this fails, re-run just this job: the release is already tagged.
+      - name: Upload to TestFlight
+        env:
+          APP_STORE_CONNECT_ISSUER_ID: ${{ steps.secrets.outputs.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ steps.secrets.outputs.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ steps.secrets.outputs.APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: |
+          pipx install codemagic-cli-tools==0.70.2
+          app-store-connect publish --path "$(ls ipa/*.ipa)"

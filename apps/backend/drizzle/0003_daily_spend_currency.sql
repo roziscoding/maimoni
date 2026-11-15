@@ -1,0 +1,1 @@
+ALTER TABLE "daily_spends" ADD COLUMN "currency" "currency" DEFAULT 'EUR' NOT NULL;

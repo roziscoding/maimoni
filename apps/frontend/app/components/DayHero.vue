@@ -1,0 +1,75 @@
+<script setup lang="ts">
+import type { DailySpend, MonthSummary } from '@maimoni/shared'
+import { spendInEur } from '@maimoni/shared'
+
+const props = defineProps<{
+  allowance: MonthSummary['allowance']
+  /** The open day's spending, in the order it was recorded. */
+  spends: DailySpend[]
+  /** Rate and Wise fee, to show the BRL equivalent and size BRL spends by their EUR cost. */
+  transfer: MonthSummary['transfer']
+}>()
+const rate = computed(() => props.transfer.rate)
+
+const budget = computed(() => props.allowance.eur ?? 0)
+const remaining = computed(() => props.allowance.remainingEur ?? 0)
+const over = computed(() => remaining.value < 0)
+
+/** Each spend is a slice of the day's budget; past the budget the bar is full and turns red. */
+const segments = computed(() => {
+  if (budget.value <= 0)
+    return []
+  let used = 0
+  return props.spends.map((spend) => {
+    const value = spendInEur(spend, props.transfer) ?? 0
+    const width = Math.max(0, Math.min(value, budget.value - used)) / budget.value * 100
+    used += Math.max(0, value)
+    return { id: spend.id, width, label: `${spend.note ?? 'Gasto'}: ${formatMoney(spend.amount, spend.currency)}` }
+  }).filter(segment => segment.width > 0)
+})
+</script>
+
+<template>
+  <section aria-labelledby="day-hero-title" class="space-y-5">
+    <h2 id="day-hero-title" class="sr-only">
+      Quanto ainda dá para gastar hoje
+    </h2>
+
+    <div class="space-y-1">
+      <p
+        class="money text-6xl font-semibold leading-none tracking-tight sm:text-8xl"
+        :class="over ? 'text-error' : 'text-highlighted'"
+      >
+        {{ formatMoney(remaining, 'EUR') }}
+      </p>
+      <p class="text-sm text-muted">
+        <template v-if="over">
+          Passou <span class="money">{{ formatMoney(-remaining, 'EUR') }}</span> do valor de hoje.
+        </template>
+        <template v-else-if="allowance.spentToday > 0">
+          Sobrando de <span class="money">{{ formatMoney(budget, 'EUR') }}</span> para hoje.
+        </template>
+        <template v-else>
+          Para gastar hoje.
+        </template>
+        <span v-if="rate" class="money"> ≈ {{ formatMoney(remaining * rate, 'BRL') }}</span>
+      </p>
+    </div>
+
+    <div
+      class="flex h-3 w-full gap-px overflow-hidden rounded-full bg-accented"
+      :class="{ 'ring-2 ring-error/60 ring-offset-2 ring-offset-default': over }"
+      role="img"
+      :aria-label="`${formatMoney(allowance.spentToday, 'EUR')} gastos de ${formatMoney(budget, 'EUR')}`"
+    >
+      <div
+        v-for="segment in segments"
+        :key="segment.id"
+        class="h-full transition-[width] duration-300 motion-reduce:transition-none"
+        :class="over ? 'bg-error' : 'bg-inverted'"
+        :style="{ width: `${segment.width}%` }"
+        :title="segment.label"
+      />
+    </div>
+  </section>
+</template>

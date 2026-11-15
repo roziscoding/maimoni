@@ -1,0 +1,29 @@
+[tools]
+android-sdk = "23.0"
+bun = "1.4.2"
+flutter = "3.47.9"
+java = "temurin-17.0.21+9"
+node = "24.22.3"
+
+# Local defaults (the docker-compose Postgres); a .env file overrides them.
+[env]
+DATABASE_URL = "postgres://maimoni:maimoni@localhost:5434/maimoni"
+PORT = "3001"
+NUXT_API_BASE = "http://localhost:3001"
+BETTER_AUTH_SECRET = "maimoni-dev-secret-not-for-production"
+BETTER_AUTH_URL = "http://localhost:3000"
+
+_.file = ".env"
+# android-sdk only puts cmdline-tools on PATH; the emulator and adb live in packages installed by mobile:setup:android.
+# Without android-sdk installed (CI jobs that skip it) these become /emulator and /platform-tools,
+# which don't exist; an empty entry would put the current directory on PATH instead.
+_.path = { path = [
+  "{{env.ANDROID_HOME | default(value='')}}/emulator",
+  "{{env.ANDROID_HOME | default(value='')}}/platform-tools",
+], tools = true }
+
+[settings]
+experimental = true
+
+[settings.task]
+quiet = true

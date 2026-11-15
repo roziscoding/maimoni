@@ -1,0 +1,30 @@
+{
+  "name": "@maimoni/frontend",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun --bun nuxt dev --port 3000",
+    "build": "bun --bun nuxt build",
+    "preview": "bun --bun nuxt preview",
+    "postinstall": "bun --bun nuxt prepare"
+  },
+  "dependencies": {
+    "@iconify-json/lucide": "^1.2.139",
+    "@loglayer/transport-pino": "3.3.0",
+    "@loglayer/transport-pretty-terminal": "6.3.0",
+    "@maimoni/shared": "workspace:*",
+    "@nuxt/ui": "^4.11.3",
+    "consola": "3.4.2",
+    "loglayer": "9.4.0",
+    "nuxt": "^4.5.2",
+    "pino": "10.4.0",
+    "serialize-error": "13.0.2",
+    "tailwindcss": "^4.3.3",
+    "vue": "^3.5.43",
+    "vue-router": "^5.3.1",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "typescript": "^5.9"
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "name": "@maimoni/backend",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts",
+    "test": "bun test",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "bun src/db/migrate.ts"
+  },
+  "dependencies": {
+    "@better-auth/passkey": "1.7.14",
+    "@hono/zod-validator": "0.9.1",
+    "@loglayer/hono": "2.4.0",
+    "@loglayer/transport-pino": "3.3.0",
+    "@loglayer/transport-pretty-terminal": "6.3.0",
+    "@maimoni/shared": "workspace:*",
+    "better-auth": "1.7.14",
+    "drizzle-orm": "0.45.3",
+    "hono": "4.13.12",
+    "loglayer": "9.4.0",
+    "pino": "10.4.0",
+    "serialize-error": "13.0.2",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "@types/bun": "1.4.2",
+    "drizzle-kit": "0.31.11",
+    "typescript": "^5.9"
+  }
+}

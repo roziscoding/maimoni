@@ -1,0 +1,13 @@
+node_modules
+.env
+mise.local.toml
+.output
+.nuxt
+.nitro
+.cache
+dist
+.data
+*.log
+.DS_Store
+.claude/
+ai_docs/

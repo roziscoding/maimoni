@@ -1,0 +1,50 @@
+name: iOS signing
+description: >-
+  Fetches (or creates) the certificate and provisioning profile for the app through the App Store
+  Connect API, installs them in a new keychain and switches the Xcode project to them.
+
+inputs:
+  type:
+    description: Provisioning profile type (IOS_APP_STORE for TestFlight, IOS_APP_DEVELOPMENT, ...).
+    default: IOS_APP_STORE
+  issuer-id:
+    description: App Store Connect API issuer ID.
+    required: true
+  key-id:
+    description: App Store Connect API key ID.
+    required: true
+  private-key:
+    description: App Store Connect API private key (.p8 contents).
+    required: true
+  certificate-key:
+    description: >-
+      Private key (PEM) of the signing certificate. An existing certificate made from it is reused;
+      otherwise one is created from it.
+    required: true
+
+outputs:
+  export-options-plist:
+    description: Export options for `flutter build ipa`.
+    value: ${{ steps.signing.outputs.export-options-plist }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up signing
+      id: signing
+      shell: bash
+      env:
+        APP_STORE_CONNECT_ISSUER_ID: ${{ inputs.issuer-id }}
+        APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ inputs.key-id }}
+        APP_STORE_CONNECT_PRIVATE_KEY: ${{ inputs.private-key }}
+        CERTIFICATE_PRIVATE_KEY: ${{ inputs.certificate-key }}
+        PROFILE_TYPE: ${{ inputs.type }}
+      run: |
+        pipx install codemagic-cli-tools==0.70.2
+        keychain initialize
+        app-store-connect fetch-signing-files ninja.roz.maimoni \
+          --type "$PROFILE_TYPE" --strict-match-identifier --create
+        keychain add-certificates
+        plist="$RUNNER_TEMP/export_options.plist"
+        xcode-project use-profiles --project apps/mobile/ios/Runner.xcodeproj --export-options-plist "$plist"
+        echo "export-options-plist=$plist" >>"$GITHUB_OUTPUT"

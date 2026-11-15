@@ -1,0 +1,56 @@
+name: Mobile release
+
+# Promotes the mobile app one step and publishes it: beta moves to main's commit, or stable moves to
+# beta's. Both only fast-forward, so stable never gets code that wasn't released as a beta first.
+# Publishing runs in the Mobile publish workflow, on the promoted branch.
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'beta: main -> beta. stable: beta -> stable.'
+        type: choice
+        options: [beta, stable]
+        default: beta
+
+concurrency:
+  group: mobile-release
+
+permissions:
+  contents: read
+
+jobs:
+  promote:
+    name: Promote
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    env:
+      TARGET: ${{ inputs.channel }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Fast-forward the ${{ inputs.channel }} branch
+        run: |
+          if [[ $TARGET == beta ]]; then
+            source=$GITHUB_SHA
+          else
+            source=$(git rev-parse --verify --quiet origin/beta) || { echo "::error::There is no beta branch to promote yet"; exit 1; }
+          fi
+          if git rev-parse --verify --quiet "origin/$TARGET" >/dev/null &&
+            ! git merge-base --is-ancestor "origin/$TARGET" "$source"; then
+            echo "::error::$TARGET has commits that aren't in its source; it only moves by fast-forward"
+            exit 1
+          fi
+          git push origin "$source:refs/heads/$TARGET"
+          # semantic-release needs its release branch (stable) to exist even for the first beta.
+          # Starting it at the root commit keeps every later promotion a fast-forward.
+          if ! git rev-parse --verify --quiet origin/stable >/dev/null; then
+            git push origin "$(git rev-list --max-parents=0 "$source" | tail -n 1):refs/heads/stable"
+          fi
+      - name: Publish from ${{ inputs.channel }}
+        run: gh workflow run mobile-publish.yml --ref "$TARGET"

@@ -1,0 +1,121 @@
+# Production stack: `docker compose up -d --build`
+#
+# Every setting is read from the environment (or a .env file next to this one), with the values
+# below as defaults, so all of them can be replaced from Coolify's UI:
+#   POSTGRES_PASSWORD  required, no default (`${VAR:?}` is the form Coolify recognises as required);
+#                      URL-encode any of @ : / ? # in it, since it also goes into DATABASE_URL
+#   POSTGRES_USER, POSTGRES_DB             maimoni
+#   DATABASE_URL       built from the three above; replace it to use an external database
+#   BACKEND_PORT       3001
+#   FRONTEND_PORT      3000
+#   NUXT_API_BASE      http://backend:<BACKEND_PORT>
+#   GITHUB_RELEASES_TOKEN       no default; GitHub token that can read this repository's releases
+#                               (fine-grained, Contents: read). Without it the mobile app's
+#                               in-app updates answer 503; everything else works.
+#   GITHUB_RELEASES_REPOSITORY  roziscoding/maimoni
+#   BETTER_AUTH_SECRET          required, no default; signs sessions (`openssl rand -base64 32`)
+#   BETTER_AUTH_URL             required, no default; public URL of the frontend, e.g. https://maimoni.example.com
+#   BETTER_AUTH_TRUSTED_ORIGINS no default; extra comma-separated origins allowed to call /api/auth
+#   AUTH_SIGNUP_ENABLED         false; `true` lets anyone sign up with email, Google or Apple
+#   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET  no default; Google sign in is off without both
+#   APPLE_CLIENT_ID, APPLE_CLIENT_SECRET    no default; Apple sign in is off without both
+#   APPLE_APP_BUNDLE_IDENTIFIER             no default; iOS bundle ID, for native Apple sign in
+#   PASSKEY_RP_ID               hostname of BETTER_AUTH_URL
+#
+# Nothing is published on the host: put a reverse proxy in front of the frontend (FRONTEND_PORT on
+# this stack's network), which proxies /api/** to the backend, and in front of the backend
+# (BACKEND_PORT) for the mobile app. A one-shot service applies migrations before the backend starts.
+#
+# Local development uses compose.dev.yaml (mise run docker:up / docker:dev).
+
+name: maimoni-prod
+
+x-backend-image: &backend-image
+  image: maimoni-backend:prod
+  build:
+    context: .
+    dockerfile: apps/backend/Dockerfile
+    target: runtime
+
+services:
+  postgres:
+    # Exact version so updates arrive as Dependabot PRs instead of with whatever the next pull brings.
+    image: postgres:18.7-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-maimoni}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: ${POSTGRES_DB:-maimoni}
+    volumes:
+      - postgres:/var/lib/postgresql
+    healthcheck:
+      # $$ leaves the variables to the container's shell, so the check follows any override.
+      test: [CMD-SHELL, pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: always
+
+  migrate:
+    <<: *backend-image
+    command: [bun, run, db:migrate]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://${POSTGRES_USER:-maimoni}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:-maimoni}}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
+  backend:
+    <<: *backend-image
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://${POSTGRES_USER:-maimoni}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:-maimoni}}
+      PORT: ${BACKEND_PORT:-3001}
+      GITHUB_RELEASES_TOKEN: ${GITHUB_RELEASES_TOKEN:-}
+      GITHUB_RELEASES_REPOSITORY: ${GITHUB_RELEASES_REPOSITORY:-roziscoding/maimoni}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:?}
+      BETTER_AUTH_TRUSTED_ORIGINS: ${BETTER_AUTH_TRUSTED_ORIGINS:-}
+      AUTH_SIGNUP_ENABLED: ${AUTH_SIGNUP_ENABLED:-false}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-}
+      APPLE_CLIENT_SECRET: ${APPLE_CLIENT_SECRET:-}
+      APPLE_APP_BUNDLE_IDENTIFIER: ${APPLE_APP_BUNDLE_IDENTIFIER:-}
+      PASSKEY_RP_ID: ${PASSKEY_RP_ID:-}
+    expose:
+      - ${BACKEND_PORT:-3001}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD-SHELL, 'wget -qO- http://127.0.0.1:$$PORT/api/health']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: always
+
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+      target: runtime
+    environment:
+      NUXT_API_BASE: ${NUXT_API_BASE:-http://backend:${BACKEND_PORT:-3001}}
+      PORT: ${FRONTEND_PORT:-3000}
+    expose:
+      - ${FRONTEND_PORT:-3000}
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      # Checks only the frontend (not /api), so a backend outage doesn't get the frontend restarted too.
+      test: [CMD-SHELL, 'wget -qO- http://127.0.0.1:$$PORT/ > /dev/null']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: always
+
+volumes:
+  postgres:

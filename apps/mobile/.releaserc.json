@@ -1,0 +1,17 @@
+{
+  "branches": ["stable", { "name": "beta", "prerelease": true }],
+  "tagFormat": "mobile-v${version}",
+  "plugins": [
+    "./release/semantic-release.ts",
+    [
+      "@semantic-release/github",
+      {
+        "assets": [{ "path": "dist/*.apk" }],
+        "releaseNameTemplate": "mobile-v<%= nextRelease.version %>",
+        "successComment": false,
+        "failComment": false,
+        "releasedLabels": false
+      }
+    ]
+  ]
+}

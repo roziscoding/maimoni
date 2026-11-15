@@ -1,0 +1,1 @@
+ALTER TABLE "months" ALTER COLUMN "wise_fee" DROP NOT NULL;

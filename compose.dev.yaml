@@ -1,0 +1,90 @@
+# Development stack, used by the mise tasks (db:up, docker:up, docker:dev, ...).
+#
+# Builds the `dev` targets and bind-mounts the sources, so the backend restarts and the frontend
+# hot-reloads on every save. The anonymous volumes keep the container's own node_modules (and
+# Nuxt's generated .nuxt) instead of the host's, which hold macOS binaries.
+# Postgres uses fixed local credentials and is published on localhost:5434 for the tasks and
+# for `mise run dev`, which runs the apps on the host instead.
+#
+# Production uses compose.yaml.
+
+name: maimoni
+
+x-backend-image: &backend-image
+  image: maimoni-backend:dev
+  build:
+    context: .
+    dockerfile: apps/backend/Dockerfile
+    target: dev
+
+services:
+  postgres:
+    # Same exact version as compose.yaml; Dependabot updates both.
+    image: postgres:18.7-alpine
+    environment:
+      POSTGRES_USER: maimoni
+      POSTGRES_PASSWORD: maimoni
+      POSTGRES_DB: maimoni
+    ports:
+      - '${POSTGRES_PORT:-5434}:5432'
+    volumes:
+      - postgres:/var/lib/postgresql
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U maimoni -d maimoni]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  migrate:
+    <<: *backend-image
+    command: [bun, run, db:migrate]
+    environment:
+      DATABASE_URL: postgres://maimoni:maimoni@postgres:5432/maimoni
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
+  backend:
+    <<: *backend-image
+    environment:
+      DATABASE_URL: postgres://maimoni:maimoni@postgres:5432/maimoni
+      NODE_ENV: development
+      PORT: '3001'
+      BETTER_AUTH_SECRET: maimoni-dev-secret-not-for-production
+      BETTER_AUTH_URL: http://localhost:3000
+    ports:
+      - '${BACKEND_PORT:-3001}:3001'
+    volumes:
+      - ./apps/backend:/app/apps/backend
+      - ./packages/shared:/app/packages/shared
+      - /app/apps/backend/node_modules
+      - /app/packages/shared/node_modules
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+      target: dev
+    environment:
+      NUXT_API_BASE: http://backend:3001
+    ports:
+      - '${FRONTEND_PORT:-3000}:3000'
+    volumes:
+      - ./apps/frontend:/app/apps/frontend
+      - ./packages/shared:/app/packages/shared
+      - /app/apps/frontend/node_modules
+      - /app/apps/frontend/.nuxt
+      - /app/apps/frontend/.output
+      - /app/packages/shared/node_modules
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  postgres:
