@@ -12,7 +12,7 @@ const timestamps = {
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow().$onUpdate(() => sql`now()`),
 }
-const owner = () => uuid('user_id').notNull().references(() => user.id, { onDelete: 'cascade' })
+const owner = () => uuid('user_id').notNull().references(() => user.id, { onDelete: 'cascade', onUpdate: 'cascade' })
 
 /*
  * Every user-owned table has its own `user_id`, so row-level security can check it directly. Tables

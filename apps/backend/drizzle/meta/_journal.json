@@ -43,6 +43,13 @@
       "when": 1794654864174,
       "tag": "0005_auth",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794755301684,
+      "tag": "0006_fearless_purple_man",
+      "breakpoints": true
     }
   ]
 }
