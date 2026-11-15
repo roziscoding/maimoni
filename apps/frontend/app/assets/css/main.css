@@ -29,6 +29,16 @@
   --ui-primary: white;
 }
 
+/* Tailwind 4 leaves buttons with the default cursor. Disabled ones keep Nuxt UI's `cursor-not-allowed`. */
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [role="menuitem"]:not([data-disabled]),
+  [role="tab"]:not([data-disabled]) {
+    cursor: pointer;
+  }
+}
+
 /* Every money figure is set in the mono face with tabular digits so columns line up. */
 @utility money {
   font-family: var(--font-mono);
