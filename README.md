@@ -73,8 +73,11 @@ Both Dockerfiles install dependencies in a layer built only from the `package.js
 | `BETTER_AUTH_TRUSTED_ORIGINS` | backend (extra comma-separated origins for `/api/auth`) | none |
 | `AUTH_SIGNUP_ENABLED` | backend (`true` allows sign up with email, Google or Apple) | `false` |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | backend (Google sign in, off without both) | none |
-| `APPLE_CLIENT_ID` / `APPLE_CLIENT_SECRET` / `APPLE_APP_BUNDLE_IDENTIFIER` | backend (Apple sign in, off without the first two) | none |
+| `APPLE_CLIENT_ID` / `APPLE_TEAM_ID` / `APPLE_KEY_ID` / `APPLE_PRIVATE_KEY` | backend (Apple sign in, off without all four: the Services ID, the team ID, the Sign in with Apple key's ID and its `.p8` contents, where line breaks may be written as `\n`). The backend signs the client secret itself when it starts; it lasts 180 days | none |
+| `APPLE_APP_BUNDLE_IDENTIFIER` | backend (iOS bundle ID, for native Apple sign in) | none |
 | `PASSKEY_RP_ID` | backend (passkey relying party) | hostname of `BETTER_AUTH_URL` |
+| `RESEND_API_KEY` | backend ([Resend](https://resend.com) key for password reset emails; none are sent without it) | none |
+| `RESEND_FROM` | backend (sender of those emails, on a domain verified in Resend) | `maimoni <onboarding@resend.dev>`, which only reaches the Resend account's own address |
 | `POSTGRES_PASSWORD` | `compose.yaml` (production) | required, no default |
 | `FRONTEND_PORT` / `BACKEND_PORT` / `POSTGRES_PORT` | ports published by `compose.dev.yaml` | `3000` / `3001` / `5434` |
 

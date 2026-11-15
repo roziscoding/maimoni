@@ -10,10 +10,12 @@
   },
   "dependencies": {
     "@iconify-json/lucide": "^1.2.139",
+    "@iconify-json/simple-icons": "^1.2.102",
     "@loglayer/transport-pino": "3.3.0",
     "@loglayer/transport-pretty-terminal": "6.3.0",
     "@maimoni/shared": "workspace:*",
     "@nuxt/ui": "^4.11.3",
+    "better-auth": "1.7.14",
     "consola": "3.4.2",
     "loglayer": "9.4.0",
     "nuxt": "^4.5.2",

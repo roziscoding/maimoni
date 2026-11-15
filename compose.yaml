@@ -18,9 +18,15 @@
 #   BETTER_AUTH_TRUSTED_ORIGINS no default; extra comma-separated origins allowed to call /api/auth
 #   AUTH_SIGNUP_ENABLED         false; `true` lets anyone sign up with email, Google or Apple
 #   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET  no default; Google sign in is off without both
-#   APPLE_CLIENT_ID, APPLE_CLIENT_SECRET    no default; Apple sign in is off without both
+#   APPLE_CLIENT_ID, APPLE_TEAM_ID, APPLE_KEY_ID, APPLE_PRIVATE_KEY
+#                               no default; Apple sign in is off without all four. They are the
+#                               Services ID, the team ID, the key's ID and its .p8 contents
+#                               (line breaks may be written as \n)
 #   APPLE_APP_BUNDLE_IDENTIFIER             no default; iOS bundle ID, for native Apple sign in
 #   PASSKEY_RP_ID               hostname of BETTER_AUTH_URL
+#   RESEND_API_KEY              no default; Resend key for password reset emails, none are sent without it
+#   RESEND_FROM                 maimoni <onboarding@resend.dev>, which only reaches the Resend account's
+#                               own address; set a sender on a domain verified in Resend
 #
 # Nothing is published on the host: put a reverse proxy in front of the frontend (FRONTEND_PORT on
 # this stack's network), which proxies /api/** to the backend, and in front of the backend
@@ -79,9 +85,13 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-}
-      APPLE_CLIENT_SECRET: ${APPLE_CLIENT_SECRET:-}
+      APPLE_TEAM_ID: ${APPLE_TEAM_ID:-}
+      APPLE_KEY_ID: ${APPLE_KEY_ID:-}
+      APPLE_PRIVATE_KEY: ${APPLE_PRIVATE_KEY:-}
       APPLE_APP_BUNDLE_IDENTIFIER: ${APPLE_APP_BUNDLE_IDENTIFIER:-}
       PASSKEY_RP_ID: ${PASSKEY_RP_ID:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM: ${RESEND_FROM:-}
     expose:
       - ${BACKEND_PORT:-3001}
     depends_on:

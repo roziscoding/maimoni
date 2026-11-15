@@ -1,5 +1,6 @@
 import type { Auth } from '../src/auth'
 import type { Database } from '../src/db'
+import type { Mail, MailService } from '../src/services/mail'
 import type { RateService } from '../src/services/rates'
 import type { WiseService } from '../src/services/wise'
 import { PGlite } from '@electric-sql/pglite'
@@ -73,7 +74,14 @@ export async function setup(rate: number | null = 6, wiseOnline = true, authEnv:
       }
     },
   }
-  const auth = createAuth({ db: db as unknown as Database, baseURL: 'http://localhost:3000', secret: 'test-secret-that-is-at-least-32-characters', env: authEnv })
+  /** Every email the app tried to send. */
+  const mails: Mail[] = []
+  const mail: MailService = {
+    send: async (message) => {
+      mails.push(message)
+    },
+  }
+  const auth = createAuth({ db: db as unknown as Database, baseURL: 'http://localhost:3000', secret: 'test-secret-that-is-at-least-32-characters', mail, env: authEnv })
   const app = createApp({ db: db as unknown as Database, auth, rates, wise })
   /** Request helper bound to a set of auth headers; `null` sends none. */
   const as = (auth: Record<string, string> | null) => async <T = any>(method: string, path: string, body?: unknown) => {
@@ -86,5 +94,5 @@ export async function setup(rate: number | null = 6, wiseOnline = true, authEnv:
     return { status: response.status, body: (text ? JSON.parse(text) : null) as T }
   }
   const request = as(await signIn(app, auth, 'owner@example.com'))
-  return { db, app, auth, as, request }
+  return { db, app, auth, as, request, mails }
 }

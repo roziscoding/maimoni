@@ -5,10 +5,10 @@ import type { AppReleaseService } from './services/app-releases'
 import type { RateService } from './services/rates'
 import type { WiseService } from './services/wise'
 import { honoLogLayer } from '@loglayer/hono'
-import { wiseQuoteQuerySchema } from '@maimoni/shared'
+import { passwordResetRequestSchema, wiseQuoteQuerySchema } from '@maimoni/shared'
 import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
-import { requireSession } from './auth'
+import { requireSession, RESET_PASSWORD_PATH } from './auth'
 import { log } from './lib/log'
 import { validate } from './lib/validate'
 import { appReleaseRoutes } from './routes/app-releases'
@@ -33,10 +33,26 @@ export interface AppOptions {
 }
 
 export function createApp({ db, auth, rates, wise, appReleases = createAppReleaseService() }: AppOptions) {
-  // Public: health checks, Better Auth's own endpoints, and app updates (so a build without sign in can still update).
+  // Public: health checks, Better Auth's own endpoints, the sign in provider list, password reset requests, and app updates (so a build without sign in can still update).
   const api = new Hono()
     .get('/health', c => c.json({ ok: true }))
     .on(['GET', 'POST'], '/auth/*', c => auth.handler(c.req.raw))
+    // Lets the sign in page offer only the providers whose credentials are set.
+    .get('/sign-in-providers', async c => c.json((await auth.$context).socialProviders.map(provider => provider.id)))
+    // Answers 204 whether or not the email belongs to a user, so it can't be used to find out who has an account.
+    // Goes through Better Auth's handler rather than `auth.api` to keep its rate limit and origin check.
+    .post('/password-reset', validate('json', passwordResetRequestSchema), async (c) => {
+      const headers = new Headers(c.req.raw.headers)
+      headers.delete('content-length')
+      const response = await auth.handler(new Request(new URL('/api/auth/request-password-reset', c.req.url), {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ email: c.req.valid('json').email, redirectTo: RESET_PASSWORD_PATH }),
+      }))
+      if (!response.ok)
+        log.withMetadata({ status: response.status }).warn('password reset request refused')
+      return c.body(null, 204)
+    })
     .route('/', appReleaseRoutes(appReleases))
     .use(requireSession(auth))
     .get('/rates/live', async (c) => {

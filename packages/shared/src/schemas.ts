@@ -19,6 +19,15 @@ export const wiseFeeSchema = z.number().min(0).lt(1)
 export const exchangeRateSchema = z.number().positive()
 
 /* -------------------------------------------------------------------------- */
+/*                                    Auth                                    */
+/* -------------------------------------------------------------------------- */
+
+export const passwordResetRequestSchema = z.object({
+  email: z.email().max(320),
+})
+export type PasswordResetRequest = z.infer<typeof passwordResetRequestSchema>
+
+/* -------------------------------------------------------------------------- */
 /*                                  Template                                  */
 /* -------------------------------------------------------------------------- */
 

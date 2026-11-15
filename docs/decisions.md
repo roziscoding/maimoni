@@ -90,6 +90,7 @@ All the arithmetic lives in one place, `packages/shared/src/summary.ts`, used by
     INSERT INTO "user" (name, email, email_verified) VALUES ('Name', 'me@example.com', true);
     ```
 
+  - Password reset: `POST /api/password-reset` always answers 204, so it can't be used to find out which emails have an account. It wraps Better Auth's `request-password-reset`, which answers 200 with a body. The email is sent through Resend's HTTP API (`apps/backend/src/services/mail.ts`) and isn't awaited, so the response takes the same time either way. Resetting a password signs out every session of that user.
   - The web app uses the session cookie through the Nuxt proxy. The mobile app sends `Authorization: Bearer <token>` (Better Auth's `bearer` plugin; the token comes in the `set-auth-token` header of the sign in response).
   - Data is per user. Every user-owned table has its own `user_id`, so row-level security can check it without joins. Month items, spends and conversions reference their month through `(month_id, user_id)`, so their owner can't differ from the month's. Cached exchange rates stay shared.
   - The `0005_auth` migration assigns data that already exists to a placeholder owner (`owner@maimoni.invalid`). To keep that data, update the placeholder instead of inserting a new user:

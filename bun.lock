@@ -34,6 +34,7 @@
         "@electric-sql/pglite": "0.5.8",
         "@types/bun": "1.4.2",
         "drizzle-kit": "0.31.11",
+        "postgres": "^4.1.1",
         "typescript": "^5.9",
       },
     },
@@ -41,10 +42,12 @@
       "name": "@maimoni/frontend",
       "dependencies": {
         "@iconify-json/lucide": "^1.2.139",
+        "@iconify-json/simple-icons": "^1.2.102",
         "@loglayer/transport-pino": "3.3.0",
         "@loglayer/transport-pretty-terminal": "6.3.0",
         "@maimoni/shared": "workspace:*",
         "@nuxt/ui": "^4.11.3",
+        "better-auth": "1.7.14",
         "consola": "3.4.2",
         "loglayer": "9.4.0",
         "nuxt": "^4.5.2",
@@ -286,6 +289,8 @@
     "@humanwhocodes/retry": ["@humanwhocodes/retry@0.4.3", "", {}, "sha512-bV0Tgo9K4hfPCek+aMAn81RppFKv2ySDQeMoSZuvTASywNTnVJCArCZE2FWqpvIatKu7VMRLWlR1EazvVhDyhQ=="],
 
     "@iconify-json/lucide": ["@iconify-json/lucide@1.2.139", "", { "dependencies": { "@iconify/types": "*" } }, "sha512-QRJrLcEC+O4cHCxd8Nzos2s6oI8+qUywJ/ww7EEEKTKNkWE5HOa89QlNk4gD3Ao0AbUh2ml1pkqcXKTg8XZgIw=="],
+
+    "@iconify-json/simple-icons": ["@iconify-json/simple-icons@1.2.102", "", { "dependencies": { "@iconify/types": "*" } }, "sha512-IwbAj1ZI6LBy+qU7sVYxB1wgbSSIDKjY9I0BnnpjfIdlqfXoYnBb80UvYA0WkodUFWfQyL4AjaKMg48fqX8sIw=="],
 
     "@iconify/collections": ["@iconify/collections@1.0.746", "", { "dependencies": { "@iconify/types": "*" } }, "sha512-GAUF6rBpGQNDBmZlmt6yaWTpVMhHxKQUpXRA0tlfn7n7aVVigIzsPeDnmUeMQ/JnoPJQ2Tgop2B9l9V0Zcunlw=="],
 
@@ -1938,6 +1943,8 @@
     "postcss-unique-selectors": ["postcss-unique-selectors@8.0.4", "", { "dependencies": { "postcss-selector-parser": "^7.1.5" }, "peerDependencies": { "postcss": "^8.5.26" } }, "sha512-Sby0EtmD1mlvcZSWP5eXjxhxVgvXE5QVRzd+8NH0IbF+lYQIM57ybwAvJYYtI/fexMgCWcRnDETovjKOcLJb8w=="],
 
     "postcss-value-parser": ["postcss-value-parser@4.2.0", "", {}, "sha512-1NNCs6uurfkVbeXG4S8JFT9t19m45ICnif8zWLd5oPSZ50QnwMfK+H3jv408d4jw/7Bttv5axS5IiHoLaVNHeQ=="],
+
+    "postgres": ["postgres@4.1.1", "", {}, "sha512-1kJDojqNZC+iTHHXh6eif0J98LUtyLAePe/qkW1GK35eh2JixlsAiIKq3FGI+xqI+SUGTNodzf7TScVeIIyUug=="],
 
     "powershell-utils": ["powershell-utils@0.2.1", "", {}, "sha512-C+y9x90UElAddDZmV4qOx9W53B61PO7cIqWz2dQsWlwswuq4mr8NEwytdGKboYbQlGZ3awrkTeNvcZiZNHnQ8A=="],
 

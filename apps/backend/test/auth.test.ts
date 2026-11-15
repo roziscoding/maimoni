@@ -12,6 +12,13 @@ describe('auth', () => {
     expect((await anonymous('GET', '/auth/get-session')).status).toBe(200)
   })
 
+  test('lists the social providers that have credentials', async () => {
+    const { as } = await setup()
+    expect((await as(null)('GET', '/sign-in-providers')).body).toEqual([])
+    const configured = await setup(6, true, { GOOGLE_CLIENT_ID: 'id', GOOGLE_CLIENT_SECRET: 'secret' })
+    expect((await configured.as(null)('GET', '/sign-in-providers')).body).toEqual(['google'])
+  })
+
   test('sign up is disabled by default', async () => {
     const { as } = await setup()
     const response = await as(null)('POST', '/auth/sign-up/email', { email: 'new@example.com', password: testPassword, name: 'New' })
@@ -50,6 +57,39 @@ describe('auth', () => {
     expect((await other('POST', '/months', { year: 2026, month: 10 })).status).toBe(201)
     expect((await other('DELETE', '/data')).status).toBe(204)
     expect((await request<MonthListEntry[]>('GET', '/months')).body).toHaveLength(1)
+  })
+
+  test('a password reset request answers 204 and only emails existing users', async () => {
+    const { as, mails } = await setup()
+    const anonymous = as(null)
+    expect((await anonymous('POST', '/password-reset', { email: 'nobody@example.com' })).status).toBe(204)
+    expect(mails).toHaveLength(0)
+    expect((await anonymous('POST', '/password-reset', { email: 'owner@example.com' })).status).toBe(204)
+    expect(mails).toHaveLength(1)
+    expect(mails[0]!.to).toBe('owner@example.com')
+    expect((await anonymous('POST', '/password-reset', { email: 'not an email' })).status).toBe(400)
+  })
+
+  test('the emailed link sets a new password', async () => {
+    const { app, as, mails } = await setup()
+    const anonymous = as(null)
+    await anonymous('POST', '/password-reset', { email: 'owner@example.com' })
+    const link = new URL(mails[0]!.text.match(/https?:\S+/)![0])
+    expect(link.origin).toBe('http://localhost:3000')
+
+    // The link goes through the backend, which redirects to the frontend page with the token.
+    const redirect = await app.request(`${link.pathname}${link.search}`)
+    expect(redirect.status).toBe(302)
+    const landing = new URL(redirect.headers.get('location')!, link.origin)
+    expect(landing.pathname).toBe('/reset-password')
+    const token = landing.searchParams.get('token')
+
+    const newPassword = 'a brand new password'
+    expect((await anonymous('POST', '/auth/reset-password', { newPassword, token })).status).toBe(200)
+    expect((await anonymous('POST', '/auth/sign-in/email', { email: 'owner@example.com', password: testPassword })).status).toBe(401)
+    expect((await anonymous('POST', '/auth/sign-in/email', { email: 'owner@example.com', password: newPassword })).status).toBe(200)
+    // One use only.
+    expect((await anonymous('POST', '/auth/reset-password', { newPassword, token })).status).toBe(400)
   })
 
   test('accepts a bearer token from sign in', async () => {

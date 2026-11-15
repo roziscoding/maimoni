@@ -1,10 +1,26 @@
 <script setup lang="ts">
 import type { MonthListEntry } from '@maimoni/shared'
-import type { NavigationMenuItem } from '@nuxt/ui'
+import type { DropdownMenuItem, NavigationMenuItem } from '@nuxt/ui'
 import { monthPhase } from '@maimoni/shared'
 
 const { data: months } = await useFetch<MonthListEntry[]>('/api/months', { key: 'months', default: () => [] })
 const creating = useState('new-month-open', () => false)
+
+const toast = useToast()
+const { user, signOut } = useAuth()
+const leaving = ref(false)
+async function leave() {
+  leaving.value = true
+  try {
+    await signOut()
+  }
+  catch (error) {
+    toast.add({ title: 'Não foi possível sair', description: errorMessage(error), color: 'error', icon: 'i-lucide-circle-alert' })
+  }
+  finally {
+    leaving.value = false
+  }
+}
 
 /** Months grouped under a year label, newest first, each showing what is left in euros. */
 const monthItems = computed<NavigationMenuItem[]>(() => {
@@ -34,10 +50,22 @@ const todayItems = computed<NavigationMenuItem[]>(() => {
   ]
 })
 
-const pageItems: NavigationMenuItem[] = [
-  { label: 'Template', icon: 'i-lucide-layout-template', to: '/template' },
-  { label: 'Configurações', icon: 'i-lucide-settings-2', to: '/settings' },
-]
+const displayName = computed(() => user.value?.name || user.value?.email || '')
+
+/** The menu behind the user button: who is signed in, the pages that aren't months, and sign out. */
+const userItems = computed<DropdownMenuItem[][]>(() => [
+  [{
+    type: 'label',
+    label: displayName.value,
+    description: user.value?.name ? user.value.email : undefined,
+    ui: { label: 'px-2.5 py-2', itemDescription: 'text-xs font-normal' },
+  }],
+  [
+    { label: 'Template', icon: 'i-lucide-layout-template', to: '/template' },
+    { label: 'Configurações', icon: 'i-lucide-settings-2', to: '/settings' },
+    { label: 'Sair', icon: 'i-lucide-log-out', color: 'error', onSelect: leave },
+  ],
+])
 </script>
 
 <template>
@@ -98,13 +126,25 @@ const pageItems: NavigationMenuItem[] = [
         <p v-else class="px-2.5 py-2 text-sm text-muted">
           Nenhum mês ainda.
         </p>
-
-        <UNavigationMenu :items="pageItems" orientation="vertical" aria-label="Páginas" class="mt-auto" />
       </template>
 
       <template #footer>
-        <div class="flex w-full items-center justify-between">
-          <span class="text-xs text-muted">Tema</span>
+        <div class="flex w-full items-center gap-1">
+          <UDropdownMenu
+            :items="userItems"
+            :content="{ side: 'top', align: 'start' }"
+            :ui="{ content: 'w-60 rounded-xl' }"
+          >
+            <UButton
+              :avatar="{ src: user?.image ?? undefined, alt: displayName }"
+              :label="displayName"
+              color="neutral"
+              variant="ghost"
+              :loading="leaving"
+              class="min-w-0 flex-1 justify-start gap-2.5 p-1.5 data-[state=open]:bg-elevated"
+              :ui="{ leadingAvatarSize: 'md' }"
+            />
+          </UDropdownMenu>
           <UColorModeButton />
         </div>
       </template>
