@@ -1,5 +1,5 @@
 # Build context: repository root (see compose.yaml).
-# Targets: `dev` (watch mode, source bind-mounted by compose.dev.yaml) and `runtime` (compose.yaml).
+# Targets: `dev` (watch mode, source synced in by compose.dev.yaml's watch rules) and `runtime` (compose.yaml).
 
 FROM oven/bun:1.4.2-alpine AS base
 WORKDIR /app

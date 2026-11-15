@@ -22,7 +22,7 @@ mise install          # tools
 mise run dev          # builds and runs the dev stack on http://localhost:3000
 ```
 
-`dev` runs the apps in Docker with their source directories bind-mounted, so the backend restarts and Nuxt hot-reloads on save. The individual `dev:backend` and `dev:frontend` tasks remain available for running either app directly on the host.
+`dev` runs the apps in Docker under [Compose Watch](https://docs.docker.com/compose/how-tos/file-watch/): saved files are synced into the containers, so the backend restarts and Nuxt hot-reloads, and a changed `package.json`, `bun.lock` or Dockerfile rebuilds the image. The individual `dev:backend` and `dev:frontend` tasks remain available for running either app directly on the host.
 
 `mise.toml` holds the local defaults, so a `.env` file is optional; create one from `.env.example` only to override them.
 
@@ -30,12 +30,13 @@ mise run dev          # builds and runs the dev stack on http://localhost:3000
 
 There are two Compose files:
 
-- **`compose.dev.yaml`** is used by the development, database and log tasks. It builds the `dev` targets and bind-mounts `apps/*` and `packages/shared`. The containers keep their own `node_modules` (Linux binaries). Postgres (`localhost:5434`, user and password `maimoni`), the backend (`3001`) and the frontend (`3000`) are all published.
+- **`compose.dev.yaml`** is used by the development, database and log tasks. It builds the `dev` targets, which copy `apps/*` and `packages/shared` into the image, and its watch rules keep them in sync with the host. A stack started without watch keeps running the code it was built with. The backend container also reads `apps/backend/.env` when the file exists (gitignored), which is where optional settings such as `RESEND_API_KEY` go; variables set on the host don't reach it. Postgres (`localhost:5434`, user and password `maimoni`), the backend (`3001`) and the frontend (`3000`) are all published.
 - **`compose.yaml`** is production. It uses the `runtime` images and runs migrations in a one-shot service before starting the backend. Nothing is published on the host: expose it through a reverse proxy pointed at the frontend's port `3000` on the stack's network (the frontend proxies `/api/**` to the backend), and at the backend's port `3001` for the mobile app. Every setting comes from the environment with a default (listed at the top of `compose.yaml`), so all of them can be replaced from Coolify's UI; `POSTGRES_PASSWORD`, `BETTER_AUTH_SECRET` and `BETTER_AUTH_URL` are required. It has its own project name (`maimoni-prod`) and volume, so it never touches the dev database.
 
 ```sh
 mise run dev                       # build and run the dev stack in the foreground
 mise run compose up -d --build     # build and run it in the background
+mise run compose watch             # sync saved files into a stack running in the background
 mise run logs:backend              # formatted backend logs
 mise run logs:frontend             # formatted frontend logs
 mise run compose down              # stop the dev stack
@@ -51,6 +52,7 @@ Both Dockerfiles install dependencies in a layer built only from the `package.js
 | --- | --- | --- |
 | `install` | `bun install` for every workspace | |
 | `dev` | dev stack in Docker, in the foreground and watch mode | |
+| `envs` | write `apps/backend/.env` (Resend, Google and Apple secrets) from 1Password; the references at the top of the task point at the maintainer's vault | |
 | `dev:backend` / `dev:frontend` | one side only | `db:migrate` / `install` |
 | `db:up` / `db:down` | start (and wait for) / stop the dev Postgres container | |
 | `db:migrate` | apply pending migrations to `DATABASE_URL` | `install`, `db:up` |

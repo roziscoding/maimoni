@@ -1,8 +1,9 @@
 # Development stack, used by the mise tasks (db:up, docker:up, docker:dev, ...).
 #
-# Builds the `dev` targets and bind-mounts the sources, so the backend restarts and the frontend
-# hot-reloads on every save. The anonymous volumes keep the container's own node_modules (and
-# Nuxt's generated .nuxt) instead of the host's, which hold macOS binaries.
+# Builds the `dev` targets, which copy the sources into the image. Under `docker compose watch`
+# (or `up --watch`) saved files are synced into the containers, so the backend restarts and the
+# frontend hot-reloads, and a changed package.json, bun.lock or Dockerfile rebuilds the image.
+# Without watch the containers keep running the code they were built with.
 # Postgres uses fixed local credentials and is published on localhost:5434 for the tasks and
 # for `mise run dev`, which runs the apps on the host instead.
 #
@@ -48,19 +49,46 @@ services:
 
   backend:
     <<: *backend-image
+    # Secrets (Resend, Google and Apple keys), written by `mise run envs`. The values under `environment` win over it.
+    env_file:
+      - path: ./apps/backend/.env
+        required: false
     environment:
       DATABASE_URL: postgres://maimoni:maimoni@postgres:5432/maimoni
       NODE_ENV: development
       PORT: '3001'
       BETTER_AUTH_SECRET: maimoni-dev-secret-not-for-production
       BETTER_AUTH_URL: http://localhost:3000
+      # Not secret, and unused until the matching keys are in the env file.
+      RESEND_FROM: maimoni <maimoni@roz.ninja>
+      APPLE_CLIENT_ID: ninja.roz.maimoni.web
+      APPLE_APP_BUNDLE_IDENTIFIER: ninja.roz.maimoni
     ports:
       - '${BACKEND_PORT:-3001}:3001'
-    volumes:
-      - ./apps/backend:/app/apps/backend
-      - ./packages/shared:/app/packages/shared
-      - /app/apps/backend/node_modules
-      - /app/packages/shared/node_modules
+    develop:
+      watch:
+        - action: sync
+          path: ./apps/backend
+          target: /app/apps/backend
+          initial_sync: true
+          ignore:
+            - node_modules/
+        - action: sync
+          path: ./packages/shared
+          target: /app/packages/shared
+          initial_sync: true
+          ignore:
+            - node_modules/
+        - action: rebuild
+          path: ./bun.lock
+        - action: rebuild
+          path: ./package.json
+        - action: rebuild
+          path: ./apps/backend/package.json
+        - action: rebuild
+          path: ./packages/shared/package.json
+        - action: rebuild
+          path: ./apps/backend/Dockerfile
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -75,13 +103,32 @@ services:
       NUXT_API_BASE: http://backend:3001
     ports:
       - '${FRONTEND_PORT:-3000}:3000'
-    volumes:
-      - ./apps/frontend:/app/apps/frontend
-      - ./packages/shared:/app/packages/shared
-      - /app/apps/frontend/node_modules
-      - /app/apps/frontend/.nuxt
-      - /app/apps/frontend/.output
-      - /app/packages/shared/node_modules
+    develop:
+      watch:
+        - action: sync
+          path: ./apps/frontend
+          target: /app/apps/frontend
+          initial_sync: true
+          ignore:
+            - node_modules/
+            - .nuxt/
+            - .output/
+        - action: sync
+          path: ./packages/shared
+          target: /app/packages/shared
+          initial_sync: true
+          ignore:
+            - node_modules/
+        - action: rebuild
+          path: ./bun.lock
+        - action: rebuild
+          path: ./package.json
+        - action: rebuild
+          path: ./apps/frontend/package.json
+        - action: rebuild
+          path: ./packages/shared/package.json
+        - action: rebuild
+          path: ./apps/frontend/Dockerfile
     depends_on:
       - backend
     restart: unless-stopped
