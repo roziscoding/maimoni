@@ -37,6 +37,23 @@ services:
       retries: 10
     restart: unless-stopped
 
+  # Drizzle Studio in the browser, on localhost:4984 (4983 is left to `mise run db:studio`).
+  # The master password is `maimoni`. Connections are added in its UI and kept in the volume:
+  # host `postgres`, port 5432, user, password and database `maimoni`.
+  drizzle-gateway:
+    # Same exact version as compose.yaml; Dependabot updates both.
+    image: ghcr.io/drizzle-team/gateway:1.8.0
+    environment:
+      MASTERPASS: maimoni
+    ports:
+      - '${DRIZZLE_GATEWAY_PORT:-4984}:4983'
+    volumes:
+      - drizzle-gateway:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
   migrate:
     <<: *backend-image
     command: [bun, run, db:migrate]
@@ -135,3 +152,4 @@ services:
 
 volumes:
   postgres:
+  drizzle-gateway:

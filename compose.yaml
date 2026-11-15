@@ -27,10 +27,16 @@
 #   RESEND_API_KEY              no default; Resend key for password reset emails, none are sent without it
 #   RESEND_FROM                 maimoni <onboarding@resend.dev>, which only reaches the Resend account's
 #                               own address; set a sender on a domain verified in Resend
+#   DRIZZLE_GATEWAY_MASTERPASS  required, no default; password asked by Drizzle Gateway's UI
+#   DRIZZLE_GATEWAY_PORT        4983
 #
 # Nothing is published on the host: put a reverse proxy in front of the frontend (FRONTEND_PORT on
 # this stack's network), which proxies /api/** to the backend, and in front of the backend
 # (BACKEND_PORT) for the mobile app. A one-shot service applies migrations before the backend starts.
+#
+# Drizzle Gateway (DRIZZLE_GATEWAY_PORT) is Drizzle Studio in the browser. It has full access to
+# any database connected to it, so only proxy it somewhere private. Connections are added in its
+# UI and kept in its volume: host `postgres`, port 5432 and the POSTGRES_* values above.
 #
 # Local development uses compose.dev.yaml (mise run docker:up / docker:dev).
 
@@ -59,6 +65,21 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+    restart: always
+
+  drizzle-gateway:
+    # Exact version, for the same reason as postgres. The image ships its own healthcheck.
+    image: ghcr.io/drizzle-team/gateway:1.8.0
+    environment:
+      MASTERPASS: ${DRIZZLE_GATEWAY_MASTERPASS:?}
+      PORT: ${DRIZZLE_GATEWAY_PORT:-4983}
+    expose:
+      - ${DRIZZLE_GATEWAY_PORT:-4983}
+    volumes:
+      - drizzle-gateway:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: always
 
   migrate:
@@ -129,3 +150,4 @@ services:
 
 volumes:
   postgres:
+  drizzle-gateway:
