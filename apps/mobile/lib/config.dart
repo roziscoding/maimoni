@@ -1,2 +1,8 @@
 /// Base URL of the maimoni server. Every API call is built from it (`$serverUrl/api/...`).
 const serverUrl = 'https://maimoni.roz.ninja';
+
+/// Google OAuth client IDs. The web one is the audience of the ID tokens the server accepts; the
+/// iOS one identifies the app to Google's iOS SDK (its reversed form is a URL scheme in Info.plist).
+/// Android needs no ID here, only an Android client for the package and signing key in the same project.
+const googleWebClientId = '363526868858-6p105hdrhal86tag6thgd3ii8kgo6scj.apps.googleusercontent.com';
+const googleIosClientId = '363526868858-7gqn6bphuvp9ub89mq1vuhjodibs7l3g.apps.googleusercontent.com';

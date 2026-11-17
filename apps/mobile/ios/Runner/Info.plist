@@ -70,5 +70,17 @@
 		</array>
 		<key>UIStatusBarHidden</key>
 		<false/>
+		<!-- Google sign in returns to the app through the iOS OAuth client's reversed ID (googleIosClientId in lib/config.dart). -->
+		<key>CFBundleURLTypes</key>
+		<array>
+			<dict>
+				<key>CFBundleTypeRole</key>
+				<string>Editor</string>
+				<key>CFBundleURLSchemes</key>
+				<array>
+					<string>com.googleusercontent.apps.363526868858-7gqn6bphuvp9ub89mq1vuhjodibs7l3g</string>
+				</array>
+			</dict>
+		</array>
 	</dict>
 </plist>

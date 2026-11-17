@@ -32,7 +32,8 @@ void main() {
   testWidgets('an empty email is rejected without a request', (tester) async {
     var calls = 0;
     Api.instance.httpClient = MockClient((request) async {
-      calls++;
+      // The screen asks for the sign in providers when it opens.
+      if (request.url.path != '/api/sign-in-providers') calls++;
       return json(null);
     });
     await tester.pumpWidget(_login());

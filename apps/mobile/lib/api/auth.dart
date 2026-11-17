@@ -43,6 +43,48 @@ Future<String?> signInEmail(String email, String password) async {
   }
 }
 
+const _socialFallback = 'Não foi possível entrar com essa conta.';
+
+/// Social providers the server has credentials for; empty when it can't be asked.
+Future<List<String>> signInProviders() async {
+  try {
+    final data = (await Api.instance.request('GET', '/sign-in-providers')).data;
+    return data is List ? data.whereType<String>().toList() : const [];
+  } catch (_) {
+    return const [];
+  }
+}
+
+/// Signs in with an ID token the provider's SDK issued on this device.
+/// Returns an error message in Portuguese, or `null` once signed in.
+Future<String?> signInSocial(String provider, {required String token, String? nonce}) async {
+  try {
+    final result = await Api.instance.request('POST', '/auth/sign-in/social', body: {
+      'provider': provider,
+      'idToken': {'token': token, 'nonce': ?nonce},
+    });
+    return _started(result.data);
+  } catch (error) {
+    // Sign up is off and no user has this email. Better Auth shares the code with other link failures.
+    if (error is ApiException && error.code == 'OAUTH_LINK_ERROR' && error.message == 'signup disabled') {
+      return 'Não existe uma conta do maimoni para o e-mail dessa conta.';
+    }
+    return signInError(error, fallback: _socialFallback);
+  }
+}
+
+/// Asks for a password reset link. The server answers the same whether or not the email has an
+/// account. Returns an error message in Portuguese, or `null` once the request was accepted.
+Future<String?> requestPasswordReset(String email) async {
+  try {
+    await Api.instance.request('POST', '/password-reset', body: {'email': email});
+    return null;
+  } catch (error) {
+    if (error is ApiException && error.status == 400) return 'Informe um e-mail válido';
+    return error is ApiException && error.status == null ? error.message : 'Não foi possível enviar o link.';
+  }
+}
+
 /// Asks the server who the stored token belongs to. The server answers `null` for a token it no
 /// longer accepts, which ends the session here; a failed request leaves it alone.
 Future<void> checkSession() async {

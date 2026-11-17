@@ -56,7 +56,9 @@ function socialProviders(env: Record<string, string | undefined>, disableSignUp:
   const providers: NonNullable<BetterAuthOptions['socialProviders']> = {}
   if (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET) {
     providers.google = {
-      clientId: env.GOOGLE_CLIENT_ID,
+      // The web client comes first: the redirect flow uses it. The iOS client is only an extra
+      // audience for ID tokens the app gets from Google's iOS SDK.
+      clientId: env.GOOGLE_IOS_CLIENT_ID ? [env.GOOGLE_CLIENT_ID, env.GOOGLE_IOS_CLIENT_ID] : env.GOOGLE_CLIENT_ID,
       clientSecret: env.GOOGLE_CLIENT_SECRET,
       disableSignUp,
     }
