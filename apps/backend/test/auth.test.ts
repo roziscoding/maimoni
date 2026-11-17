@@ -19,6 +19,13 @@ describe('auth', () => {
     expect((await configured.as(null)('GET', '/sign-in-providers')).body).toEqual(['google'])
   })
 
+  test('GOOGLE_IOS_CLIENT_ID is accepted as a second Google audience', async () => {
+    const google = async (env: Record<string, string>) =>
+      (await (await setup(6, true, env)).auth.$context).socialProviders.find(provider => provider.id === 'google')?.options?.clientId
+    expect(await google({ GOOGLE_CLIENT_ID: 'web', GOOGLE_CLIENT_SECRET: 'secret' })).toBe('web')
+    expect(await google({ GOOGLE_CLIENT_ID: 'web', GOOGLE_CLIENT_SECRET: 'secret', GOOGLE_IOS_CLIENT_ID: 'ios' })).toEqual(['web', 'ios'])
+  })
+
   test('sign up is disabled by default', async () => {
     const { as } = await setup()
     const response = await as(null)('POST', '/auth/sign-up/email', { email: 'new@example.com', password: testPassword, name: 'New' })

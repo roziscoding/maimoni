@@ -10,7 +10,17 @@ mirrors the shared tests.
 ## Sign in
 
 - The app needs an account on the server at `serverUrl`.
-- Sign in is by email and password.
+- Sign in is by email and password, Google or Apple.
+- ***Esqueceu a senha?*** asks the server for a reset link. The new password is set on the web page
+  the link opens.
+- ***Entrar com Google*** appears when the server lists Google. It needs, in the Google Cloud project
+  of the web client:
+  - an Android OAuth client for `ninja.roz.maimoni` with the SHA-1 of each signing key. A build
+    signed with a key that has no Android client behaves as if the person cancelled.
+  - an iOS OAuth client for the bundle ID. The server needs its ID in `GOOGLE_IOS_CLIENT_ID`.
+- The Google client IDs live in `lib/config.dart`, and the iOS URL scheme in `ios/Runner/Info.plist`.
+- ***Entrar com Apple*** appears on iOS only, when the server lists Apple. It needs the Sign in with
+  Apple capability on the App ID and `APPLE_APP_BUNDLE_IDENTIFIER` on the server.
 - The session token is stored with `flutter_secure_storage`. The Android manifest turns auto backup
   off because a restored token can't be decrypted on another install.
 
