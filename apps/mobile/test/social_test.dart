@@ -130,6 +130,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Continuar com o Google'), findsOneWidget);
       expect(find.text('Continuar com a Apple'), findsOneWidget);
+      // Apple's button comes first on iOS.
+      expect(
+        tester.getTopLeft(find.text('Continuar com a Apple')).dy,
+        lessThan(tester.getTopLeft(find.text('Continuar com o Google')).dy),
+      );
       debugDefaultTargetPlatformOverride = null;
     });
 

@@ -176,17 +176,18 @@ class _LoginScreenState extends State<LoginScreen> {
                         ],
                       ),
                       const SizedBox(height: 16),
-                      if (_google) ...[
-                        GoogleSignInButton(
-                          loading: _busyProvider == 'google',
-                          onPressed: _busy ? null : () => _social('google', googleIdToken),
-                        ),
-                        const SizedBox(height: 8),
-                      ],
+                      // Apple's button only shows on iOS, where it comes first.
                       if (_apple) ...[
                         AppleSignInButton(
                           loading: _busyProvider == 'apple',
                           onPressed: _busy ? null : () => _social('apple', appleIdToken),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                      if (_google) ...[
+                        GoogleSignInButton(
+                          loading: _busyProvider == 'google',
+                          onPressed: _busy ? null : () => _social('google', googleIdToken),
                         ),
                         const SizedBox(height: 8),
                       ],

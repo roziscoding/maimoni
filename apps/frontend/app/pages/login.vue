@@ -100,9 +100,9 @@ async function submit(event: FormSubmitEvent<Credentials>) {
           </button>
           <!--
             Apple's guidelines for a custom button: black on a light background and white on a dark
-            one, Apple's logo artwork at the button's full height (40px, no vertical padding), a
-            title at 43% of that height, and at least 8% of the width after the title. The title is
-            Apple's own wording for pt-BR.
+            one, logo and title in the same color, a title at 43% of the button's height, and at
+            least 8% of the width after the title. The title is Apple's own wording for pt-BR. The
+            logo is the icon set's glyph, so no Apple artwork is kept in the repository.
           -->
           <button
             v-if="offered.includes('apple')"
@@ -111,13 +111,11 @@ async function submit(event: FormSubmitEvent<Credentials>) {
             :disabled="leavingFor !== null"
             @click="social('apple')"
           >
-            <span v-if="leavingFor === 'apple'" class="flex h-10 w-7 items-center justify-center">
-              <UIcon name="i-lucide-loader-circle" class="size-5 animate-spin" />
-            </span>
-            <template v-else>
-              <img src="/sign-in/apple-logo-white.svg" alt="" class="h-10 w-auto dark:hidden">
-              <img src="/sign-in/apple-logo-black.svg" alt="" class="hidden h-10 w-auto dark:block">
-            </template>
+            <UIcon
+              :name="leavingFor === 'apple' ? 'i-lucide-loader-circle' : 'i-simple-icons-apple'"
+              class="mr-1.5 size-[18px]"
+              :class="{ 'animate-spin': leavingFor === 'apple' }"
+            />
             Continuar com a Apple
           </button>
         </template>

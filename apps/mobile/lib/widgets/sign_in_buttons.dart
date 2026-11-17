@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 /// Height of every sign in button below the form: the height of Google's button and of the app's
 /// own. Apple doesn't allow its button to be smaller than the others, and ties its title's size to
@@ -55,10 +56,10 @@ class GoogleSignInButton extends StatelessWidget {
   }
 }
 
-/// "Continue with Apple", drawn to Apple's guidelines for a custom button
-/// (https://developer.apple.com/design/human-interface-guidelines/sign-in-with-apple): black on a
-/// light background and white on a dark one, Apple's logo artwork at the button's full height, and
-/// a title at 43% of that height. The title is Apple's own wording for pt-BR.
+/// "Continue with Apple": the `sign_in_with_apple` package's button, which follows Apple's
+/// guidelines (https://developer.apple.com/design/human-interface-guidelines/sign-in-with-apple)
+/// and draws the logo itself, so no Apple artwork is kept in the repository. Black on a light
+/// background and white on a dark one; the title is Apple's own wording for pt-BR.
 class AppleSignInButton extends StatelessWidget {
   const AppleSignInButton({super.key, required this.onPressed, this.loading = false});
 
@@ -68,35 +69,23 @@ class AppleSignInButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
-    final content = dark ? Colors.black : Colors.white;
-    return _ProviderButton(
-      fill: dark ? Colors.white : Colors.black,
+    final button = SignInWithAppleButton(
+      text: 'Continuar com a Apple',
+      height: signInButtonHeight,
+      style: dark ? SignInWithAppleButtonStyle.white : SignInWithAppleButtonStyle.black,
       onPressed: loading ? null : onPressed,
-      // The logo file has its own side padding; Apple asks for at least 8% of the width after the title.
-      child: FractionallySizedBox(
-        widthFactor: 0.84,
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // The artwork is 31x44, rendered from Apple's vector file at this height. It must fill
-              // the button's height, with no cropping and no vertical padding.
-              SizedBox(
-                width: signInButtonHeight * 31 / 44,
-                height: signInButtonHeight,
-                child: loading
-                    ? Center(child: SizedBox.square(dimension: 16, child: CircularProgressIndicator(strokeWidth: 2, color: content)))
-                    : Image.asset('assets/sign-in/apple-logo-${dark ? 'black' : 'white'}.png'),
-              ),
-              Text(
-                'Continuar com a Apple',
-                style: TextStyle(fontSize: signInButtonHeight * 0.43, fontWeight: FontWeight.w500, color: content),
-              ),
-            ],
-          ),
+    );
+    if (!loading) return button;
+    // The package's button has no loading state: dim it and put the spinner over it.
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Opacity(opacity: 0.4, child: button),
+        SizedBox.square(
+          dimension: 16,
+          child: CircularProgressIndicator(strokeWidth: 2, color: dark ? Colors.black : Colors.white),
         ),
-      ),
+      ],
     );
   }
 }
