@@ -26,6 +26,13 @@ describe('auth', () => {
     expect(await google({ GOOGLE_CLIENT_ID: 'web', GOOGLE_CLIENT_SECRET: 'secret', GOOGLE_IOS_CLIENT_ID: 'ios' })).toEqual(['web', 'ios'])
   })
 
+  test('the passkey plugin accepts the Android app\'s origins', async () => {
+    const fingerprint = 'FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C'
+    const { auth } = await setup(6, true, { ANDROID_APP_PACKAGE: 'ninja.roz.maimoni', ANDROID_APP_CERT_SHA256: fingerprint })
+    const passkey = auth.options.plugins?.find(plugin => plugin.id === 'passkey') as { options?: { origin?: unknown } } | undefined
+    expect(passkey?.options?.origin).toEqual(['http://localhost:3000', 'android:apk-key-hash:-sYXRdwJA3hvue3mKpYrOZ9zSPC7b4mbgzJmdZEDO5w'])
+  })
+
   test('sign up is disabled by default', async () => {
     const { as } = await setup()
     const response = await as(null)('POST', '/auth/sign-up/email', { email: 'new@example.com', password: testPassword, name: 'New' })

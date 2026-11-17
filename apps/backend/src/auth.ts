@@ -8,6 +8,7 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { bearer } from 'better-auth/plugins'
 import { createMiddleware } from 'hono/factory'
 import { schema } from './db'
+import { appLinksFromEnv, passkeyOrigins } from './lib/app-links'
 import { appleClientSecret } from './lib/apple'
 import { log } from './lib/log'
 import { createMailService } from './services/mail'
@@ -118,7 +119,7 @@ export function createAuth({ db, baseURL, secret, trustedOrigins, mail, env = pr
       passkey({
         rpName: 'maimoni',
         rpID: env.PASSKEY_RP_ID || (passkeyOrigin ? new URL(passkeyOrigin).hostname : undefined),
-        origin: passkeyOrigin,
+        origin: passkeyOrigins(passkeyOrigin, appLinksFromEnv(env)),
       }),
       // Lets the mobile app send `Authorization: Bearer <token>` instead of cookies.
       bearer(),

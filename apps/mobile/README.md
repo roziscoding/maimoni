@@ -10,7 +10,7 @@ mirrors the shared tests.
 ## Sign in
 
 - The app needs an account on the server at `serverUrl`.
-- Sign in is by email and password, Google or Apple.
+- Sign in is by email and password, Google, Apple or a passkey.
 - ***Esqueceu a senha?*** asks the server for a reset link. The new password is set on the web page
   the link opens.
 - ***Entrar com Google*** appears when the server lists Google. It needs, in the Google Cloud project
@@ -21,6 +21,17 @@ mirrors the shared tests.
 - The Google client IDs live in `lib/config.dart`, and the iOS URL scheme in `ios/Runner/Info.plist`.
 - ***Entrar com Apple*** appears on iOS only, when the server lists Apple. It needs the Sign in with
   Apple capability on the App ID and `APPLE_APP_BUNDLE_IDENTIFIER` on the server.
+- ***Entrar com passkey*** is always shown on Android and iOS. It signs in with a passkey that
+  already exists for the server's domain; the app doesn't create passkeys.
+  - It needs Android 9 or iOS 16.
+  - The server needs `ANDROID_APP_PACKAGE` and `ANDROID_APP_CERT_SHA256`, with one fingerprint per
+    signing key as `keytool -list -v -keystore <keystore>` prints it. With them the domain serves
+    `/.well-known/assetlinks.json`.
+  - The server needs `APPLE_TEAM_ID` and `APPLE_APP_BUNDLE_IDENTIFIER` for iOS. With them the domain
+    serves `/.well-known/apple-app-site-association`.
+  - On iOS the App ID needs the Associated Domains capability. The domain is in
+    `ios/Runner/Runner.entitlements` (`webcredentials:<host>`) and has to match `serverUrl`, so
+    changing `serverUrl` means changing that entitlement too.
 - The session token is stored with `flutter_secure_storage`. The Android manifest turns auto backup
   off because a restored token can't be decrypted on another install.
 
@@ -83,4 +94,5 @@ always sorts below the stable release that follows it.
 - **iOS:** CI fetches the App Store certificate and profile through the App Store Connect API
   (`.github/actions/ios-signing`) and exports for the App Store. On the Mac, over SSH, signing reads
   from the `ios-build` keychain, which `mobile:setup:ios-keychain` unlocks when
-  `~/.config/ios-build/keychain-password` exists.
+  `~/.config/ios-build/keychain-password` exists. The App ID needs the Sign in with Apple and
+  Associated Domains capabilities, since the profile CI fetches has to carry both entitlements.

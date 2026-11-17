@@ -79,8 +79,9 @@ Both Dockerfiles install dependencies in a layer built only from the `package.js
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | backend (Google sign in, off without both) | none |
 | `GOOGLE_IOS_CLIENT_ID` | backend (iOS OAuth client ID, for native Google sign in on iOS) | none |
 | `APPLE_CLIENT_ID` / `APPLE_TEAM_ID` / `APPLE_KEY_ID` / `APPLE_PRIVATE_KEY` | backend (Apple sign in, off without all four: the Services ID, the team ID, the Sign in with Apple key's ID and its `.p8` contents, where line breaks may be written as `\n`). The backend signs the client secret itself when it starts; it lasts 180 days | none |
-| `APPLE_APP_BUNDLE_IDENTIFIER` | backend (iOS bundle ID, for native Apple sign in) | none |
+| `APPLE_APP_BUNDLE_IDENTIFIER` | backend (iOS bundle ID, for native Apple sign in; with `APPLE_TEAM_ID`, the mobile app can use passkeys on iOS) | none |
 | `PASSKEY_RP_ID` | backend (passkey relying party) | hostname of `BETTER_AUTH_URL` |
+| `ANDROID_APP_PACKAGE` / `ANDROID_APP_CERT_SHA256` | backend (Android application ID and comma-separated SHA-256 fingerprints of its signing certificates; with both, the mobile app can use passkeys) | none |
 | `RESEND_API_KEY` | backend ([Resend](https://resend.com) key for password reset emails; none are sent without it) | none |
 | `RESEND_FROM` | backend (sender of those emails, on a domain verified in Resend) | `maimoni <onboarding@resend.dev>`, which only reaches the Resend account's own address |
 | `POSTGRES_PASSWORD` | `compose.yaml` (production) | required, no default |

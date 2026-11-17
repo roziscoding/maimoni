@@ -1,5 +1,9 @@
+import 'package:http/http.dart' show HeadersWithSplitValues;
+
+import '../config.dart';
 import '../state/session.dart';
 import 'client.dart';
+import 'providers.dart';
 
 const _signInErrors = {
   'INVALID_EMAIL_OR_PASSWORD': 'E-mail ou senha incorretos.',
@@ -70,6 +74,32 @@ Future<String?> signInSocial(String provider, {required String token, String? no
       return 'Não existe uma conta do maimoni para o e-mail dessa conta.';
     }
     return signInError(error, fallback: _socialFallback);
+  }
+}
+
+const _passkeyFallback = 'Não foi possível entrar com a passkey.';
+
+/// Signs in with a passkey: the server issues a challenge, the device signs it, the server checks it.
+/// Returns an error message in Portuguese, or `null` when signed in or when the person gave up.
+Future<String?> signInPasskey() async {
+  try {
+    final options = await Api.instance.request('GET', '/auth/passkey/generate-authenticate-options');
+    if (options.data is! Map) return _passkeyFallback;
+    // The server keeps the challenge under a signed cookie and wants it back unchanged with the answer.
+    final cookie = (options.response.headersSplitValues['set-cookie'] ?? const []).map((value) => value.split(';').first.trim()).join('; ');
+    final assertion = await passkeyAssertion(Map<String, dynamic>.from(options.data as Map));
+    if (assertion == null) return null;
+    final result = await Api.instance.request(
+      'POST',
+      '/auth/passkey/verify-authentication',
+      body: {'response': assertion},
+      // Better Auth refuses a request that has a cookie and no Origin; the server's own origin is trusted.
+      headers: {'cookie': cookie, 'origin': Uri.parse(serverUrl).origin},
+    );
+    return _started(result.data);
+  } catch (error) {
+    if (error is ApiException && error.code == 'PASSKEY_NOT_FOUND') return 'Essa passkey não pertence a uma conta do maimoni.';
+    return passkeyError(error) ?? signInError(error, fallback: _passkeyFallback);
   }
 }
 
