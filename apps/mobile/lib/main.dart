@@ -3,9 +3,12 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'api/auth.dart';
 import 'routes.dart';
+import 'screens/login_screen.dart';
 import 'state/app_updates.dart';
 import 'state/months_store.dart';
+import 'state/session.dart';
 import 'state/theme_controller.dart';
 import 'state/toast.dart';
 import 'theme.dart';
@@ -14,8 +17,11 @@ final navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Future.wait([initializeDateFormatting('pt_BR'), ThemeController.instance.load()]);
-  MonthsStore.instance.refresh();
+  await Future.wait([initializeDateFormatting('pt_BR'), ThemeController.instance.load(), Session.instance.load()]);
+  if (Session.instance.signedIn) {
+    MonthsStore.instance.refresh();
+    checkSession();
+  }
   runApp(const MaimoniApp());
   _offerUpdate();
 }
@@ -33,13 +39,46 @@ Future<void> _offerUpdate() async {
     actionLabel: 'Ver',
     onAction: () {
       final navigator = navigatorKey.currentState;
-      if (navigator != null) navigateWith(navigator, settingsRoute);
+      if (navigator != null && Session.instance.signedIn) navigateWith(navigator, settingsRoute);
     },
   );
 }
 
-class MaimoniApp extends StatelessWidget {
+class MaimoniApp extends StatefulWidget {
   const MaimoniApp({super.key});
+
+  @override
+  State<MaimoniApp> createState() => _MaimoniAppState();
+}
+
+class _MaimoniAppState extends State<MaimoniApp> {
+  bool _signedIn = Session.instance.signedIn;
+
+  @override
+  void initState() {
+    super.initState();
+    Session.instance.addListener(_onSession);
+  }
+
+  @override
+  void dispose() {
+    Session.instance.removeListener(_onSession);
+    super.dispose();
+  }
+
+  /// Swaps the whole navigation stack when a session starts or ends, so no page of one survives into the other.
+  void _onSession() {
+    final session = Session.instance;
+    if (session.signedIn == _signedIn) return;
+    _signedIn = session.signedIn;
+    if (_signedIn) {
+      MonthsStore.instance.refresh();
+    } else {
+      MonthsStore.instance.reset();
+      if (session.expired) toast('Sua sessão expirou', description: 'Entre de novo.');
+    }
+    navigatorKey.currentState?.pushNamedAndRemoveUntil(todayRoute, (_) => false);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -58,7 +97,9 @@ class MaimoniApp extends StatelessWidget {
         supportedLocales: const [Locale('pt', 'BR')],
         localizationsDelegates: GlobalMaterialLocalizations.delegates,
         initialRoute: todayRoute,
-        onGenerateRoute: onGenerateRoute,
+        // Signed out, every route is the login screen: no page that needs a session can be reached.
+        onGenerateRoute: (settings) =>
+            Session.instance.signedIn ? onGenerateRoute(settings) : MaterialPageRoute<void>(builder: (_) => const LoginScreen()),
       ),
     );
   }

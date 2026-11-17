@@ -1,16 +1,21 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../config.dart';
+import '../state/session.dart';
 import 'models.dart';
 
 class ApiException implements Exception {
-  ApiException(this.message, {this.status});
+  ApiException(this.message, {this.status, this.code});
 
   final String message;
   final int? status;
+
+  /// Better Auth's error code (e.g. `INVALID_EMAIL_OR_PASSWORD`); the app's own routes send none.
+  final String? code;
 
   bool get notFound => status == 404;
 
@@ -18,7 +23,7 @@ class ApiException implements Exception {
   String toString() => message;
 }
 
-/// Message to show for any failure; the backend's `{ error }` when there is one.
+/// Message to show for any failure; the server's `{ error }` or `{ message }` when there is one.
 String errorMessage(Object error) => error is ApiException ? error.message : 'Erro inesperado';
 
 /// HTTP client for the maimoni server. Every path is resolved against [serverUrl].
@@ -27,12 +32,27 @@ class Api {
 
   static final instance = Api._();
 
-  final _http = http.Client();
+  http.Client _http = http.Client();
 
-  Future<dynamic> _send(String method, String path, {Object? body, Map<String, String>? query}) async {
+  @visibleForTesting
+  set httpClient(http.Client client) => _http = client;
+
+  /// Sends a request and decodes the JSON answer. Adds the session's bearer token, stores the token
+  /// a sign in or session refresh hands back, and ends the session when a data route answers 401.
+  Future<({dynamic data, http.Response response})> request(
+    String method,
+    String path, {
+    Object? body,
+    Map<String, String>? query,
+    Map<String, String>? headers,
+  }) async {
     var uri = Uri.parse('$serverUrl/api$path');
     if (query != null) uri = uri.replace(queryParameters: query);
+    final session = Session.instance;
+    final token = session.token;
     final request = http.Request(method, uri);
+    if (token != null) request.headers['authorization'] = 'Bearer $token';
+    if (headers != null) request.headers.addAll(headers);
     if (body != null) {
       request.headers['content-type'] = 'application/json';
       request.body = jsonEncode(body);
@@ -45,6 +65,10 @@ class Api {
     } catch (error) {
       throw ApiException('Sem conexão com o servidor');
     }
+    // Better Auth's bearer plugin sends the token on sign in and when it renews the session. Ignored
+    // when the session changed while the request was in flight.
+    final issued = response.headers['set-auth-token'];
+    if (issued != null && issued.isNotEmpty && session.token == token) session.setToken(issued);
     Object? data;
     try {
       // Decoded as UTF-8 explicitly: without a charset in the content type, `body` falls back to Latin-1.
@@ -55,11 +79,28 @@ class Api {
       if (response.statusCode < 400) throw ApiException('Resposta inválida do servidor', status: response.statusCode);
     }
     if (response.statusCode >= 400) {
-      final message = data is Map && data['error'] is String ? data['error'] as String : 'HTTP ${response.statusCode}';
-      throw ApiException(message, status: response.statusCode);
+      // Better Auth's own routes answer 401 for wrong credentials, which says nothing about the session.
+      // Nor does a 401 for a token the session has already left behind.
+      if (response.statusCode == 401 && token != null && session.token == token && !path.startsWith('/auth/')) {
+        session.clear(ifToken: token, expired: true);
+        // Callers show this next to their own "couldn't save" title, in place of the server's "Unauthorized".
+        throw ApiException('Sua sessão expirou. Entre de novo.', status: 401);
+      }
+      // The app's routes answer `{ error }`, Better Auth's `{ message, code }`.
+      final message = data is Map
+          ? (data['error'] is String ? data['error'] as String : (data['message'] is String ? data['message'] as String : null))
+          : null;
+      throw ApiException(
+        message ?? 'HTTP ${response.statusCode}',
+        status: response.statusCode,
+        code: data is Map && data['code'] is String ? data['code'] as String : null,
+      );
     }
-    return data;
+    return (data: data, response: response);
   }
+
+  Future<dynamic> _send(String method, String path, {Object? body, Map<String, String>? query}) async =>
+      (await request(method, path, body: body, query: query)).data;
 
   String _month(int year, int month) => '/months/$year/$month';
 

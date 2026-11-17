@@ -14,14 +14,32 @@ class MonthsStore extends ChangeNotifier {
   bool loaded = false;
   Object? error;
 
+  /// Goes up on every [reset], so a refresh can tell that the session it asked for is over.
+  int _generation = 0;
+
   Future<void> refresh() async {
+    final generation = _generation;
+    List<MonthListEntry>? result;
+    Object? failure;
     try {
-      months = await Api.instance.months();
-      error = null;
+      result = await Api.instance.months();
     } catch (err) {
-      error = err;
+      failure = err;
     }
+    // The session ended while the request was in flight: the answer belongs to someone else.
+    if (generation != _generation) return;
+    if (result != null) months = result;
+    error = failure;
     loaded = true;
+    notifyListeners();
+  }
+
+  /// Drops everything, so the next person to sign in doesn't see the previous one's months.
+  void reset() {
+    _generation++;
+    months = [];
+    loaded = false;
+    error = null;
     notifyListeners();
   }
 
