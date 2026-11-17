@@ -10,7 +10,10 @@ The frontend never calls the backend directly: Nuxt proxies `/api/**` to `NUXT_A
 Every route below except `/api/health`, `/api/sign-in-providers`, `/api/password-reset` and the app update routes needs a session and answers `401 { error }` without one. Data is scoped to the signed in user.
 
 - **Web:** the session cookie set by `/api/auth/sign-in/*`.
-- **Mobile:** `Authorization: Bearer <token>`, with the token from the `set-auth-token` header of the sign in response.
+- **Mobile:** `Authorization: Bearer <token>`.
+  - The token comes in the `set-auth-token` header of every sign in response.
+  - `GET /api/auth/get-session` sends it again in the same header when it renews the session.
+- **Errors:** Better Auth's own routes answer `{ message, code }`; the routes below answer `{ error }`.
 
 `/api/auth/*` is [Better Auth's API](https://www.better-auth.com/docs/concepts/api) (`basePath: '/api/auth'`). Sign up is disabled unless `AUTH_SIGNUP_ENABLED` is `true`; otherwise users are created by hand in the database (see [`decisions.md`](decisions.md)).
 

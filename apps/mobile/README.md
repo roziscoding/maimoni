@@ -7,6 +7,13 @@ Flutter client for the maimoni server, with the same pages as the web app. The s
 recomputes the month summary locally, like the web. Keep both in sync; `test/domain_test.dart`
 mirrors the shared tests.
 
+## Sign in
+
+- The app needs an account on the server at `serverUrl`.
+- Sign in is by email and password.
+- The session token is stored with `flutter_secure_storage`. The Android manifest turns auto backup
+  off because a restored token can't be decrypted on another install.
+
 ## Tasks
 
 Run from the repository root. iOS tasks only work on macOS.

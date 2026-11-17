@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../api/auth.dart';
 import '../api/models.dart';
 import '../domain/summary.dart';
 import '../format.dart';
 import '../routes.dart';
 import '../state/months_store.dart';
+import '../state/session.dart';
 import '../state/theme_controller.dart';
 import '../theme.dart';
 import 'common.dart';
@@ -30,8 +32,9 @@ class AppDrawer extends StatelessWidget {
     return Drawer(
       child: SafeArea(
         child: ListenableBuilder(
-          listenable: store,
+          listenable: Listenable.merge([store, Session.instance]),
           builder: (context, _) {
+            final email = Session.instance.user?.email;
             final months = store.months;
             final current = store.current;
             final rows = <Widget>[];
@@ -110,6 +113,15 @@ class AppDrawer extends StatelessWidget {
                         label: 'Configurações',
                         selected: route == settingsRoute,
                         onTap: () => go(settingsRoute),
+                      ),
+                      // No pop: the session listener in MaimoniApp replaces the whole stack.
+                      _NavItem(
+                        icon: LucideIcons.logOut,
+                        label: 'Sair',
+                        trailing: email == null
+                            ? null
+                            : Flexible(child: Text(email, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: palette.muted))),
+                        onTap: signOut,
                       ),
                     ],
                   ),

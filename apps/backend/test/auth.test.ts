@@ -99,4 +99,17 @@ describe('auth', () => {
     expect(token).toBeTruthy()
     expect((await as({ authorization: `Bearer ${token}` })('GET', '/months')).status).toBe(200)
   })
+
+  test('each sign in is its own session', async () => {
+    const { app, auth, as } = await setup()
+    await createTestUser(auth, 'mobile@example.com')
+    const first = (await login(app, 'mobile@example.com')).headers.get('set-auth-token')
+    const second = (await login(app, 'mobile@example.com')).headers.get('set-auth-token')
+    expect(first).not.toBe(second)
+    expect((await as({ authorization: `Bearer ${first}` })('GET', '/months')).status).toBe(200)
+    expect((await as({ authorization: `Bearer ${second}` })('GET', '/months')).status).toBe(200)
+    expect((await as({ authorization: `Bearer ${first}` })('POST', '/auth/sign-out')).status).toBe(200)
+    expect((await as({ authorization: `Bearer ${first}` })('GET', '/months')).status).toBe(401)
+    expect((await as({ authorization: `Bearer ${second}` })('GET', '/months')).status).toBe(200)
+  })
 })
