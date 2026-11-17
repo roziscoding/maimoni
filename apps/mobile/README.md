@@ -56,7 +56,7 @@ step:
 - **`beta`**: moves `beta` to `main`'s commit.
 - **`stable`**: moves `stable` to `beta`'s commit.
 
-It then starts ***Mobile publish*** on that branch:
+It then publishes from that branch:
 
 1. semantic-release picks the version from the conventional commits that touch the app
    (`release/semantic-release.ts` filters them by path): `X.Y.Z-beta.N` on beta, `X.Y.Z` on stable.
