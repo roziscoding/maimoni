@@ -13,14 +13,22 @@ mirrors the shared tests.
 - Sign in is by email and password, Google, Apple or a passkey.
 - ***Esqueceu a senha?*** asks the server for a reset link. The new password is set on the web page
   the link opens.
-- ***Entrar com Google*** appears when the server lists Google. It needs, in the Google Cloud project
+- ***Continuar com o Google*** appears when the server lists Google. It needs, in the Google Cloud project
   of the web client:
   - an Android OAuth client for `ninja.roz.maimoni` with the SHA-1 of each signing key. A build
     signed with a key that has no Android client behaves as if the person cancelled.
   - an iOS OAuth client for the bundle ID. The server needs its ID in `GOOGLE_IOS_CLIENT_ID`.
 - The Google client IDs live in `lib/config.dart`, and the iOS URL scheme in `ios/Runner/Info.plist`.
-- ***Entrar com Apple*** appears on iOS only, when the server lists Apple. It needs the Sign in with
-  Apple capability on the App ID and `APPLE_APP_BUNDLE_IDENTIFIER` on the server.
+- ***Continuar com a Apple*** appears on iOS only, when the server lists Apple, above the other
+  buttons. It needs the Sign in with Apple capability on the App ID and
+  `APPLE_APP_BUNDLE_IDENTIFIER` on the server.
+- Both buttons follow their provider's guidelines
+  ([Google](https://developers.google.com/identity/branding-guidelines),
+  [Apple](https://developer.apple.com/design/human-interface-guidelines/sign-in-with-apple)), in
+  `lib/widgets/sign_in_buttons.dart`:
+  - Google's is drawn by the app. Its "G" in `assets/sign-in` is cut from the light theme's
+    logo-only button of Google's `signin-assets.zip`.
+  - Apple's is the `sign_in_with_apple` package's button, which draws the logo itself.
 - ***Entrar com passkey*** is always shown on Android and iOS. It signs in with a passkey that
   already exists for the server's domain; the app doesn't create passkeys.
   - It needs Android 9 or iOS 16.

@@ -32,6 +32,9 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  # Apple's and Google's logo artwork for the sign in buttons (lib/widgets/sign_in_buttons.dart).
+  assets:
+    - assets/sign-in/
 
 # Icon and splash come from the web's icon (apps/frontend/public). After changing anything in
 # assets/branding, regenerate with `mise run mobile:branding`.

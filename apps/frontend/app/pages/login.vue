@@ -13,24 +13,16 @@ const loading = ref(false)
 // A failed Google or Apple sign in comes back here with `?error=<code>`.
 const failure = ref<string | null>(socialError(route.query.error))
 
-const SOCIAL_BUTTONS: { provider: SocialProvider, label: string, icon: string }[] = [
-  { provider: 'google', label: 'Entrar com Google', icon: 'i-simple-icons-google' },
-  { provider: 'apple', label: 'Entrar com Apple', icon: 'i-simple-icons-apple' },
-]
+const SOCIAL_PROVIDERS: SocialProvider[] = ['google', 'apple']
 
 // A provider is only offered when the backend has its credentials.
 const { data: providers } = await useFetch<string[]>('/api/sign-in-providers', { key: 'sign-in-providers', default: () => [] })
+const offered = computed(() => SOCIAL_PROVIDERS.filter(provider => providers.value.includes(provider)))
 /** The provider the browser is being sent to. */
 const leavingFor = ref<SocialProvider | null>(null)
-const providerButtons = computed<ButtonProps[]>(() => SOCIAL_BUTTONS
-  .filter(button => providers.value.includes(button.provider))
-  .map(({ provider, label, icon }) => ({
-    label,
-    icon,
-    loading: leavingFor.value === provider,
-    disabled: leavingFor.value !== null,
-    onClick: () => social(provider),
-  })))
+// The form draws its separator only when it is given providers. The buttons themselves come from
+// the `providers` slot, since Google and Apple each prescribe how theirs looks.
+const providerButtons = computed<ButtonProps[]>(() => offered.value.map(provider => ({ label: provider })))
 
 async function social(provider: SocialProvider) {
   leavingFor.value = provider
@@ -88,6 +80,45 @@ async function submit(event: FormSubmitEvent<Credentials>) {
         :loading="loading"
         @submit="submit"
       >
+        <template v-if="offered.length" #providers>
+          <!--
+            Google's branding guidelines: the light theme's fill, stroke and text colors, Google
+            Sans Medium 14/20, the standard color "G", 12px before the logo, 10px after it and 12px
+            after the text. The light theme is used in dark mode too, where it matches the form's
+            own white button; Google's themes aren't tied to the page's.
+          -->
+          <button
+            v-if="offered.includes('google')"
+            type="button"
+            class="flex h-10 w-full items-center justify-center gap-2.5 rounded-md border border-[#747775] bg-white px-3 font-google text-sm/5 font-medium text-[#1f1f1f] disabled:cursor-not-allowed disabled:opacity-75"
+            :disabled="leavingFor !== null"
+            @click="social('google')"
+          >
+            <UIcon v-if="leavingFor === 'google'" name="i-lucide-loader-circle" class="size-5 animate-spin" />
+            <img v-else src="/sign-in/google-g.png" alt="" class="size-5">
+            Continuar com o Google
+          </button>
+          <!--
+            Apple's guidelines for a custom button: black on a light background and white on a dark
+            one, logo and title in the same color, a title at 43% of the button's height, and at
+            least 8% of the width after the title. The title is Apple's own wording for pt-BR. The
+            logo is the icon set's glyph, so no Apple artwork is kept in the repository.
+          -->
+          <button
+            v-if="offered.includes('apple')"
+            type="button"
+            class="flex h-10 w-full items-center justify-center rounded-md bg-black px-[8%] text-[17px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-75 dark:bg-white dark:text-black"
+            :disabled="leavingFor !== null"
+            @click="social('apple')"
+          >
+            <UIcon
+              :name="leavingFor === 'apple' ? 'i-lucide-loader-circle' : 'i-simple-icons-apple'"
+              class="mr-1.5 size-[18px]"
+              :class="{ 'animate-spin': leavingFor === 'apple' }"
+            />
+            Continuar com a Apple
+          </button>
+        </template>
         <template #password-hint>
           <ULink to="/forgot-password" class="font-medium text-primary" tabindex="-1">
             Esqueceu a senha?
