@@ -23,8 +23,13 @@
 #                               no default; Apple sign in is off without all four. They are the
 #                               Services ID, the team ID, the key's ID and its .p8 contents
 #                               (line breaks may be written as \n)
-#   APPLE_APP_BUNDLE_IDENTIFIER             no default; iOS bundle ID, for native Apple sign in
+#   APPLE_APP_BUNDLE_IDENTIFIER             no default; iOS bundle ID, for native Apple sign in. With
+#                               APPLE_TEAM_ID set, /.well-known/apple-app-site-association is served
 #   PASSKEY_RP_ID               hostname of BETTER_AUTH_URL
+#   ANDROID_APP_PACKAGE         no default; Android application ID of the mobile app
+#   ANDROID_APP_CERT_SHA256     no default; comma-separated SHA-256 fingerprints of the
+#                               certificates that sign it. With both set, the app can sign in with
+#                               passkeys and /.well-known/assetlinks.json is served
 #   RESEND_API_KEY              no default; Resend key for password reset emails, none are sent without it
 #   RESEND_FROM                 maimoni <onboarding@resend.dev>, which only reaches the Resend account's
 #                               own address; set a sender on a domain verified in Resend
@@ -113,6 +118,8 @@ services:
       APPLE_PRIVATE_KEY: ${APPLE_PRIVATE_KEY:-}
       APPLE_APP_BUNDLE_IDENTIFIER: ${APPLE_APP_BUNDLE_IDENTIFIER:-}
       PASSKEY_RP_ID: ${PASSKEY_RP_ID:-}
+      ANDROID_APP_PACKAGE: ${ANDROID_APP_PACKAGE:-}
+      ANDROID_APP_CERT_SHA256: ${ANDROID_APP_CERT_SHA256:-}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       RESEND_FROM: ${RESEND_FROM:-}
     expose:

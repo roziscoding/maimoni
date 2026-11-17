@@ -1,6 +1,7 @@
 import type { HonoLogLayerVariables } from '@loglayer/hono'
 import type { Auth } from './auth'
 import type { Database } from './db'
+import type { AppLinks } from './lib/app-links'
 import type { AppReleaseService } from './services/app-releases'
 import type { RateService } from './services/rates'
 import type { WiseService } from './services/wise'
@@ -9,6 +10,7 @@ import { passwordResetRequestSchema, wiseQuoteQuerySchema } from '@maimoni/share
 import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { requireSession, RESET_PASSWORD_PATH } from './auth'
+import { appLinksFromEnv } from './lib/app-links'
 import { log } from './lib/log'
 import { validate } from './lib/validate'
 import { appReleaseRoutes } from './routes/app-releases'
@@ -17,6 +19,7 @@ import { dataRoutes } from './routes/data'
 import { monthRoutes } from './routes/months'
 import { spendRoutes } from './routes/spends'
 import { templateRoutes } from './routes/template'
+import { wellKnownRoutes } from './routes/well-known'
 import { createAppReleaseService } from './services/app-releases'
 
 const EXCLUDED_LOG_PATHS = [
@@ -30,10 +33,12 @@ export interface AppOptions {
   wise: WiseService
   /** Mobile app releases; without one, the update endpoints answer 503. */
   appReleases?: AppReleaseService
+  /** Mobile app identifiers for the `.well-known` files; without them those answer 404. */
+  appLinks?: AppLinks
 }
 
-export function createApp({ db, auth, rates, wise, appReleases = createAppReleaseService() }: AppOptions) {
-  // Public: health checks, Better Auth's own endpoints, the sign in provider list, password reset requests, and app updates (so a build without sign in can still update).
+export function createApp({ db, auth, rates, wise, appReleases = createAppReleaseService(), appLinks = appLinksFromEnv() }: AppOptions) {
+  // Public: health checks, Better Auth's own endpoints, the sign in provider list, password reset requests, app updates (so a build without sign in can still update), and the app association files.
   const api = new Hono()
     .get('/health', c => c.json({ ok: true }))
     .on(['GET', 'POST'], '/auth/*', c => auth.handler(c.req.raw))
@@ -54,6 +59,7 @@ export function createApp({ db, auth, rates, wise, appReleases = createAppReleas
       return c.body(null, 204)
     })
     .route('/', appReleaseRoutes(appReleases))
+    .route('/', wellKnownRoutes(appLinks))
     .use(requireSession(auth))
     .get('/rates/live', async (c) => {
       const { rate, error } = await rates.get()

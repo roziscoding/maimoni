@@ -7,7 +7,7 @@ The frontend never calls the backend directly: Nuxt proxies `/api/**` to `NUXT_A
 
 ## Authentication
 
-Every route below except `/api/health`, `/api/sign-in-providers`, `/api/password-reset` and the app update routes needs a session and answers `401 { error }` without one. Data is scoped to the signed in user.
+Every route below except `/api/health`, `/api/sign-in-providers`, `/api/password-reset`, the app update routes and the `/api/well-known/*` association files needs a session and answers `401 { error }` without one. Data is scoped to the signed in user. The frontend serves both association files at `/.well-known/<file>`, where Android and iOS look for them.
 
 - **Web:** the session cookie set by `/api/auth/sign-in/*`.
 - **Mobile:** `Authorization: Bearer <token>`.
@@ -22,6 +22,8 @@ Every route below except `/api/health`, `/api/sign-in-providers`, `/api/password
 | GET | `/api/health` | | `{ ok: true }` |
 | GET | `/api/sign-in-providers` | | `string[]`: the social providers whose credentials are set, e.g. `["google"]` |
 | POST | `/api/password-reset` | `PasswordResetRequest` (`{ email }`) | 204, whether or not the email belongs to a user. A user with that email is sent a link, valid for 1 hour, to `/reset-password?token=...`; the page sets the new password with Better Auth's `POST /api/auth/reset-password` (`{ newPassword, token }`) |
+| GET | `/api/well-known/assetlinks.json` | | Digital Asset Links statement for the Android app (404 unless `ANDROID_APP_PACKAGE` and `ANDROID_APP_CERT_SHA256` are set) |
+| GET | `/api/well-known/apple-app-site-association` | | `{ webcredentials: { apps } }` (404 unless `APPLE_TEAM_ID` and `APPLE_APP_BUNDLE_IDENTIFIER` are set) |
 | GET | `/api/rates/live` | | `LiveRate` (503 when no provider answered and nothing is cached) |
 | GET | `/api/wise/quote?sendAmount=` or `?recipientGetsAmount=` | | `WiseQuote` — fills the other side and fee from Wise (503 when Wise can't be reached) |
 | GET | `/api/template` | | `TemplateDetail` (`{ items, settings }`) |

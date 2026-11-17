@@ -94,6 +94,20 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _passkey() async {
+    setState(() {
+      _busyProvider = 'passkey';
+      _failure = null;
+    });
+    final failure = await signInPasskey();
+    if (mounted) {
+      setState(() {
+        _busyProvider = null;
+        _failure = failure;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
@@ -147,7 +161,8 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 8),
                     ActionButton(label: 'Entrar', loading: _loading, onPressed: _submit),
-                    if (_google || _apple) ...[
+                    // The passkey button is always there on a phone, so the separator is too.
+                    if (_mobile) ...[
                       const SizedBox(height: 16),
                       Row(
                         children: [
@@ -160,22 +175,32 @@ class _LoginScreenState extends State<LoginScreen> {
                         ],
                       ),
                       const SizedBox(height: 16),
+                      if (_google) ...[
+                        ActionButton(
+                          label: 'Entrar com Google',
+                          style: ActionStyle.outline,
+                          loading: _busyProvider == 'google',
+                          onPressed: _busy ? null : () => _social('google', googleIdToken),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                      if (_apple) ...[
+                        ActionButton(
+                          label: 'Entrar com Apple',
+                          style: ActionStyle.outline,
+                          loading: _busyProvider == 'apple',
+                          onPressed: _busy ? null : () => _social('apple', appleIdToken),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                      ActionButton(
+                        label: 'Entrar com passkey',
+                        icon: LucideIcons.keyRound,
+                        style: ActionStyle.outline,
+                        loading: _busyProvider == 'passkey',
+                        onPressed: _busy ? null : _passkey,
+                      ),
                     ],
-                    if (_google)
-                      ActionButton(
-                        label: 'Entrar com Google',
-                        style: ActionStyle.outline,
-                        loading: _busyProvider == 'google',
-                        onPressed: _busy ? null : () => _social('google', googleIdToken),
-                      ),
-                    if (_google && _apple) const SizedBox(height: 8),
-                    if (_apple)
-                      ActionButton(
-                        label: 'Entrar com Apple',
-                        style: ActionStyle.outline,
-                        loading: _busyProvider == 'apple',
-                        onPressed: _busy ? null : () => _social('apple', appleIdToken),
-                      ),
                   ],
                 ),
               ),

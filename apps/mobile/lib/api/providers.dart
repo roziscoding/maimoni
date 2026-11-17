@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:passkeys/authenticator.dart';
+import 'package:passkeys/types.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 import '../config.dart';
@@ -56,3 +58,30 @@ Future<ProviderToken?> _appleIdToken() async {
     rethrow;
   }
 }
+
+/// Shows the system's passkey sheet for the server's request options and returns the assertion as
+/// WebAuthn JSON; `null` when the person closed it. Replaceable in tests.
+Future<Map<String, dynamic>?> Function(Map<String, dynamic> options) passkeyAssertion = _passkeyAssertion;
+
+Future<Map<String, dynamic>?> _passkeyAssertion(Map<String, dynamic> options) async {
+  final request = AuthenticateRequestType.fromJson(
+    options,
+    mediation: MediationType.Optional,
+    // False: with nothing on the device the system still offers another device or a security key.
+    preferImmediatelyAvailableCredentials: false,
+  );
+  try {
+    return (await PasskeyAuthenticator().authenticate(request)).toJson();
+  } on PasskeyAuthCancelledException {
+    // Android also reports a skipped biometric prompt this way (`CredentialNotAuthenticatedException`).
+    return null;
+  }
+}
+
+/// Message in Portuguese for a failure of the passkey sheet, or `null` when [error] isn't one.
+String? passkeyError(Object error) => switch (error) {
+      NoCredentialsAvailableException() => 'Nenhuma passkey encontrada neste aparelho.',
+      PasskeyUnsupportedException() || DeviceNotSupportedException() => 'Este aparelho não suporta passkeys.',
+      DomainNotAssociatedException() => 'Este aplicativo não está associado ao servidor.',
+      _ => null,
+    };

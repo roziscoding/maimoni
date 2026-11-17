@@ -20,6 +20,7 @@ dependencies:
   lucide_icons_flutter: ^4.0.3
   ota_update: ^7.1.0
   package_info_plus: ^10.2.2
+  passkeys: ^2.24.2
   shared_preferences: ^2.5.6
   sign_in_with_apple: ^8.2.0
 dev_dependencies:
