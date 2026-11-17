@@ -4,6 +4,8 @@
 @theme {
   --font-sans: 'Inter', sans-serif;
   --font-mono: 'Geist Mono', monospace;
+  /* Only for the "Continue with Google" button, whose typeface Google prescribes. */
+  --font-google: 'Google Sans', sans-serif;
 }
 
 :root {

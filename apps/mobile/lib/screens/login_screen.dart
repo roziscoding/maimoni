@@ -9,6 +9,7 @@ import '../config.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/fields.dart';
+import '../widgets/sign_in_buttons.dart';
 import 'forgot_password_screen.dart';
 
 /// The web's `/login`. Shown for every route while signed out; signing in swaps it for the app.
@@ -176,29 +177,28 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: 16),
                       if (_google) ...[
-                        ActionButton(
-                          label: 'Entrar com Google',
-                          style: ActionStyle.outline,
+                        GoogleSignInButton(
                           loading: _busyProvider == 'google',
                           onPressed: _busy ? null : () => _social('google', googleIdToken),
                         ),
                         const SizedBox(height: 8),
                       ],
                       if (_apple) ...[
-                        ActionButton(
-                          label: 'Entrar com Apple',
-                          style: ActionStyle.outline,
+                        AppleSignInButton(
                           loading: _busyProvider == 'apple',
                           onPressed: _busy ? null : () => _social('apple', appleIdToken),
                         ),
                         const SizedBox(height: 8),
                       ],
-                      ActionButton(
-                        label: 'Entrar com passkey',
-                        icon: LucideIcons.keyRound,
-                        style: ActionStyle.outline,
-                        loading: _busyProvider == 'passkey',
-                        onPressed: _busy ? null : _passkey,
+                      SizedBox(
+                        height: signInButtonHeight,
+                        child: ActionButton(
+                          label: 'Entrar com passkey',
+                          icon: LucideIcons.keyRound,
+                          style: ActionStyle.outline,
+                          loading: _busyProvider == 'passkey',
+                          onPressed: _busy ? null : _passkey,
+                        ),
                       ),
                     ],
                   ],

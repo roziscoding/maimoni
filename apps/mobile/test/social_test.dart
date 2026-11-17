@@ -118,8 +118,8 @@ void main() {
       Api.instance.httpClient = _server(['google', 'apple']);
       await tester.pumpWidget(_login());
       await tester.pumpAndSettle();
-      expect(find.text('Entrar com Google'), findsOneWidget);
-      expect(find.text('Entrar com Apple'), findsNothing);
+      expect(find.text('Continuar com o Google'), findsOneWidget);
+      expect(find.text('Continuar com a Apple'), findsNothing);
       debugDefaultTargetPlatformOverride = null;
     });
 
@@ -128,8 +128,8 @@ void main() {
       Api.instance.httpClient = _server(['google', 'apple']);
       await tester.pumpWidget(_login());
       await tester.pumpAndSettle();
-      expect(find.text('Entrar com Google'), findsOneWidget);
-      expect(find.text('Entrar com Apple'), findsOneWidget);
+      expect(find.text('Continuar com o Google'), findsOneWidget);
+      expect(find.text('Continuar com a Apple'), findsOneWidget);
       debugDefaultTargetPlatformOverride = null;
     });
 
@@ -138,8 +138,8 @@ void main() {
       Api.instance.httpClient = _server(null);
       await tester.pumpWidget(_login());
       await tester.pumpAndSettle();
-      expect(find.text('Entrar com Google'), findsNothing);
-      expect(find.text('Entrar com Apple'), findsNothing);
+      expect(find.text('Continuar com o Google'), findsNothing);
+      expect(find.text('Continuar com a Apple'), findsNothing);
       await tester.enterText(find.byType(TextField).first, 'ana@example.com');
       await tester.enterText(find.byType(TextField).last, 'wrong');
       await tester.tap(find.text('Entrar'));
@@ -154,7 +154,7 @@ void main() {
       Api.instance.httpClient = _server(['google'], onSocial: (_) => socialRequests++);
       await tester.pumpWidget(_login());
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Entrar com Google'));
+      await tester.tap(find.text('Continuar com o Google'));
       await tester.pumpAndSettle();
       expect(socialRequests, 0);
       expect(find.byType(Callout), findsNothing);
@@ -168,7 +168,7 @@ void main() {
       Api.instance.httpClient = _server(['apple'], onSocial: (_) => socialRequests++);
       await tester.pumpWidget(_login());
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Entrar com Apple'));
+      await tester.tap(find.text('Continuar com a Apple'));
       await tester.pumpAndSettle();
       expect(socialRequests, 0);
       expect(find.byType(Callout), findsNothing);
@@ -181,7 +181,7 @@ void main() {
       Api.instance.httpClient = _server(['google'], onSocial: (request) => sent = jsonDecode(request.body) as Map<String, dynamic>);
       await tester.pumpWidget(_login());
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Entrar com Google'));
+      await tester.tap(find.text('Continuar com o Google'));
       await tester.pumpAndSettle();
       expect(sent, {
         'provider': 'google',
@@ -195,7 +195,7 @@ void main() {
       Api.instance.httpClient = _server(['google']);
       await tester.pumpWidget(_login());
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Entrar com Google'));
+      await tester.tap(find.text('Continuar com o Google'));
       await tester.pumpAndSettle();
       expect(find.widgetWithText(Callout, 'Não foi possível entrar com essa conta.'), findsOneWidget);
     });

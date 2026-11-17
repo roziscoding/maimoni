@@ -13,14 +13,23 @@ mirrors the shared tests.
 - Sign in is by email and password, Google, Apple or a passkey.
 - ***Esqueceu a senha?*** asks the server for a reset link. The new password is set on the web page
   the link opens.
-- ***Entrar com Google*** appears when the server lists Google. It needs, in the Google Cloud project
+- ***Continuar com o Google*** appears when the server lists Google. It needs, in the Google Cloud project
   of the web client:
   - an Android OAuth client for `ninja.roz.maimoni` with the SHA-1 of each signing key. A build
     signed with a key that has no Android client behaves as if the person cancelled.
   - an iOS OAuth client for the bundle ID. The server needs its ID in `GOOGLE_IOS_CLIENT_ID`.
 - The Google client IDs live in `lib/config.dart`, and the iOS URL scheme in `ios/Runner/Info.plist`.
-- ***Entrar com Apple*** appears on iOS only, when the server lists Apple. It needs the Sign in with
-  Apple capability on the App ID and `APPLE_APP_BUNDLE_IDENTIFIER` on the server.
+- ***Continuar com a Apple*** appears on iOS only, when the server lists Apple. It needs the Sign in
+  with Apple capability on the App ID and `APPLE_APP_BUNDLE_IDENTIFIER` on the server.
+- Both buttons follow their provider's guidelines
+  ([Google](https://developers.google.com/identity/branding-guidelines),
+  [Apple](https://developer.apple.com/design/human-interface-guidelines/sign-in-with-apple)) and are
+  drawn in `lib/widgets/sign_in_buttons.dart`. The logos in `assets/sign-in` come from each
+  provider's official bundle:
+  - Google's "G" is cut from the logo-only buttons of `signin-assets.zip`, one per theme.
+  - Apple's logo is the medium left-aligned artwork of `Logo-Sign-in-with-Apple.dmg`. Its license
+    covers apps that offer Sign in with Apple, for Apple Developer Program members, and doesn't
+    allow handing the files out on their own.
 - ***Entrar com passkey*** is always shown on Android and iOS. It signs in with a passkey that
   already exists for the server's domain; the app doesn't create passkeys.
   - It needs Android 9 or iOS 16.
