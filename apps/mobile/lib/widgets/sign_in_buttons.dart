@@ -2,14 +2,16 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-/// Height of every sign in button below the form. Apple recommends 44 pt for its button and
-/// doesn't allow it to be smaller than the others.
-const signInButtonHeight = 44.0;
+/// Height of every sign in button below the form: the height of Google's button and of the app's
+/// own. Apple doesn't allow its button to be smaller than the others, and ties its title's size to
+/// the height.
+const signInButtonHeight = 40.0;
 
 /// "Continue with Google", drawn to Google's branding guidelines
-/// (https://developers.google.com/identity/branding-guidelines): the light or dark theme's fill,
-/// stroke and text colors, Google Sans Medium 14/20, and the standard color "G" from Google's
-/// asset bundle. The "G" images carry the theme's fill as their background.
+/// (https://developers.google.com/identity/branding-guidelines): the light theme's fill, stroke
+/// and text colors, Google Sans Medium 14/20, and the standard color "G" from Google's asset
+/// bundle. The light theme is used on dark backgrounds too, where it matches the app's own white
+/// buttons; Google's themes aren't tied to the app's.
 class GoogleSignInButton extends StatelessWidget {
   const GoogleSignInButton({super.key, required this.onPressed, this.loading = false});
 
@@ -18,14 +20,13 @@ class GoogleSignInButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final text = dark ? const Color(0xFFE3E3E3) : const Color(0xFF1F1F1F);
+    const text = Color(0xFF1F1F1F);
     // Google's paddings: 16/12/16 on iOS, 12/10/12 on Android.
     final ios = defaultTargetPlatform == TargetPlatform.iOS;
     final edge = ios ? 16.0 : 12.0;
     return _ProviderButton(
-      fill: dark ? const Color(0xFF131314) : Colors.white,
-      border: dark ? const Color(0xFF8E918F) : const Color(0xFF747775),
+      fill: Colors.white,
+      border: const Color(0xFF747775),
       onPressed: loading ? null : onPressed,
       child: Padding(
         padding: EdgeInsets.symmetric(horizontal: edge),
@@ -38,8 +39,8 @@ class GoogleSignInButton extends StatelessWidget {
               SizedBox.square(
                 dimension: 20,
                 child: loading
-                    ? Padding(padding: const EdgeInsets.all(2), child: CircularProgressIndicator(strokeWidth: 2, color: text))
-                    : Image.asset('assets/sign-in/google-g-${dark ? 'dark' : 'light'}.png'),
+                    ? const Padding(padding: EdgeInsets.all(2), child: CircularProgressIndicator(strokeWidth: 2, color: text))
+                    : Image.asset('assets/sign-in/google-g.png'),
               ),
               SizedBox(width: ios ? 12 : 10),
               Text(
@@ -79,9 +80,10 @@ class AppleSignInButton extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // The artwork is 31x44 and must not be cropped or padded vertically.
+              // The artwork is 31x44, rendered from Apple's vector file at this height. It must fill
+              // the button's height, with no cropping and no vertical padding.
               SizedBox(
-                width: 31,
+                width: signInButtonHeight * 31 / 44,
                 height: signInButtonHeight,
                 child: loading
                     ? Center(child: SizedBox.square(dimension: 16, child: CircularProgressIndicator(strokeWidth: 2, color: content)))

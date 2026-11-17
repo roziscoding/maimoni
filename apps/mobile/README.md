@@ -26,8 +26,9 @@ mirrors the shared tests.
   [Apple](https://developer.apple.com/design/human-interface-guidelines/sign-in-with-apple)) and are
   drawn in `lib/widgets/sign_in_buttons.dart`. The logos in `assets/sign-in` come from each
   provider's official bundle:
-  - Google's "G" is cut from the logo-only buttons of `signin-assets.zip`, one per theme.
-  - Apple's logo is the medium left-aligned artwork of `Logo-Sign-in-with-Apple.dmg`. Its license
+  - Google's "G" is cut from the light theme's logo-only button of `signin-assets.zip`.
+  - Apple's logo is the medium left-aligned artwork of `Logo-Sign-in-with-Apple.dmg`, rendered from
+    its vector file at the button's height. Its license
     covers apps that offer Sign in with Apple, for Apple Developer Program members, and doesn't
     allow handing the files out on their own.
 - ***Entrar com passkey*** is always shown on Android and iOS. It signs in with a passkey that

@@ -82,43 +82,41 @@ async function submit(event: FormSubmitEvent<Credentials>) {
       >
         <template v-if="offered.length" #providers>
           <!--
-            Google's branding guidelines: light or dark fill, stroke and text colors, Google Sans
-            Medium 14/20, the standard color "G" (its image carries the theme's fill), 12px before
-            the logo, 10px after it and 12px after the text.
+            Google's branding guidelines: the light theme's fill, stroke and text colors, Google
+            Sans Medium 14/20, the standard color "G", 12px before the logo, 10px after it and 12px
+            after the text. The light theme is used in dark mode too, where it matches the form's
+            own white button; Google's themes aren't tied to the page's.
           -->
           <button
             v-if="offered.includes('google')"
             type="button"
-            class="flex h-11 w-full items-center justify-center gap-2.5 rounded-md border border-[#747775] bg-white px-3 font-google text-sm/5 font-medium text-[#1f1f1f] disabled:cursor-not-allowed disabled:opacity-75 dark:border-[#8e918f] dark:bg-[#131314] dark:text-[#e3e3e3]"
+            class="flex h-10 w-full items-center justify-center gap-2.5 rounded-md border border-[#747775] bg-white px-3 font-google text-sm/5 font-medium text-[#1f1f1f] disabled:cursor-not-allowed disabled:opacity-75"
             :disabled="leavingFor !== null"
             @click="social('google')"
           >
             <UIcon v-if="leavingFor === 'google'" name="i-lucide-loader-circle" class="size-5 animate-spin" />
-            <template v-else>
-              <img src="/sign-in/google-g-light.png" alt="" class="size-5 dark:hidden">
-              <img src="/sign-in/google-g-dark.png" alt="" class="hidden size-5 dark:block">
-            </template>
+            <img v-else src="/sign-in/google-g.png" alt="" class="size-5">
             Continuar com o Google
           </button>
           <!--
             Apple's guidelines for a custom button: black on a light background and white on a dark
-            one, Apple's logo artwork at the button's full height (44px, no vertical padding), a
+            one, Apple's logo artwork at the button's full height (40px, no vertical padding), a
             title at 43% of that height, and at least 8% of the width after the title. The title is
             Apple's own wording for pt-BR.
           -->
           <button
             v-if="offered.includes('apple')"
             type="button"
-            class="flex h-11 w-full items-center justify-center rounded-md bg-black px-[8%] text-[19px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-75 dark:bg-white dark:text-black"
+            class="flex h-10 w-full items-center justify-center rounded-md bg-black px-[8%] text-[17px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-75 dark:bg-white dark:text-black"
             :disabled="leavingFor !== null"
             @click="social('apple')"
           >
-            <span v-if="leavingFor === 'apple'" class="flex h-11 w-[31px] items-center justify-center">
+            <span v-if="leavingFor === 'apple'" class="flex h-10 w-7 items-center justify-center">
               <UIcon name="i-lucide-loader-circle" class="size-5 animate-spin" />
             </span>
             <template v-else>
-              <img src="/sign-in/apple-logo-white.svg" alt="" class="h-11 w-auto dark:hidden">
-              <img src="/sign-in/apple-logo-black.svg" alt="" class="hidden h-11 w-auto dark:block">
+              <img src="/sign-in/apple-logo-white.svg" alt="" class="h-10 w-auto dark:hidden">
+              <img src="/sign-in/apple-logo-black.svg" alt="" class="hidden h-10 w-auto dark:block">
             </template>
             Continuar com a Apple
           </button>
