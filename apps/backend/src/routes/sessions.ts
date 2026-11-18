@@ -39,9 +39,17 @@ export function sessionRoutes(auth: Auth) {
       await internalAdapter.deleteSessions(sessions.filter(session => session.id !== c.var.session.id).map(session => session.token))
       return c.body(null, 204)
     })
+    // Ends the session making the request, for clients that hold a bearer token rather than a cookie.
+    // Better Auth's `sign-out` answers 200 even when deleting the session fails; here a failure
+    // surfaces as a 500, so 204 means the token no longer works.
+    .delete('/sessions/current', async (c) => {
+      const { internalAdapter } = await auth.$context
+      await internalAdapter.deleteSession(c.var.session.token)
+      return c.body(null, 204)
+    })
     .delete('/sessions/:id', validate('param', idParam), async (c) => {
       const { id } = c.req.valid('param')
-      // Signing out also clears the cookie, which this route doesn't.
+      // On the web, signing out also clears the cookie, which this route doesn't.
       if (id === c.var.session.id)
         return c.json({ error: 'Sign out to end the current session' }, 400)
       const { internalAdapter, sessions } = await active(c.var.user.id)

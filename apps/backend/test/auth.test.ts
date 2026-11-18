@@ -156,6 +156,25 @@ describe('auth', () => {
     expect((await third('GET', '/months')).status).toBe(401)
     expect((await first<SessionEntry[]>('GET', '/sessions')).body).toHaveLength(1)
     expect((await other('GET', '/months')).status).toBe(200)
+
+    // A bearer client ends its own session, and the token stops working.
+    expect((await first('DELETE', '/sessions/current')).status).toBe(204)
+    expect((await first('GET', '/months')).status).toBe(401)
+    expect((await first('DELETE', '/sessions/current')).status).toBe(401)
+  })
+
+  test('ending the current session reports a failure to delete it', async () => {
+    const { app, auth, as } = await setup()
+    await createTestUser(auth, 'mobile@example.com')
+    const session = as({ authorization: `Bearer ${(await login(app, 'mobile@example.com')).headers.get('set-auth-token')}` })
+    const { internalAdapter } = await auth.$context
+    const deleteSession = internalAdapter.deleteSession
+    internalAdapter.deleteSession = async () => {
+      throw new Error('database is down')
+    }
+    expect((await session('DELETE', '/sessions/current')).status).toBe(500)
+    internalAdapter.deleteSession = deleteSession
+    expect((await session('GET', '/months')).status).toBe(200)
   })
 
   test('each sign in is its own session', async () => {

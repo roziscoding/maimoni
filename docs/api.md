@@ -53,6 +53,7 @@ Every route below except `/api/health`, `/api/sign-in-providers`, `/api/password
 | GET | `/api/sessions` | | `SessionEntry[]` — the user's valid sessions, the current one first |
 | DELETE | `/api/sessions/:id` | | 204 — ends that session; 400 for the current one, which ends by signing out |
 | DELETE | `/api/sessions` | | 204 — ends every session but the current one |
+| DELETE | `/api/sessions/current` | | 204 — ends the session making the request, once it is deleted; the mobile app signs out with it |
 
 ## Behaviour notes
 
