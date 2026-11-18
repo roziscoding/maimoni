@@ -247,16 +247,6 @@ function cellLabel(day: DayResult) {
             <p v-else class="text-sm text-muted">
               Nenhum gasto neste dia.
             </p>
-
-            <UButton
-              v-if="selectedDay.state === 'open'"
-              to="/"
-              label="Lançar gastos em Hoje"
-              icon="i-lucide-wallet"
-              color="neutral"
-              variant="link"
-              class="px-0"
-            />
           </section>
         </template>
 
