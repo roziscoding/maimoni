@@ -5,7 +5,7 @@ name: Mobile release
 # Promotion: beta moves to main's commit, or stable moves to beta's. Both only fast-forward, so
 # stable never gets code that wasn't released as a beta first.
 #
-# Publishing, from the promoted branch: semantic-release picks the version from the commits that
+# Publishing, from the promoted commit: semantic-release picks the version from the commits that
 # touch the mobile app (X.Y.Z-beta.N on beta, X.Y.Z on stable); the Android APK and the iOS build
 # are made with it. Only when both succeed is the mobile-vX.Y.Z tag and GitHub release (with the
 # APK, a prerelease on beta) published, and only then does the iOS build go to TestFlight. A failed
@@ -79,9 +79,12 @@ jobs:
       ios_version: ${{ steps.semantic-release.outputs.ios_version }}
       code: ${{ steps.semantic-release.outputs.code }}
     steps:
+      # The promoted commit, not the branch: a push to the branch during the run must not change
+      # the code that picks the version. semantic-release then finds the branch ahead of this
+      # checkout and releases nothing.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.channel }}
+          ref: ${{ needs.promote.outputs.sha }}
           fetch-depth: 0
       - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
@@ -127,15 +130,18 @@ jobs:
         with:
           keystore: ${{ steps.secrets.outputs.ANDROID_KEYSTORE }}
           password: ${{ steps.secrets.outputs.ANDROID_KEYSTORE_PASSWORD }}
+      # The version reaches the scripts through the environment, never pasted into their source.
       - name: Build the APK
-        run: >-
-          mise run mobile:build:android --
-          --build-name=${{ needs.plan.outputs.version }}
-          --build-number=${{ needs.plan.outputs.code }}
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+          CODE: ${{ needs.plan.outputs.code }}
+        run: mise run mobile:build:android -- "--build-name=$VERSION" "--build-number=$CODE"
       - name: Name the APK
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
         run: |
           mkdir -p dist
-          cp apps/mobile/build/app/outputs/flutter-apk/app-release.apk "dist/maimoni-${{ needs.plan.outputs.version }}.apk"
+          cp apps/mobile/build/app/outputs/flutter-apk/app-release.apk "dist/maimoni-$VERSION.apk"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: android
@@ -172,11 +178,15 @@ jobs:
           private-key: ${{ steps.secrets.outputs.APP_STORE_CONNECT_PRIVATE_KEY }}
           certificate-key: ${{ steps.secrets.outputs.IOS_CERTIFICATE_PRIVATE_KEY }}
       - name: Build the IPA
+        env:
+          VERSION: ${{ needs.plan.outputs.ios_version }}
+          CODE: ${{ needs.plan.outputs.code }}
+          EXPORT_OPTIONS_PLIST: ${{ steps.signing.outputs.export-options-plist }}
         run: >-
           mise run mobile:build:ipa --
-          --build-name=${{ needs.plan.outputs.ios_version }}
-          --build-number=${{ needs.plan.outputs.code }}
-          --export-options-plist=${{ steps.signing.outputs.export-options-plist }}
+          "--build-name=$VERSION"
+          "--build-number=$CODE"
+          "--export-options-plist=$EXPORT_OPTIONS_PLIST"
       # Kept only for the TestFlight job; it isn't attached to the GitHub release.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -187,14 +197,15 @@ jobs:
 
   publish:
     name: Publish
-    needs: [plan, android, ios]
+    needs: [promote, plan, android, ios]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      # The same commit the apps were built from, so the tag can't land on anything else.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.channel }}
+          ref: ${{ needs.promote.outputs.sha }}
           fetch-depth: 0
       - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
