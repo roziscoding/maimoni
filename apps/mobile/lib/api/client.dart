@@ -39,17 +39,21 @@ class Api {
 
   /// Sends a request and decodes the JSON answer. Adds the session's bearer token, stores the token
   /// a sign in or session refresh hands back, and ends the session when a data route answers 401.
+  ///
+  /// With [bearer], the request is made as that token instead and leaves the session alone, whatever
+  /// the answer: it is how a session that already ended here is ended on the server.
   Future<({dynamic data, http.Response response})> request(
     String method,
     String path, {
     Object? body,
     Map<String, String>? query,
     Map<String, String>? headers,
+    String? bearer,
   }) async {
     var uri = Uri.parse('$serverUrl/api$path');
     if (query != null) uri = uri.replace(queryParameters: query);
     final session = Session.instance;
-    final token = session.token;
+    final token = bearer ?? session.token;
     final request = http.Request(method, uri);
     // The server keeps the sign in request's user agent, and the session list names the device from it.
     request.headers['user-agent'] = 'maimoni-app (${defaultTargetPlatform.name})';
@@ -70,7 +74,7 @@ class Api {
     // Better Auth's bearer plugin sends the token on sign in and when it renews the session. Ignored
     // when the session changed while the request was in flight.
     final issued = response.headers['set-auth-token'];
-    if (issued != null && issued.isNotEmpty && session.token == token) session.setToken(issued);
+    if (issued != null && issued.isNotEmpty && bearer == null && session.token == token) session.setToken(issued);
     Object? data;
     try {
       // Decoded as UTF-8 explicitly: without a charset in the content type, `body` falls back to Latin-1.
@@ -83,7 +87,7 @@ class Api {
     if (response.statusCode >= 400) {
       // Better Auth's own routes answer 401 for wrong credentials, which says nothing about the session.
       // Nor does a 401 for a token the session has already left behind.
-      if (response.statusCode == 401 && token != null && session.token == token && !path.startsWith('/auth/')) {
+      if (response.statusCode == 401 && token != null && bearer == null && session.token == token && !path.startsWith('/auth/')) {
         session.clear(ifToken: token, expired: true);
         // Callers show this next to their own "couldn't save" title, in place of the server's "Unauthorized".
         throw ApiException('Sua sessão expirou. Entre de novo.', status: 401);
