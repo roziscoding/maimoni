@@ -2,7 +2,7 @@ import type { Conversion, DailySpend, LiveRate, Month, MonthDetail, MonthItem, M
 import type { AuthEnv } from '../auth'
 import type { Database } from '../db'
 import type { RateService } from '../services/rates'
-import type { WiseService } from '../services/wise'
+import type { UserQuote } from '../services/wise'
 import { createMonthItemSchema, createMonthSchema, monthKeySchema, reorderSchema, summarizeMonth, updateMonthItemSchema, updateMonthSchema } from '@maimoni/shared'
 import { and, asc, desc, eq, inArray, lt, max, or, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
@@ -15,8 +15,10 @@ import { getSettings, listTemplateItems, toTemplateItem } from './template'
 
 const itemParam = monthKeySchema.extend({ id: z.uuid() })
 
-function toMonth(row: typeof months.$inferSelect): Month {
-  const { updatedAt: _updatedAt, userId: _userId, ...month } = row
+type MonthRow = typeof months.$inferSelect
+
+function toMonth(row: MonthRow): Month {
+  const { updatedAt: _updatedAt, userId: _userId, wiseQuote: _wiseQuote, ...month } = row
   return { ...month, createdAt: new Date(month.createdAt).toISOString() }
 }
 
@@ -68,21 +70,34 @@ async function seedItems(db: Database, userId: string, { year, month }: MonthKey
   }))
 }
 
-export function monthRoutes(db: Database, rates: RateService, wise: WiseService) {
-  /** Summary with Wise's real fee for the BRL that remains after completed conversions. */
-  async function summarize(month: Month, items: MonthItem[], spends: DailySpend[], monthConversions: Conversion[], rate: LiveRate | null, fallbackFee: number) {
-    const context = { rate: rate?.rate ?? null, fallbackFee, spends, conversions: monthConversions }
-    const draft = summarizeMonth(month, items, context)
-    if (month.wiseFee !== null || draft.transfer.projected.sentBrl <= 0)
-      return { summary: draft, quote: null }
-    const quote = await wise.quote({ sendAmount: draft.transfer.projected.sentBrl })
-    return { summary: quote ? summarizeMonth(month, items, { ...context, quote }) : draft, quote }
+export function monthRoutes(db: Database, rates: RateService, quote: UserQuote) {
+  /**
+   * Summary with the fee from the month's stored Wise quote. Reading a month never asks Wise: the
+   * quote is taken when the month is created and again only when the user asks for it.
+   */
+  function summarize(row: MonthRow, items: MonthItem[], spends: DailySpend[], monthConversions: Conversion[], rate: LiveRate | null, fallbackFee: number) {
+    return summarizeMonth(toMonth(row), items, { rate: rate?.rate ?? null, fallbackFee, spends, conversions: monthConversions, quote: row.wiseQuote })
   }
 
-  async function detail(row: typeof months.$inferSelect): Promise<MonthDetail> {
+  async function detail(row: MonthRow): Promise<MonthDetail> {
     const [items, spends, monthConversions, rateResult, { wiseFee: fallbackFee }] = await Promise.all([listItems(db, row.id), listSpends(db, row.id), listConversions(db, row.id), rates.get(), getSettings(db, row.userId)])
-    const month = toMonth(row)
-    return { month, items, spends, conversions: monthConversions, rate: rateResult.rate, rateError: rateResult.error, fallbackFee, ...await summarize(month, items, spends, monthConversions, rateResult.rate, fallbackFee) }
+    return { month: toMonth(row), items, spends, conversions: monthConversions, rate: rateResult.rate, rateError: rateResult.error, fallbackFee, quote: row.wiseQuote, summary: summarize(row, items, spends, monthConversions, rateResult.rate, fallbackFee) }
+  }
+
+  /**
+   * Asks Wise for a quote for the BRL the month still expects to convert and stores it.
+   * Returns the month with it, `busy` or `null` as the quote did, or `nothing` when there's no BRL left to convert.
+   */
+  async function requote(row: MonthRow) {
+    const { summary } = await detail(row)
+    const sendAmount = summary.transfer.projected.sentBrl
+    if (sendAmount <= 0)
+      return 'nothing'
+    const wiseQuote = await quote(row.userId, { sendAmount })
+    if (!wiseQuote || wiseQuote === 'busy')
+      return wiseQuote
+    const [updated] = await db.update(months).set({ wiseQuote }).where(eq(months.id, row.id)).returning()
+    return updated!
   }
 
   return new Hono<AuthEnv>()
@@ -99,10 +114,9 @@ export function monthRoutes(db: Database, rates: RateService, wise: WiseService)
       const itemsByMonth = Map.groupBy(items.map(toMonthItem), item => item.monthId)
       const spendsByMonth = Map.groupBy(spends.map(toDailySpend), spend => spend.monthId)
       const conversionsByMonth = Map.groupBy(conversionRows.map(toConversion), conversion => conversion.monthId)
-      const body: MonthListEntry[] = await Promise.all(rows.map(async (row) => {
-        const month = toMonth(row)
-        const { summary } = await summarize(month, itemsByMonth.get(month.id) ?? [], spendsByMonth.get(month.id) ?? [], conversionsByMonth.get(month.id) ?? [], rateResult.rate, fallbackFee)
-        return { ...month, summary }
+      const body: MonthListEntry[] = rows.map(row => ({
+        ...toMonth(row),
+        summary: summarize(row, itemsByMonth.get(row.id) ?? [], spendsByMonth.get(row.id) ?? [], conversionsByMonth.get(row.id) ?? [], rateResult.rate, fallbackFee),
       }))
       return c.json(body)
     })
@@ -115,13 +129,29 @@ export function monthRoutes(db: Database, rates: RateService, wise: WiseService)
       if (!items)
         return c.json({ error: 'There is no earlier month to copy from' }, 400)
       const row = await db.transaction(async (tx) => {
-        // No manual fee: new months use Wise's real quote for whatever they end up sending.
         const [created] = await tx.insert(months).values({ ...key, userId }).returning()
         if (items.length)
           await tx.insert(monthItems).values(items.map(item => ({ ...item, monthId: created!.id, userId })))
         return created!
       })
-      return c.json(await detail(row), 201)
+      // No manual fee: the month starts with Wise's quote for what it expects to send. Without one
+      // (nothing to send, Wise down) it uses the fallback fee until the user asks for a quote.
+      const quoted = await requote(row)
+      return c.json(await detail(typeof quoted === 'object' && quoted ? quoted : row), 201)
+    })
+    // Replaces the month's stored Wise quote with a fresh one. The only way a quote changes after the month is created.
+    .post('/months/:year/:month/quote', validate('param', monthKeySchema), async (c) => {
+      const row = await findMonth(db, c.var.user.id, c.req.valid('param'))
+      if (!row)
+        return c.json({ error: 'Month not found' }, 404)
+      const quoted = await requote(row)
+      if (quoted === 'nothing')
+        return c.json({ error: 'There is no BRL left to convert' }, 400)
+      if (quoted === 'busy')
+        return c.json({ error: 'Another quote is under way' }, 429)
+      if (!quoted)
+        return c.json({ error: 'Wise quote unavailable' }, 503)
+      return c.json(await detail(quoted))
     })
     .get('/months/:year/:month', validate('param', monthKeySchema), async (c) => {
       const row = await findMonth(db, c.var.user.id, c.req.valid('param'))

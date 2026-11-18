@@ -1,5 +1,6 @@
+import type { WiseQuote } from '@maimoni/shared'
 import { relations, sql } from 'drizzle-orm'
-import { boolean, check, foreignKey, index, integer, numeric, pgEnum, pgTable, smallint, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core'
+import { boolean, check, foreignKey, index, integer, jsonb, numeric, pgEnum, pgTable, smallint, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core'
 import { user } from './auth-schema'
 
 export * from './auth-schema'
@@ -46,6 +47,8 @@ export const months = pgTable('months', {
   year: smallint('year').notNull(),
   month: smallint('month').notNull(),
   wiseFee: numeric('wise_fee', { precision: 6, scale: 5, mode: 'number' }),
+  /** Wise's quote from when the month was created, or from the last time the user asked for a new one. */
+  wiseQuote: jsonb('wise_quote').$type<WiseQuote>(),
   exchangeRate: numeric('exchange_rate', { precision: 12, scale: 6, mode: 'number' }),
   activeDay: smallint('active_day'),
   note: text('note'),

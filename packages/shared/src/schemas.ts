@@ -137,7 +137,7 @@ export const monthSchema = z.object({
   id,
   year: z.number().int(),
   month: z.number().int(),
-  /** Manual Wise fee as a fraction. `null` means the real fee quoted by Wise for the amount is used. */
+  /** Manual Wise fee as a fraction. `null` means the fee of the month's stored Wise quote is used. */
   wiseFee: z.number().nullable(),
   /** Locked EUR→BRL rate. `null` means the live rate is used. */
   exchangeRate: z.number().nullable(),

@@ -126,3 +126,22 @@ export function createWiseService({ fetch: fetcher = fetch, ttlMs = 5 * 60_000, 
     },
   }
 }
+
+/** A quote asked for by a user. `busy` when that user already has one under way. */
+export type UserQuote = (userId: string, input: WiseQuoteQuery) => Promise<WiseQuote | null | 'busy'>
+
+/** Lets each user ask for one quote at a time, so a single account can't fill the line every user's quotes wait in. */
+export function onePerUser(wise: WiseService): UserQuote {
+  const quoting = new Set<string>()
+  return async (userId, input) => {
+    if (quoting.has(userId))
+      return 'busy'
+    quoting.add(userId)
+    try {
+      return await wise.quote(input)
+    }
+    finally {
+      quoting.delete(userId)
+    }
+  }
+}

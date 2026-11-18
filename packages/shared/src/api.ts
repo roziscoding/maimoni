@@ -18,7 +18,7 @@ export interface MonthDetail {
   rate: LiveRate | null
   /** Why the live providers failed; present with a missing or stale rate. */
   rateError: string | null
-  /** Wise's quote for the BRL still projected to be converted. */
+  /** The month's stored Wise quote: from when it was created, or from the last time the user asked for a new one. */
   quote: WiseQuote | null
   /** Settings fee, used when there's no manual fee and no quote. */
   fallbackFee: number

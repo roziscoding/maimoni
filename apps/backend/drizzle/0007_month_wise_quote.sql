@@ -1,0 +1,1 @@
+ALTER TABLE "months" ADD COLUMN "wise_quote" jsonb;

@@ -163,7 +163,7 @@ export function spendInEur(spend: Pick<DailySpend, 'amount' | 'currency'>, trans
 
 /**
  * Wise fee in BRL for sending `sentBrl`. A quote for a different amount (the month was edited
- * since it was fetched) is scaled by its effective percentage until a fresh one arrives.
+ * since it was fetched) is scaled by its effective percentage.
  */
 function wiseFee(month: Pick<Month, 'wiseFee'>, sentBrl: number, { quote, fallbackFee }: SummaryContext): { feeBrl: number, fraction: number, source: FeeSource } {
   if (month.wiseFee !== null)

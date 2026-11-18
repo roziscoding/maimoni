@@ -22,6 +22,7 @@ import { spendRoutes } from './routes/spends'
 import { templateRoutes } from './routes/template'
 import { wellKnownRoutes } from './routes/well-known'
 import { createAppReleaseService } from './services/app-releases'
+import { onePerUser } from './services/wise'
 
 const EXCLUDED_LOG_PATHS = [
   '/api/health',
@@ -41,8 +42,7 @@ export interface AppOptions {
 }
 
 export function createApp({ db, auth, rates, wise, appReleases = createAppReleaseService(), appLinks = appLinksFromEnv() }: AppOptions) {
-  /** Users with a `/wise/quote` request under way. */
-  const quoting = new Set<string>()
+  const quote = onePerUser(wise)
   // Public: health checks, Better Auth's own endpoints, the sign in provider list, password reset requests, app updates (so a build without sign in can still update), and the app association files.
   const api = new Hono()
     .get('/health', c => c.json({ ok: true }))
@@ -76,23 +76,15 @@ export function createApp({ db, auth, rates, wise, appReleases = createAppReleas
       return c.json(rate)
     })
     .get('/wise/quote', validate('query', wiseQuoteQuerySchema), async (c) => {
-      // One at a time per user, so a single account can't fill the line every user's quotes wait in.
-      const userId = c.var.user.id
-      if (quoting.has(userId))
+      const result = await quote(c.var.user.id, c.req.valid('query'))
+      if (result === 'busy')
         return c.json({ error: 'Another quote is under way' }, 429)
-      quoting.add(userId)
-      try {
-        const quote = await wise.quote(c.req.valid('query'))
-        if (!quote)
-          return c.json({ error: 'Wise quote unavailable' }, 503)
-        return c.json(quote)
-      }
-      finally {
-        quoting.delete(userId)
-      }
+      if (!result)
+        return c.json({ error: 'Wise quote unavailable' }, 503)
+      return c.json(result)
     })
     .route('/', templateRoutes(db))
-    .route('/', monthRoutes(db, rates, wise))
+    .route('/', monthRoutes(db, rates, quote))
     .route('/', conversionRoutes(db))
     .route('/', spendRoutes(db))
     .route('/', dataRoutes(db))

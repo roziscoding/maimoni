@@ -102,7 +102,8 @@ describe('months', () => {
     await seedTemplate()
     await request('POST', '/months', { year: 2026, month: 10 })
     const { body: manual } = await request<MonthDetail>('PATCH', '/months/2026/10', { wiseFee: 0.039 })
-    expect(manual.quote).toBeNull()
+    // The stored quote stays for when the manual fee is removed.
+    expect(manual.quote).toMatchObject({ sendAmount: 9000 })
     expect(manual.summary.transfer).toMatchObject({ feeSource: 'manual', wiseFee: 0.039 })
     const { body: auto } = await request<MonthDetail>('PATCH', '/months/2026/10', { wiseFee: null })
     expect(auto.summary.transfer.feeSource).toBe('wise')
@@ -113,6 +114,55 @@ describe('months', () => {
     expect(body.fallbackFee).toBe(0.039)
     expect(body.summary.transfer).toMatchObject({ feeSource: 'fallback', projected: { feeBrl: 39 } })
     expect((await offline.request('GET', '/wise/quote?sendAmount=1000')).status).toBe(503)
+    expect((await offline.request('POST', '/months/2026/10/quote')).status).toBe(503)
+  })
+
+  test('asks Wise when a month is created and when the user asks, never when it is read', async () => {
+    const { db, app, auth } = await setup()
+    const asked: number[] = []
+    const counting = createApp({
+      db: db as never,
+      auth,
+      rates: { get: async () => ({ rate: null, error: null }) },
+      wise: {
+        quote: async ({ sendAmount }) => {
+          asked.push(sendAmount!)
+          return { sendAmount: sendAmount!, fee: sendAmount! * 0.04, receivedAmount: 0, rate: 1 / 6, fetchedAt: new Date().toISOString() }
+        },
+      },
+    })
+    const headers = { ...cookieHeaders(await login(app, 'owner@example.com')), 'content-type': 'application/json' }
+    const call = async (method: string, path: string, body?: unknown) => {
+      const response = await counting.request(`/api${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) })
+      const text = await response.text()
+      return { status: response.status, body: (text ? JSON.parse(text) : null) as MonthDetail }
+    }
+    await call('POST', '/template/items', { name: 'Salário', currency: 'BRL', kind: 'income', amount: 1000 })
+    const { body: created } = await call('POST', '/months', { year: 2026, month: 10 })
+    expect(asked).toEqual([1000])
+    expect(created.quote).toMatchObject({ sendAmount: 1000, fee: 40 })
+
+    // Edits change the amount to send; the stored quote stays and its fee is applied in proportion.
+    await call('POST', '/months/2026/10/items', { name: 'Bônus', currency: 'BRL', kind: 'income', amount: 1000 })
+    const { body: edited } = await call('GET', '/months/2026/10')
+    await call('GET', '/months')
+    expect(asked).toEqual([1000])
+    expect(edited.quote).toMatchObject({ sendAmount: 1000 })
+    expect(edited.summary.transfer).toMatchObject({ feeSource: 'wise', projected: { sentBrl: 2000, feeBrl: 80 } })
+
+    const { status, body: refreshed } = await call('POST', '/months/2026/10/quote')
+    expect(status).toBe(200)
+    expect(asked).toEqual([1000, 2000])
+    expect(refreshed.quote).toMatchObject({ sendAmount: 2000 })
+    expect((await call('GET', '/months/2026/10')).body.quote).toMatchObject({ sendAmount: 2000 })
+
+    // Nothing to convert, nothing to ask.
+    await call('POST', '/months', { year: 2026, month: 11 })
+    const { body: empty } = await call('GET', '/months/2026/11')
+    for (const item of empty.items)
+      await call('DELETE', `/months/2026/11/items/${item.id}`)
+    expect((await call('POST', '/months/2026/11/quote')).status).toBe(400)
+    expect(asked).toEqual([1000, 2000, 1000])
   })
 
   test('quotes by BRL sent or EUR received', async () => {
