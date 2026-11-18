@@ -59,6 +59,25 @@ test('limits how many requests to Wise run at once', async () => {
   expect(most).toBe(2)
 })
 
+test('refuses a quote at once when the line is full', async () => {
+  let calls = 0
+  const wise = createWiseService({
+    concurrency: 1,
+    maxWaiting: 2,
+    fetch: (async () => {
+      calls++
+      await Bun.sleep(10)
+      return Response.json(comparison)
+    }) as unknown as typeof fetch,
+  })
+  // One runs, two wait, the other seven are refused without waiting.
+  const quotes = Array.from({ length: 10 }, (_, index) => wise.quote({ sendAmount: 100 + index }))
+  const refused = await Promise.race([Promise.all(quotes.slice(3)), Bun.sleep(5).then(() => 'still waiting')])
+  expect(refused).toEqual(Array.from({ length: 7 }).fill(null))
+  expect((await Promise.all(quotes.slice(0, 3))).every(quote => quote !== null)).toBe(true)
+  expect(calls).toBe(3)
+})
+
 test('gives up on a quote that waits too long for a free slot', async () => {
   const wise = createWiseService({
     concurrency: 1,

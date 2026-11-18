@@ -20,6 +20,8 @@ export interface WiseServiceOptions {
   ttlMs?: number
   /** How many requests to Wise run at once; the rest wait for a free slot. */
   concurrency?: number
+  /** How many requests may wait for a slot; beyond that a quote fails at once. */
+  maxWaiting?: number
   /** How long a request to Wise may take, and how long a quote waits for a slot before giving up. */
   timeoutMs?: number
 }
@@ -30,12 +32,13 @@ export interface WiseService {
 }
 
 /** Uses Wise's public comparison API, which prices a transfer the same way the app does: mid-market rate, fee charged on the amount sent. */
-export function createWiseService({ fetch: fetcher = fetch, ttlMs = 5 * 60_000, concurrency = 4, timeoutMs = 5000 }: WiseServiceOptions = {}): WiseService {
+export function createWiseService({ fetch: fetcher = fetch, ttlMs = 5 * 60_000, concurrency = 4, maxWaiting = 100, timeoutMs = 5000 }: WiseServiceOptions = {}): WiseService {
   const cache = new Map<string, { quote: WiseQuote, expiresAt: number }>()
   /** Requests under way, by cache key, so the same amount is asked for once. */
   const pending = new Map<string, Promise<WiseQuote | null>>()
   let active = 0
-  const waiting: (() => void)[] = []
+  /** In arrival order; a Set, so a request that gives up leaves in constant time. */
+  const waiting = new Set<() => void>()
 
   // The month list asks for one quote per month at once; without a limit, an account with many
   // months turns one request into as many requests to Wise.
@@ -44,26 +47,32 @@ export function createWiseService({ fetch: fetcher = fetch, ttlMs = 5 * 60_000, 
       active++
       return Promise.resolve(true)
     }
+    // A full line is refused at once: waiting requests cost memory and a timer each.
+    if (waiting.size >= maxWaiting)
+      return Promise.resolve(false)
     return new Promise<boolean>((resolve) => {
       const timer = setTimeout(() => {
-        waiting.splice(waiting.indexOf(grant), 1)
+        waiting.delete(grant)
         resolve(false)
       }, timeoutMs)
       function grant() {
         clearTimeout(timer)
         resolve(true)
       }
-      waiting.push(grant)
+      waiting.add(grant)
     })
   }
 
   function release() {
     // A waiting request takes over the slot; otherwise it is freed.
-    const next = waiting.shift()
-    if (next)
+    const [next] = waiting
+    if (next) {
+      waiting.delete(next)
       next()
-    else
+    }
+    else {
       active--
+    }
   }
 
   async function request(input: WiseQuoteQuery, field: string, amount: number, key: string) {

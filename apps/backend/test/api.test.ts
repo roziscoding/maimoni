@@ -1,7 +1,8 @@
 import type { Conversion, DailySpend, MonthDetail, MonthItem, MonthListEntry, TemplateDetail, TemplateItem } from '@maimoni/shared'
 import { daysInMonth } from '@maimoni/shared'
 import { beforeEach, describe, expect, test } from 'bun:test'
-import { fakeWiseFee, setup } from './setup'
+import { createApp } from '../src/app'
+import { cookieHeaders, fakeWiseFee, login, setup, signIn } from './setup'
 
 let request: Awaited<ReturnType<typeof setup>>['request']
 
@@ -122,6 +123,28 @@ describe('months', () => {
     expect(reverse).toMatchObject({ sendAmount: 6250, fee: 250, receivedAmount: 1000 })
     expect((await request('GET', '/wise/quote?sendAmount=-1')).status).toBe(400)
     expect((await request('GET', '/wise/quote?sendAmount=100&recipientGetsAmount=10')).status).toBe(400)
+  })
+
+  test('answers one quote at a time per user', async () => {
+    const { db, app, auth } = await setup()
+    // A Wise slow enough for two requests to overlap.
+    const slow = createApp({
+      db: db as never,
+      auth,
+      rates: { get: async () => ({ rate: null, error: null }) },
+      wise: {
+        quote: async () => {
+          await Bun.sleep(50)
+          return { sendAmount: 100, fee: 4, receivedAmount: 16, rate: 1 / 6, fetchedAt: new Date().toISOString() }
+        },
+      },
+    })
+    const quote = async (headers: Record<string, string>) => (await slow.request('/api/wise/quote?sendAmount=100', { headers })).status
+    const owner = cookieHeaders(await login(app, 'owner@example.com'))
+    const other = await signIn(app, auth, 'other@example.com')
+    // The second user isn't held back by the first one's request.
+    expect((await Promise.all([quote(owner), quote(owner), quote(other)])).toSorted()).toEqual([200, 200, 429])
+    expect(await quote(owner)).toBe(200)
   })
 
   test('locks and unlocks the exchange rate', async () => {

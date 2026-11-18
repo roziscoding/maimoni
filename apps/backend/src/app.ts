@@ -40,6 +40,8 @@ export interface AppOptions {
 }
 
 export function createApp({ db, auth, rates, wise, appReleases = createAppReleaseService(), appLinks = appLinksFromEnv() }: AppOptions) {
+  /** Users with a `/wise/quote` request under way. */
+  const quoting = new Set<string>()
   // Public: health checks, Better Auth's own endpoints, the sign in provider list, password reset requests, app updates (so a build without sign in can still update), and the app association files.
   const api = new Hono()
     .get('/health', c => c.json({ ok: true }))
@@ -73,10 +75,20 @@ export function createApp({ db, auth, rates, wise, appReleases = createAppReleas
       return c.json(rate)
     })
     .get('/wise/quote', validate('query', wiseQuoteQuerySchema), async (c) => {
-      const quote = await wise.quote(c.req.valid('query'))
-      if (!quote)
-        return c.json({ error: 'Wise quote unavailable' }, 503)
-      return c.json(quote)
+      // One at a time per user, so a single account can't fill the line every user's quotes wait in.
+      const userId = c.var.user.id
+      if (quoting.has(userId))
+        return c.json({ error: 'Another quote is under way' }, 429)
+      quoting.add(userId)
+      try {
+        const quote = await wise.quote(c.req.valid('query'))
+        if (!quote)
+          return c.json({ error: 'Wise quote unavailable' }, 503)
+        return c.json(quote)
+      }
+      finally {
+        quoting.delete(userId)
+      }
     })
     .route('/', templateRoutes(db))
     .route('/', monthRoutes(db, rates, wise))
