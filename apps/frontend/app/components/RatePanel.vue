@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { LiveRate, Month, MonthSummary, UpdateMonth } from '@maimoni/shared'
+import type { LiveRate, Month, MonthSummary, UpdateMonth, WiseQuote } from '@maimoni/shared'
 
 const props = defineProps<{
   month: Month
@@ -7,11 +7,16 @@ const props = defineProps<{
   error: string | null
   summary: MonthSummary
   refreshing: boolean
+  /** The month's stored Wise quote. */
+  quote: WiseQuote | null
+  /** Whether a new quote is being fetched. */
+  quoting: boolean
 }>()
 
 const emit = defineEmits<{
   update: [patch: UpdateMonth]
   retry: []
+  quote: []
 }>()
 
 const sources: Record<LiveRate['source'], string> = {
@@ -132,11 +137,25 @@ function setFee(value: number | null | undefined) {
       </p>
 
       <p v-if="summary.transfer.feeSource === 'fallback'" class="text-xs text-warning">
-        A Wise não respondeu; usando a taxa de reserva de {{ formatPercent(summary.transfer.wiseFee) }} das configurações.
+        Sem cotação da Wise para este mês; usando a taxa de reserva de {{ formatPercent(summary.transfer.wiseFee) }} das configurações.
       </p>
-      <p v-else-if="summary.transfer.feeSource === 'wise'" class="text-xs text-muted">
-        Estimativa da Wise para converter os <span class="money">{{ formatMoney(summary.transfer.projected.sentBrl, 'BRL') }}</span> restantes: parte fixa + percentual.
+      <p v-else-if="summary.transfer.feeSource === 'wise' && quote" class="text-xs text-muted">
+        Cotação da Wise de {{ formatDateTime(quote.fetchedAt) }}, para <span class="money">{{ formatMoney(quote.sendAmount, 'BRL') }}</span>: parte fixa + percentual.
+        <template v-if="quote.sendAmount !== summary.transfer.projected.sentBrl">
+          Aplicada em proporção aos <span class="money">{{ formatMoney(summary.transfer.projected.sentBrl, 'BRL') }}</span> restantes.
+        </template>
       </p>
+      <!-- The quote never updates by itself: the app asks Wise only when a month is created and here. -->
+      <UButton
+        v-if="!manualFee && summary.transfer.projected.sentBrl > 0"
+        :label="quote ? 'Atualizar cotação' : 'Buscar cotação da Wise'"
+        icon="i-lucide-refresh-cw"
+        color="neutral"
+        variant="subtle"
+        size="sm"
+        :loading="quoting"
+        @click="emit('quote')"
+      />
       <p v-else class="text-xs text-muted">
         Desconta <span class="money">{{ formatMoney(summary.transfer.projected.feeBrl, 'BRL') }}</span> dos reais que ainda serão convertidos.
       </p>

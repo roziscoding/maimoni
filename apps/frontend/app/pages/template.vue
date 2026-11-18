@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Currency, EntryKind, LiveRate, MonthItem, TemplateDetail, TemplateItem, UpdateTemplateItem, WiseQuote } from '@maimoni/shared'
+import type { Currency, EntryKind, LiveRate, MonthItem, TemplateDetail, TemplateItem, UpdateTemplateItem } from '@maimoni/shared'
 import type { NewItem } from '~/components/AddItemForm.vue'
 import { summarizeMonth } from '@maimoni/shared'
 
@@ -21,8 +21,6 @@ const kinds: { kind: EntryKind, title: string }[] = [
 ]
 const group = (currency: Currency, kind: EntryKind) => items.value.filter(item => item.currency === currency && item.kind === kind)
 
-const quote = ref<WiseQuote | null>(null)
-
 // What a month created today from this template would look like, using next month's calendar.
 const preview = computed(() => {
   if (!data.value)
@@ -39,17 +37,11 @@ const preview = computed(() => {
   return summarizeMonth(
     { year: next.getFullYear(), month: next.getMonth() + 1, wiseFee: null, exchangeRate: null, activeDay: null },
     monthItems,
-    { rate: rate.value?.rate ?? null, quote: quote.value, fallbackFee: data.value.settings.wiseFee },
+    // A real month gets Wise's quote when it is created; the preview doesn't ask Wise and uses the fallback fee.
+    { rate: rate.value?.rate ?? null, fallbackFee: data.value.settings.wiseFee },
     now,
   )
 })
-
-// New months use Wise's real fee, so quote the amount the preview would send.
-watch(() => preview.value?.transfer.projected.sentBrl, async (amount) => {
-  const fresh = amount ? await $fetch<WiseQuote>('/api/wise/quote', { query: { sendAmount: amount } }).catch(() => null) : null
-  if (preview.value?.transfer.projected.sentBrl === amount)
-    quote.value = fresh
-}, { immediate: true })
 
 function setItems(update: (items: TemplateItem[]) => TemplateItem[]) {
   if (data.value)
@@ -161,7 +153,7 @@ async function moveItem(item: TemplateItem, offset: -1 | 1) {
                 Prévia de um mês novo
               </h2>
               <p class="text-sm text-muted">
-                Com a cotação de agora ({{ formatRate(rate?.rate) }}) e {{ preview.transfer.feeSource === 'wise' ? 'a taxa que a Wise cobraria hoje' : `a taxa de reserva de ${formatPercent(data.settings.wiseFee)}` }}.
+                Com a cotação de agora ({{ formatRate(rate?.rate) }}) e a taxa de reserva de {{ formatPercent(data.settings.wiseFee) }}.
                 Itens variáveis em branco contam como zero.
               </p>
             </div>

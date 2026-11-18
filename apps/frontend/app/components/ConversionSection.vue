@@ -25,9 +25,7 @@ const deletingNow = ref(false)
 const quoting = ref(false)
 const quoteError = ref<string | null>(null)
 const state = reactive<ConversionForm>({ day: 1, sentBrl: 0, feeBrl: 0, receivedEur: 0, note: null })
-let quoteTimer: ReturnType<typeof setTimeout> | undefined
 let quoteVersion = 0
-let lastQuoteKey = ''
 
 const sorted = computed(() => props.conversions.toSorted((a, b) => b.day - a.day || b.createdAt.localeCompare(a.createdAt)))
 const maxDay = computed(() => daysInMonth(props.year, props.month))
@@ -44,7 +42,6 @@ function reset(conversion?: Conversion) {
   Object.assign(state, conversion
     ? { day: conversion.day, sentBrl: conversion.sentBrl, feeBrl: conversion.feeBrl, receivedEur: conversion.receivedEur, note: conversion.note }
     : { day: defaultDay(), sentBrl: 0, feeBrl: 0, receivedEur: 0, note: null })
-  lastQuoteKey = conversion ? `EUR:${conversion.receivedEur}` : ''
 }
 
 function show(conversion?: Conversion) {
@@ -57,11 +54,11 @@ function quoteKey() {
   return amount > 0 ? `${mode.value}:${amount}` : ''
 }
 
-async function requestQuote(force = false) {
+/** Fills the other amount and the fee from Wise. Only on request: the form never asks Wise by itself. */
+async function requestQuote() {
   const key = quoteKey()
-  if (!key || (!force && key === lastQuoteKey))
+  if (!key)
     return
-  lastQuoteKey = key
   quoteError.value = null
   quoting.value = true
   const version = ++quoteVersion
@@ -86,17 +83,9 @@ async function requestQuote(force = false) {
   }
 }
 
-watch([open, mode, () => mode.value === 'EUR' ? state.receivedEur : state.sentBrl], ([isOpen]) => {
-  clearTimeout(quoteTimer)
-  if (!isOpen)
-    return
-  quoteTimer = setTimeout(() => requestQuote(), 600)
-})
-
 watch(open, (isOpen) => {
   if (isOpen)
     return
-  clearTimeout(quoteTimer)
   quoteVersion++
   quoting.value = false
 })
@@ -119,8 +108,6 @@ async function confirmDelete() {
   deletingNow.value = false
   deleting.value = null
 }
-
-onBeforeUnmount(() => clearTimeout(quoteTimer))
 </script>
 
 <template>
@@ -225,10 +212,20 @@ onBeforeUnmount(() => clearTimeout(quoteTimer))
           </UFormField>
         </div>
 
-        <div class="flex items-center gap-2 text-xs text-muted">
-          <UIcon v-if="quoting" name="i-lucide-loader-circle" class="size-4 animate-spin" aria-hidden="true" />
-          <UIcon v-else name="i-lucide-sparkles" class="size-4" aria-hidden="true" />
-          {{ quoting ? 'Consultando a Wise…' : 'Os três valores continuam editáveis antes de salvar.' }}
+        <div class="flex flex-wrap items-center gap-3">
+          <UButton
+            label="Calcular com a Wise"
+            icon="i-lucide-sparkles"
+            color="neutral"
+            variant="subtle"
+            size="sm"
+            :loading="quoting"
+            :disabled="!quoteKey()"
+            @click="requestQuote()"
+          />
+          <p class="text-xs text-muted">
+            Preenche o outro valor e a taxa a partir do {{ mode === 'EUR' ? 'EUR recebido' : 'BRL enviado' }}. Os três continuam editáveis.
+          </p>
         </div>
 
         <UAlert
@@ -238,7 +235,7 @@ onBeforeUnmount(() => clearTimeout(quoteTimer))
           icon="i-lucide-circle-alert"
           title="Não foi possível consultar a Wise"
           :description="quoteError"
-          :actions="[{ label: 'Tentar novamente', color: 'neutral', variant: 'outline', icon: 'i-lucide-refresh-cw', onClick: () => requestQuote(true) }]"
+          :actions="[{ label: 'Tentar novamente', color: 'neutral', variant: 'outline', icon: 'i-lucide-refresh-cw', onClick: () => requestQuote() }]"
         />
 
         <UFormField name="feeBrl" label="Taxa Wise em BRL">

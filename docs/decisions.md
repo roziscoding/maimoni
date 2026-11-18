@@ -36,7 +36,8 @@ All the arithmetic lives in one place, `packages/shared/src/summary.ts`, used by
 - **Wise fee comes from Wise's own quote.**
   - **What the rate is:** Wise's `rates/live` rate is the plain mid-market rate. Wise charges its fee separately, on the amount sent: a fixed part plus a percentage, about 4.19% at R$1,000 and 3.98% at R$50,000.
   - **Where the fee comes from:** new months have `wiseFee: null`, and the backend asks Wise's comparison API (`api.wise.com/v4/comparisons`, no key) for the fee on the BRL net the month expects to convert. That happens once, when the month is created, and the quote is stored with the month (`months.wise_quote`). Reading a month never asks Wise; `POST /api/months/:year/:month/quote` replaces the stored quote when the user asks for it. The fee is only a projection.
-  - **While editing:** after an edit changes the BRL net, the old quote is scaled by its percentage until a fresh one arrives, about 0.6s after edits stop.
+  - **While editing:** after an edit changes the BRL net, the stored quote is scaled by its percentage. The clients ask for a new one only from the ***Atualizar cotação*** button of the month's rate panel.
+  - **Elsewhere:** the template's preview of a new month uses the fallback fee, and the conversion form fills its amounts from Wise only from its ***Calcular com a Wise*** button.
   - **Manual fee:** a month can switch to a manual percentage. Imported months keep the sheet's 3.9% as a manual fee, so history doesn't move.
   - **Fallback:** the settings fee ("taxa de reserva", 3.9%) is used when the month has no stored quote (Wise couldn't be reached, or the month is older than stored quotes), and the UI says so.
 - **Negative BRL net isn't converted.** A transfer below zero makes no sense, so it's clamped to 0; the deficit still shows in the BRL net.

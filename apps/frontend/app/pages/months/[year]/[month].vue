@@ -12,7 +12,7 @@ if (!params.success)
 const { year, month } = params.data
 
 const toast = useToast()
-const { data, error, summary, refreshingRate, refreshRate, updateItem, addItem, removeItem, promoteItem, updateMonth, removeMonth, addConversion, updateConversion, removeConversion } = await useMonth(year, month)
+const { data, error, summary, refreshingRate, refreshRate, refreshingQuote, refreshQuote, updateItem, addItem, removeItem, promoteItem, updateMonth, removeMonth, addConversion, updateConversion, removeConversion } = await useMonth(year, month)
 const { data: months } = useNuxtData<MonthListEntry[]>('months')
 
 const title = monthLabel(year, month)
@@ -111,8 +111,11 @@ const menu: DropdownMenuItem[] = [
               :error="data.rateError"
               :summary="summary"
               :refreshing="refreshingRate"
+              :quote="data.quote"
+              :quoting="refreshingQuote"
               @update="updateMonth"
               @retry="refreshRate"
+              @quote="refreshQuote"
             />
 
             <div class="space-y-1.5">
