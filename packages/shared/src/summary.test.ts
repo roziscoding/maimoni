@@ -1,7 +1,7 @@
 import type { MonthItem } from './schemas'
 import { describe, expect, test } from 'bun:test'
 import { evaluateExpression, isExpression } from './expression'
-import { dayResults, nextActiveDay, openDay, remainingDays, spendInEur, summarizeMonth } from './summary'
+import { conversionFee, dayResults, nextActiveDay, openDay, remainingDays, spendInEur, summarizeMonth } from './summary'
 
 let counter = 0
 function item(partial: Partial<MonthItem> & Pick<MonthItem, 'currency' | 'amount'>): MonthItem {
@@ -25,26 +25,27 @@ const october = [
   ...[1250.99, 800, 2000, 0, 360, 1200.5, 3000, 650.49].map(amount => item({ currency: 'BRL', amount })),
   ...[50, 75.5, 90, 1000, 45, 7.99, 4.99, 20.99, 14.98, 60.55].map(amount => item({ currency: 'EUR', amount })),
 ]
-const month = { year: 2026, month: 10, wiseFee: 0.039, exchangeRate: null, activeDay: null }
+const month = { year: 2026, month: 10, exchangeRate: null, activeDay: null }
 
 describe('summarizeMonth', () => {
   test('computes the month totals', () => {
-    const summary = summarizeMonth(month, october, { rate: 5.868553, fallbackFee: 0.039 }, new Date(2026, 9, 3))
+    const summary = summarizeMonth(month, october, { rate: 5.868553 }, new Date(2026, 9, 3))
     expect(summary.brl.expenses).toBe(9261.98)
     expect(summary.brl.net).toBe(10738.52)
-    expect(summary.transfer.eur).toBeCloseTo(1758.48, 2)
+    // Everything left is converted at the rate, with no fee: 10738.52 ÷ 5.868553.
+    expect(summary.transfer.eur).toBeCloseTo(1829.84, 2)
     expect(summary.eur.expenses).toBe(1370)
-    expect(summary.eur.net).toBeCloseTo(388.48, 2)
+    expect(summary.eur.net).toBeCloseTo(459.84, 2)
     expect(summary.allowance.days).toBe(29)
-    expect(summary.allowance.eur).toBeCloseTo(13.4, 2)
-    expect(summary.allowance.brl).toBeCloseTo(78.64, 1)
+    expect(summary.allowance.eur).toBeCloseTo(15.86, 2)
+    expect(summary.allowance.brl).toBeCloseTo(93.06, 1)
   })
 
   test('locked rate overrides the live value', () => {
-    const summary = summarizeMonth({ ...month, exchangeRate: 6 }, october, { rate: 5.868553, fallbackFee: 0.039 }, new Date(2026, 9, 3))
+    const summary = summarizeMonth({ ...month, exchangeRate: 6 }, october, { rate: 5.868553 }, new Date(2026, 9, 3))
     expect(summary.transfer.rate).toBe(6)
     expect(summary.transfer.rateLocked).toBe(true)
-    expect(summary.transfer.projected.eur).toBeCloseTo((10738.52 * 0.961) / 6, 2)
+    expect(summary.transfer.projected.eur).toBeCloseTo(10738.52 / 6, 2)
     expect(summary.transfer.eur).toBe(summary.transfer.projected.eur)
   })
 
@@ -53,22 +54,22 @@ describe('summarizeMonth', () => {
       item({ currency: 'BRL', amount: null }),
       item({ currency: 'BRL', amount: 10, paid: true }),
       item({ currency: 'BRL', amount: 5, needsReview: true }),
-    ], { rate: 5, fallbackFee: 0.039 }, new Date(2026, 9, 3))
+    ], { rate: 5 }, new Date(2026, 9, 3))
     expect(summary.brl.unresolved).toBe(2)
     expect(summary.brl.paid).toBe(10)
     expect(summary.brl.pending).toBe(5)
   })
 
   test('no allowance without a rate or for past months', () => {
-    expect(summarizeMonth(month, october, { rate: null, fallbackFee: 0.039 }, new Date(2026, 9, 3)).allowance.eur).toBeNull()
-    expect(summarizeMonth(month, october, { rate: 5.8, fallbackFee: 0.039 }, new Date(2026, 10, 3)).allowance.eur).toBeNull()
+    expect(summarizeMonth(month, october, { rate: null }, new Date(2026, 9, 3)).allowance.eur).toBeNull()
+    expect(summarizeMonth(month, october, { rate: 5.8 }, new Date(2026, 10, 3)).allowance.eur).toBeNull()
   })
 })
 
 describe('daily allowance', () => {
-  const context = { rate: 5.868553, fallbackFee: 0.039 }
+  const context = { rate: 5.868553 }
   const oct3 = new Date(2026, 9, 3)
-  // EUR net 388.48 over 29 days (3rd to 31st) = 13.40 a day
+  // EUR net 459.84 over 29 days (3rd to 31st) = 15.86 a day
   const base = summarizeMonth(month, october, context, oct3).allowance
   const eur = (day: number, amount: number) => ({ day, amount, currency: 'EUR' as const })
 
@@ -88,22 +89,22 @@ describe('daily allowance', () => {
     const spends = [eur(3, 80)]
     const { allowance } = summarizeMonth({ ...month, activeDay: 5 }, october, { ...context, spends }, new Date(2026, 9, 5))
     expect(allowance).toMatchObject({ activeDay: 5, days: 27, spentBefore: 80, spentToday: 0 })
-    expect(allowance.eur).toBeCloseTo((388.48 - 80) / 27, 1)
+    expect(allowance.eur).toBeCloseTo((459.84 - 80) / 27, 1)
   })
 
   test('spends on a later day (left by undoing a close) still come out of the budget', () => {
     const { allowance } = summarizeMonth({ ...month, activeDay: 3 }, october, { ...context, spends: [eur(4, 29)] }, oct3)
     expect(allowance).toMatchObject({ spentBefore: 29, spentToday: 0 })
-    expect(allowance.eur).toBeCloseTo((388.48 - 29) / 29, 1)
+    expect(allowance.eur).toBeCloseTo((459.84 - 29) / 29, 1)
   })
 
-  test('a BRL spend costs what those reais would have become through Wise', () => {
-    const inEur = (100 * (1 - 0.039)) / 5.868553
+  test('a BRL spend costs what those reais would have become at the rate', () => {
+    const inEur = 100 / 5.868553
     const { allowance } = summarizeMonth(month, october, { ...context, spends: [{ day: 3, amount: 100, currency: 'BRL' }, eur(3, 10)] }, oct3)
     expect(allowance.spentToday).toBeCloseTo(inEur + 10, 2)
-    expect(spendInEur({ amount: 100, currency: 'BRL' }, { rate: 5.868553, wiseFee: 0.039 })).toBeCloseTo(inEur, 2)
-    expect(spendInEur({ amount: 100, currency: 'BRL' }, { rate: null, wiseFee: 0.039 })).toBeNull()
-    expect(spendInEur({ amount: 12.5, currency: 'EUR' }, { rate: null, wiseFee: 0.039 })).toBe(12.5)
+    expect(spendInEur({ amount: 100, currency: 'BRL' }, { rate: 5.868553 })).toBeCloseTo(inEur, 2)
+    expect(spendInEur({ amount: 100, currency: 'BRL' }, { rate: null })).toBeNull()
+    expect(spendInEur({ amount: 12.5, currency: 'EUR' }, { rate: null })).toBe(12.5)
   })
 
   test('nextActiveDay jumps to today, or to tomorrow when today is the open day', () => {
@@ -116,9 +117,9 @@ describe('daily allowance', () => {
 })
 
 describe('dayResults', () => {
-  const context = { rate: 5.868553, fallbackFee: 0.039 }
+  const context = { rate: 5.868553 }
   const eur = (day: number, amount: number) => ({ day, amount, currency: 'EUR' as const })
-  const net = 388.48 // October EUR net (see 'computes the month totals')
+  const net = 459.84 // October EUR net (see 'computes the month totals')
 
   test('replays closed days, matches the open day and projects upcoming ones', () => {
     const spends = [eur(1, 30), eur(2, 100), eur(3, 10)]
@@ -146,25 +147,21 @@ describe('dayResults', () => {
   })
 })
 
-describe('Wise fee', () => {
-  const auto = { ...month, wiseFee: null }
-  const quote = { sendAmount: 10738.52, fee: 429.24, receivedAmount: 1757.57, rate: 0.170484, fetchedAt: '' }
-
-  test('uses the quoted fee for the exact amount', () => {
-    const { transfer } = summarizeMonth(auto, october, { rate: 5.86565, quote, fallbackFee: 0.039 }, new Date(2026, 9, 3))
-    expect(transfer).toMatchObject({ feeSource: 'wise', projected: { feeBrl: 429.24 } })
-    expect(transfer.projected.eur).toBeCloseTo((10738.52 - 429.24) / 5.86565, 2)
-    expect(transfer.wiseFee).toBeCloseTo(429.24 / 10738.52, 6)
+describe('conversions', () => {
+  test('the fee is what was sent beyond what the received EUR are worth at the rate', () => {
+    expect(conversionFee({ sentBrl: 3000, receivedEur: 480 }, 6)).toBe(120)
+    expect(conversionFee({ sentBrl: 1000, receivedEur: 163.31 }, 5.868553)).toBe(41.61)
+    // The rate moved in the sender's favour, or there is none: no fee rather than a negative one.
+    expect(conversionFee({ sentBrl: 3000, receivedEur: 520 }, 6)).toBe(0)
+    expect(conversionFee({ sentBrl: 3000, receivedEur: 480 }, null)).toBe(0)
   })
 
-  test('scales a quote for a different amount by its percentage', () => {
-    const { transfer } = summarizeMonth(auto, october, { rate: 5.86565, quote: { ...quote, sendAmount: 10000, fee: 399.72 }, fallbackFee: 0.039 }, new Date(2026, 9, 3))
-    expect(transfer.projected.feeBrl).toBeCloseTo(10738.52 * 0.039972, 1)
-  })
-
-  test('falls back to the settings percentage without a quote, and manual fees win', () => {
-    expect(summarizeMonth(auto, october, { rate: 5.86565, fallbackFee: 0.05 }).transfer).toMatchObject({ feeSource: 'fallback', wiseFee: 0.05 })
-    expect(summarizeMonth(month, october, { rate: 5.86565, quote, fallbackFee: 0.05 }).transfer).toMatchObject({ feeSource: 'manual', wiseFee: 0.039 })
+  test('completed conversions count as they happened, and the rest is projected without a fee', () => {
+    const { transfer } = summarizeMonth(month, october, { rate: 6, conversions: [{ sentBrl: 3000, feeBrl: 120, receivedEur: 480 }] }, new Date(2026, 9, 3))
+    expect(transfer.realized).toEqual({ sentBrl: 3000, convertedBrl: 2880, feeBrl: 120, receivedEur: 480 })
+    expect(transfer.remainingBrl).toBe(7738.52)
+    expect(transfer.projected).toEqual({ sentBrl: 7738.52, eur: 1289.75 })
+    expect(transfer.eur).toBe(1769.75)
   })
 })
 

@@ -22,6 +22,7 @@ Future<void> main() async {
     MonthsStore.instance.refresh();
     checkSession();
   }
+  confirmSignOuts();
   runApp(const MaimoniApp());
   _offerUpdate();
 }

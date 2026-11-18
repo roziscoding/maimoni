@@ -36,7 +36,7 @@ class ItemSection extends StatelessWidget {
     final title = currency == Currency.brl ? 'Reais' : 'Euros';
     final incomes = items.where((item) => item.kind == EntryKind.income).toList();
     final expenses = items.where((item) => item.kind == EntryKind.expense).toList();
-    // Sum of the listed incomes only: for EUR, `totals.income` also includes the Wise transfer.
+    // Sum of the listed incomes only: for EUR, `totals.income` also includes the converted BRL.
     final incomeTotal = incomes.fold<double>(0, (sum, item) => sum + (item.amount ?? 0));
     final paidShare = totals.expenses > 0 ? (totals.paid / totals.expenses).clamp(0, 1).toDouble() : 0.0;
 

@@ -32,8 +32,8 @@ const next = computed(() => data.value ? nextActiveDay(data.value.month) : null)
 const afterClose = computed(() => {
   if (!data.value || next.value === null)
     return null
-  const { month: current, items, spends, rate, quote, fallbackFee } = data.value
-  return summarizeMonth({ ...current, activeDay: next.value }, items, { rate: rate?.rate ?? null, quote, fallbackFee, spends }).allowance
+  const { month: current, items, spends, rate } = data.value
+  return summarizeMonth({ ...current, activeDay: next.value }, items, { rate: rate?.rate ?? null, spends }).allowance
 })
 const closing = ref(false)
 const confirmingClose = ref(false)

@@ -21,14 +21,12 @@ class DailySpendHistory extends StatefulWidget {
     required this.view,
     required this.onViewChanged,
     required this.onMonthChanged,
-    required this.onOpenToday,
   });
 
   final MonthController controller;
   final HistoryView view;
   final ValueChanged<HistoryView> onViewChanged;
   final void Function(int year, int month) onMonthChanged;
-  final VoidCallback onOpenToday;
 
   @override
   State<DailySpendHistory> createState() => _DailySpendHistoryState();
@@ -257,16 +255,6 @@ class _DailySpendHistoryState extends State<DailySpendHistory> {
                 )
               else
                 Text('Nenhum gasto neste dia.', style: TextStyle(fontSize: 14, color: palette.muted)),
-              if (selectedDay.state == DayState.open)
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    style: TextButton.styleFrom(padding: EdgeInsets.zero),
-                    onPressed: widget.onOpenToday,
-                    icon: const Icon(LucideIcons.wallet, size: 16),
-                    label: const Text('Lançar gastos em Hoje'),
-                  ),
-                ),
             ],
           ),
         ),

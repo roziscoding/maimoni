@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:http/http.dart' show HeadersWithSplitValues;
 
 import '../config.dart';
@@ -135,10 +137,26 @@ Future<void> checkSession() async {
   }
 }
 
-/// Ends the session here at once and tells the server in the background.
+/// Ends the session here at once and tells the server in the background. Until the server answers,
+/// the token is kept aside and [confirmSignOuts] tries again when the app starts.
 void signOut() {
-  final token = Session.instance.token;
-  if (token == null) return;
-  Session.instance.clear();
-  Api.instance.request('POST', '/auth/sign-out', headers: {'authorization': 'Bearer $token'}).then((_) {}, onError: (_) {});
+  Session.instance.signOut();
+  unawaited(confirmSignOuts());
+}
+
+/// Tells the server to end the sessions signed out here that it may still accept, such as one
+/// signed out while offline. A token stays for the next try when the server couldn't be asked.
+Future<void> confirmSignOuts() async {
+  final session = Session.instance;
+  for (final token in session.pendingSignOuts) {
+    try {
+      // Not Better Auth's `sign-out`: it answers 200 even when it fails to delete the session.
+      await Api.instance.request('DELETE', '/sessions/current', bearer: token);
+    } catch (error) {
+      // Only a 401 also settles it: the server no longer accepts the token. Anything else (no
+      // answer, a server error, a server too old to have the route) leaves it for the next try.
+      if (error is! ApiException || error.status != 401) continue;
+    }
+    session.signOutConfirmed(token);
+  }
 }

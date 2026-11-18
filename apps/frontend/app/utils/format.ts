@@ -5,7 +5,6 @@ const money = {
   EUR: new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'EUR' }),
 }
 const rate = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 4, maximumFractionDigits: 4 })
-const percent = new Intl.NumberFormat('pt-BR', { style: 'percent', maximumFractionDigits: 2 })
 const monthNames = new Intl.DateTimeFormat('pt-BR', { month: 'long', timeZone: 'UTC' })
 const time = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
 
@@ -17,11 +16,6 @@ export function formatMoney(value: number | null | undefined, currency: Currency
 /** EUR→BRL rate with the 4 decimals the spreadsheet showed. */
 export function formatRate(value: number | null | undefined) {
   return value === null || value === undefined ? '—' : `R$ ${rate.format(value)}`
-}
-
-/** Fraction to percent: `0.039` → `3,9%`. */
-export function formatPercent(value: number) {
-  return percent.format(value)
 }
 
 export function formatDateTime(iso: string) {
@@ -44,6 +38,22 @@ const dayNames = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numer
 export function dayLabel(year: number, month: number, day: number) {
   const label = dayNames.format(new Date(year, month - 1, day))
   return label.charAt(0).toUpperCase() + label.slice(1)
+}
+
+const BROWSERS: [RegExp, string][] = [[/Edg\//, 'Edge'], [/OPR\//, 'Opera'], [/Firefox\//, 'Firefox'], [/Chrome\//, 'Chrome'], [/Safari\//, 'Safari']]
+const SYSTEMS: [RegExp, string][] = [[/Android/i, 'Android'], [/iPhone|iPad|iOS/i, 'iPhone'], [/Mac OS X|macOS/i, 'macOS'], [/Windows/i, 'Windows'], [/Linux/i, 'Linux']]
+
+/** Names the device behind a session's `User-Agent`: `Chrome no Linux`, `App maimoni no Android`. */
+export function deviceLabel(userAgent: string | null) {
+  if (!userAgent)
+    return 'Dispositivo desconhecido'
+  // The mobile app sends `maimoni-app (<system>)`; builds before that sent Dart's default.
+  const app = /^maimoni-app|^Dart\//.test(userAgent)
+  const name = app ? 'App maimoni' : BROWSERS.find(([pattern]) => pattern.test(userAgent))?.[1]
+  const system = SYSTEMS.find(([pattern]) => pattern.test(userAgent))?.[1]
+  if (!name)
+    return system ?? 'Dispositivo desconhecido'
+  return system ? `${name} no ${system}` : name
 }
 
 /** Pulls the backend's `{ error }` message out of a failed `$fetch`. */

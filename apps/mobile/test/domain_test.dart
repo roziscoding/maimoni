@@ -33,11 +33,10 @@ DailySpend spend(int day, double amount, [Currency currency = Currency.eur]) => 
       createdAt: '2026-10-0${_counter % 9 + 1}T00:00:00Z',
     );
 
-Month month({double? wiseFee = 0.039, double? exchangeRate, int? activeDay}) => Month(
+Month month({double? exchangeRate, int? activeDay}) => Month(
       id: 'month',
       year: 2026,
       month: 10,
-      wiseFee: wiseFee,
       exchangeRate: exchangeRate,
       activeDay: activeDay,
       note: null,
@@ -57,22 +56,23 @@ const rate = 5.868553;
 void main() {
   group('summarizeMonth', () {
     test('computes the month totals', () {
-      final summary = summarizeMonth(month(), october, rate: rate, fallbackFee: 0.039, today: oct3);
+      final summary = summarizeMonth(month(), october, rate: rate, today: oct3);
       expect(summary.brl.expenses, 9261.98);
       expect(summary.brl.net, 10738.52);
-      expect(summary.transfer.eur, closeTo(1758.48, 0.005));
+      // Everything left is converted at the rate, with no fee: 10738.52 ÷ 5.868553.
+      expect(summary.transfer.eur, closeTo(1829.84, 0.005));
       expect(summary.eur.expenses, 1370);
-      expect(summary.eur.net, closeTo(388.48, 0.005));
+      expect(summary.eur.net, closeTo(459.84, 0.005));
       expect(summary.allowance.days, 29);
-      expect(summary.allowance.eur, closeTo(13.4, 0.005));
-      expect(summary.allowance.brl, closeTo(78.64, 0.05));
+      expect(summary.allowance.eur, closeTo(15.86, 0.005));
+      expect(summary.allowance.brl, closeTo(93.06, 0.05));
     });
 
     test('locked rate overrides the live value', () {
-      final summary = summarizeMonth(month(exchangeRate: 6), october, rate: rate, fallbackFee: 0.039, today: oct3);
+      final summary = summarizeMonth(month(exchangeRate: 6), october, rate: rate, today: oct3);
       expect(summary.transfer.rate, 6);
       expect(summary.transfer.rateLocked, isTrue);
-      expect(summary.transfer.projected.eur, closeTo((10738.52 * 0.961) / 6, 0.005));
+      expect(summary.transfer.projected.eur, closeTo(10738.52 / 6, 0.005));
     });
 
     test('counts empty and review items as unresolved, splits paid/pending', () {
@@ -80,7 +80,6 @@ void main() {
         month(),
         [item(Currency.brl, null), item(Currency.brl, 10, paid: true), item(Currency.brl, 5, needsReview: true)],
         rate: 5,
-        fallbackFee: 0.039,
         today: oct3,
       );
       expect(summary.brl.unresolved, 2);
@@ -89,17 +88,17 @@ void main() {
     });
 
     test('no allowance without a rate or for past months', () {
-      expect(summarizeMonth(month(), october, rate: null, fallbackFee: 0.039, today: oct3).allowance.eur, isNull);
-      expect(summarizeMonth(month(), october, rate: 5.8, fallbackFee: 0.039, today: DateTime(2026, 11, 3)).allowance.eur, isNull);
+      expect(summarizeMonth(month(), october, rate: null, today: oct3).allowance.eur, isNull);
+      expect(summarizeMonth(month(), october, rate: 5.8, today: DateTime(2026, 11, 3)).allowance.eur, isNull);
     });
   });
 
   group('daily allowance', () {
-    final base = summarizeMonth(month(), october, rate: rate, fallbackFee: 0.039, today: oct3).allowance;
+    final base = summarizeMonth(month(), october, rate: rate, today: oct3).allowance;
 
     test('spending on the open day only reduces that day', () {
       final allowance =
-          summarizeMonth(month(), october, rate: rate, fallbackFee: 0.039, spends: [spend(3, 20), spend(3, 5.5)], today: oct3).allowance;
+          summarizeMonth(month(), october, rate: rate, spends: [spend(3, 20), spend(3, 5.5)], today: oct3).allowance;
       expect(allowance.activeDay, 3);
       expect(allowance.eur, base.eur);
       expect(allowance.spentToday, 25.5);
@@ -109,21 +108,21 @@ void main() {
 
     test('closing spreads the leftover over the remaining days', () {
       final allowance = summarizeMonth(month(activeDay: 5), october,
-              rate: rate, fallbackFee: 0.039, spends: [spend(3, 80)], today: DateTime(2026, 10, 5))
+              rate: rate, spends: [spend(3, 80)], today: DateTime(2026, 10, 5))
           .allowance;
       expect(allowance.days, 27);
       expect(allowance.spentBefore, 80);
-      expect(allowance.eur, closeTo((388.48 - 80) / 27, 0.05));
+      expect(allowance.eur, closeTo((459.84 - 80) / 27, 0.05));
     });
 
-    test('a BRL spend costs what those reais would have become through Wise', () {
-      const inEur = (100 * (1 - 0.039)) / rate;
+    test('a BRL spend costs what those reais would have become at the rate', () {
+      const inEur = 100 / rate;
       final allowance = summarizeMonth(month(), october,
-              rate: rate, fallbackFee: 0.039, spends: [spend(3, 100, Currency.brl), spend(3, 10)], today: oct3)
+              rate: rate, spends: [spend(3, 100, Currency.brl), spend(3, 10)], today: oct3)
           .allowance;
       expect(allowance.spentToday, closeTo(inEur + 10, 0.005));
-      expect(spendInEur(spend(1, 100, Currency.brl), rate: null, wiseFee: 0.039), isNull);
-      expect(spendInEur(spend(1, 12.5), rate: null, wiseFee: 0.039), 12.5);
+      expect(spendInEur(spend(1, 100, Currency.brl), rate: null), isNull);
+      expect(spendInEur(spend(1, 12.5), rate: null), 12.5);
     });
 
     test('nextActiveDay jumps to today, or to tomorrow when today is the open day', () {
@@ -136,11 +135,11 @@ void main() {
   });
 
   group('dayResults', () {
-    const net = 388.48;
+    const net = 459.84;
 
     test('replays closed days, matches the open day and projects upcoming ones', () {
       final spends = [spend(1, 30), spend(2, 100), spend(3, 10)];
-      final summary = summarizeMonth(month(activeDay: 3), october, rate: rate, fallbackFee: 0.039, spends: spends, today: oct3);
+      final summary = summarizeMonth(month(activeDay: 3), october, rate: rate, spends: spends, today: oct3);
       final days = dayResults(month(), summary, spends);
       expect(days, hasLength(31));
       expect(days[0].state, DayState.closed);
@@ -153,20 +152,24 @@ void main() {
     });
   });
 
-  group('Wise fee', () {
-    final quote = WiseQuote(sendAmount: 10738.52, fee: 429.24, receivedAmount: 1757.57, rate: 0.170484, fetchedAt: '');
-
-    test('uses the quoted fee for the exact amount', () {
-      final transfer = summarizeMonth(month(wiseFee: null), october, rate: 5.86565, quote: quote, fallbackFee: 0.039, today: oct3).transfer;
-      expect(transfer.feeSource, FeeSource.wise);
-      expect(transfer.projected.feeBrl, 429.24);
+  group('conversions', () {
+    test('the fee is what was sent beyond what the received EUR are worth at the rate', () {
+      expect(conversionFee(sentBrl: 3000, receivedEur: 480, rate: 6), 120);
+      expect(conversionFee(sentBrl: 1000, receivedEur: 163.31, rate: rate), 41.61);
+      // The rate moved in the sender's favour, or there is none: no fee rather than a negative one.
+      expect(conversionFee(sentBrl: 3000, receivedEur: 520, rate: 6), 0);
+      expect(conversionFee(sentBrl: 3000, receivedEur: 480, rate: null), 0);
     });
 
-    test('falls back to the settings percentage, and manual fees win', () {
-      expect(summarizeMonth(month(wiseFee: null), october, rate: 5.86565, fallbackFee: 0.05).transfer.feeSource, FeeSource.fallback);
-      final manual = summarizeMonth(month(), october, rate: 5.86565, quote: quote, fallbackFee: 0.05).transfer;
-      expect(manual.feeSource, FeeSource.manual);
-      expect(manual.wiseFee, 0.039);
+    test('completed conversions count as they happened, and the rest is projected without a fee', () {
+      final conversion =
+          Conversion(id: 'c', monthId: 'month', day: 2, sentBrl: 3000, feeBrl: 120, receivedEur: 480, note: null, createdAt: '');
+      final transfer = summarizeMonth(month(), october, rate: 6, conversions: [conversion], today: oct3).transfer;
+      expect(transfer.realized.convertedBrl, 2880);
+      expect(transfer.realized.feeBrl, 120);
+      expect(transfer.remainingBrl, 7738.52);
+      expect(transfer.projected.eur, 1289.75);
+      expect(transfer.eur, 1769.75);
     });
   });
 

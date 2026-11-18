@@ -21,7 +21,7 @@ const lanes = computed<{ currency: Currency, cells: Cell[] }[]>(() => [
       { op: '', label: 'Entrada', value: props.summary.brl.income },
       { op: '−', label: 'Despesas', value: props.summary.brl.expenses },
       { op: '−', label: 'Conversão', value: props.summary.transfer.realized.convertedBrl },
-      { op: '−', label: 'Taxa Wise', value: props.summary.transfer.realized.feeBrl },
+      { op: '−', label: 'Taxa', value: props.summary.transfer.realized.feeBrl },
       { op: '=', label: 'Em reais', value: props.summary.transfer.remainingBrl, tone: 'result' },
     ],
   },
@@ -47,7 +47,7 @@ function valueClass(cell: Cell) {
 </script>
 
 <template>
-  <section aria-label="Fluxo do mês: reais, transferência pela Wise e euros" class="overflow-hidden rounded-xl border border-default">
+  <section aria-label="Fluxo do mês: reais, conversão e euros" class="overflow-hidden rounded-xl border border-default">
     <template v-for="(lane, laneIndex) in lanes" :key="lane.currency">
       <div class="flex flex-col px-4 py-3" :class="{ 'sm:flex-row sm:items-stretch sm:py-4': !compact }">
         <template v-for="(cell, index) in lane.cells" :key="cell.label">
@@ -92,7 +92,6 @@ function valueClass(cell: Cell) {
           <UIcon name="i-lucide-sparkles" class="size-4 text-muted" aria-hidden="true" />
           <span class="font-medium text-highlighted">Projetado</span>
           <span class="money text-toned">{{ formatMoney(transfer.projected.sentBrl, 'BRL') }}</span>
-          <span class="money text-toned">− {{ formatMoney(transfer.projected.feeBrl, 'BRL') }}</span>
           <span class="money text-toned">
             ÷ {{ formatRate(transfer.rate) }}
             <UIcon v-if="transfer.rateLocked" name="i-lucide-lock" class="size-3 align-[-1px] text-muted" aria-label="cotação travada" />

@@ -9,7 +9,6 @@ import 'months_store.dart';
 import 'toast.dart';
 
 const _rateRefresh = Duration(minutes: 5);
-const _quoteDebounce = Duration(milliseconds: 600);
 
 /// Port of the web's `useMonth`: loads one month and exposes optimistic mutations. Local state
 /// changes first (so the summary recomputes instantly), then the request is sent; on failure a
@@ -33,7 +32,6 @@ class MonthController extends ChangeNotifier {
   bool refreshingRate = false;
   MonthSummary? _summary;
   Timer? _rateTimer;
-  Timer? _quoteTimer;
   bool _disposed = false;
 
   MonthSummary? get summary => _summary;
@@ -50,48 +48,21 @@ class MonthController extends ChangeNotifier {
     _changed();
   }
 
-  /// Recomputes the summary, then keeps the drawer and the Wise quote in step with it.
+  /// Recomputes the summary, then keeps the drawer in step with it.
   void _changed() {
     if (_disposed) return;
     final current = data;
-    final previousSent = _summary?.transfer.projected.sentBrl;
     _summary = current == null
         ? null
         : summarizeMonth(
             current.month,
             current.items,
             rate: current.rate?.rate,
-            quote: current.quote,
-            fallbackFee: current.fallbackFee,
             spends: current.spends,
             conversions: current.conversions,
           );
-    if (current != null && _summary != null) {
-      MonthsStore.instance.updateSummary(current.month, _summary!);
-      final sent = _summary!.transfer.projected.sentBrl;
-      if (sent != previousSent) _scheduleQuote(sent);
-    }
+    if (current != null && _summary != null) MonthsStore.instance.updateSummary(current.month, _summary!);
     notifyListeners();
-  }
-
-  // Without a manual fee the fee comes from Wise's quote for the exact amount sent. Edits change that
-  // amount: the summary scales the old quote meanwhile, and a fresh one is fetched once edits settle.
-  void _scheduleQuote(double sentBrl) {
-    _quoteTimer?.cancel();
-    final current = data;
-    if (current == null || sentBrl == 0 || current.month.wiseFee != null || current.quote?.sendAmount == sentBrl) return;
-    _quoteTimer = Timer(_quoteDebounce, () async {
-      WiseQuote? quote;
-      try {
-        quote = await _api.quote(sendAmount: sentBrl);
-      } catch (_) {
-        quote = null;
-      }
-      if (data != null && _summary?.transfer.projected.sentBrl == sentBrl) {
-        data!.quote = quote;
-        _changed();
-      }
-    });
   }
 
   Future<T?> _persist<T>(Future<T> Function() request) async {
@@ -165,9 +136,7 @@ class MonthController extends ChangeNotifier {
     }
     final saved = await _persist(() => _api.updateMonth(year, month, patch));
     if (saved != null && data != null) {
-      data!
-        ..month = saved.month
-        ..quote = saved.quote;
+      data!.month = saved.month;
       _changed();
     }
     return saved != null;
@@ -259,7 +228,6 @@ class MonthController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _rateTimer?.cancel();
-    _quoteTimer?.cancel();
     super.dispose();
   }
 }

@@ -1,6 +1,6 @@
 import type { LiveRate } from '@maimoni/shared'
 import type { Database } from '../db'
-import { and, desc, eq } from 'drizzle-orm'
+import { and, desc, eq, gte, inArray } from 'drizzle-orm'
 import { z } from 'zod'
 import { exchangeRates } from '../db/schema'
 import { log } from '../lib/log'
@@ -12,14 +12,11 @@ interface Provider {
   parse: (body: unknown) => number
 }
 
-/** Tried in order. Wise first because it's the rate the transfer actually uses. */
+/**
+ * Tried in order. Both publish reference rates once a day, with no key: Frankfurter the ECB's, on
+ * working days, and Open ER API its own.
+ */
 const providers: Provider[] = [
-  {
-    source: 'wise',
-    label: 'Wise',
-    url: 'https://wise.com/rates/live?source=EUR&target=BRL',
-    parse: body => z.object({ value: z.number().positive() }).parse(body).value,
-  },
   {
     source: 'frankfurter',
     label: 'Frankfurter (BCE)',
@@ -34,11 +31,14 @@ const providers: Provider[] = [
   },
 ]
 
+/** How long to wait before asking the providers again after all of them failed. */
+const RETRY_MS = 5 * 60_000
+
 export interface RateServiceOptions {
   db: Database
   fetch?: typeof fetch
-  /** How long a fetched rate is reused before asking the providers again. */
-  ttlMs?: number
+  /** The current time; tests move it to another day. */
+  now?: () => Date
 }
 
 export interface RateService {
@@ -51,9 +51,29 @@ export interface RateResult {
   error: string | null
 }
 
-export function createRateService({ db, fetch: fetcher = fetch, ttlMs = 5 * 60_000 }: RateServiceOptions): RateService {
-  let cached: { result: RateResult, expiresAt: number } | null = null
+/**
+ * One rate a day. The providers publish once a day, so the first request of a day (UTC) asks them
+ * and stores the answer in `exchange_rates`; every other request that day reads that row.
+ */
+export function createRateService({ db, fetch: fetcher = fetch, now = () => new Date() }: RateServiceOptions): RateService {
+  /** The last answer, so most requests don't reach the database either. */
+  let cached: { result: RateResult, day: string, retryAt: number | null } | null = null
   let pending: Promise<RateResult> | null = null
+
+  const dayOf = (date: Date) => date.toISOString().slice(0, 10)
+
+  /** Today's stored rate. A row from a source that is no longer a provider doesn't count. */
+  async function stored(day: string): Promise<LiveRate | null> {
+    const [row] = await db.select().from(exchangeRates).where(and(
+      eq(exchangeRates.base, 'EUR'),
+      eq(exchangeRates.quote, 'BRL'),
+      gte(exchangeRates.fetchedAt, `${day}T00:00:00.000Z`),
+      inArray(exchangeRates.source, providers.map(provider => provider.source)),
+    )).orderBy(desc(exchangeRates.fetchedAt)).limit(1)
+    if (!row)
+      return null
+    return { base: 'EUR', quote: 'BRL', rate: row.rate, source: row.source as Provider['source'], fetchedAt: new Date(row.fetchedAt).toISOString(), stale: false }
+  }
 
   async function fetchLive(): Promise<RateResult> {
     const failures: string[] = []
@@ -64,7 +84,7 @@ export function createRateService({ db, fetch: fetcher = fetch, ttlMs = 5 * 60_0
           throw new Error(`HTTP ${response.status}`)
         const rate = provider.parse(await response.json())
         const [row] = await db.insert(exchangeRates)
-          .values({ base: 'EUR', quote: 'BRL', rate, source: provider.source })
+          .values({ base: 'EUR', quote: 'BRL', rate, source: provider.source, fetchedAt: now().toISOString() })
           .returning({ fetchedAt: exchangeRates.fetchedAt })
         return {
           rate: { base: 'EUR', quote: 'BRL', rate, source: provider.source, fetchedAt: new Date(row!.fetchedAt).toISOString(), stale: false },
@@ -80,6 +100,7 @@ export function createRateService({ db, fetch: fetcher = fetch, ttlMs = 5 * 60_0
       }
     }
 
+    // Every provider failed: an earlier day's rate is better than none.
     const [last] = await db.select().from(exchangeRates).where(and(eq(exchangeRates.base, 'EUR'), eq(exchangeRates.quote, 'BRL'))).orderBy(desc(exchangeRates.fetchedAt)).limit(1)
     const error = failures.join('; ')
     if (!last)
@@ -90,17 +111,23 @@ export function createRateService({ db, fetch: fetcher = fetch, ttlMs = 5 * 60_0
     }
   }
 
+  async function today(day: string): Promise<RateResult> {
+    const rate = await stored(day)
+    return rate ? { rate, error: null } : fetchLive()
+  }
+
   return {
     async get() {
-      if (cached && cached.expiresAt > Date.now())
+      const day = dayOf(now())
+      if (cached && cached.day === day && (cached.retryAt === null || cached.retryAt > now().getTime()))
         return cached.result
-      pending ??= fetchLive().finally(() => {
+      pending ??= today(day).finally(() => {
         pending = null
       })
       const result = await pending
-      // Stale fallbacks are retried sooner than fresh rates.
-      if (result.rate)
-        cached = { result, expiresAt: Date.now() + (result.rate.stale ? ttlMs / 5 : ttlMs) }
+      // A day's rate is kept for the rest of the day; a failure is tried again after a while.
+      const fresh = result.rate !== null && !result.rate.stale
+      cached = { result, day, retryAt: fresh ? null : now().getTime() + RETRY_MS }
       return result
     },
   }

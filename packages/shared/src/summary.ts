@@ -1,4 +1,4 @@
-import type { Conversion, Currency, DailySpend, Month, MonthItem, WiseQuote } from './schemas'
+import type { Conversion, Currency, DailySpend, Month, MonthItem } from './schemas'
 
 export interface CurrencyTotals {
   income: number
@@ -17,10 +17,6 @@ export interface MonthSummary {
     /** EUR→BRL rate used for the conversion. */
     rate: number | null
     rateLocked: boolean
-    /** Effective fee as a fraction of sentBrl. */
-    wiseFee: number
-    /** manual: the month's own percentage; wise: Wise's quote; fallback: settings percentage because there was no quote. */
-    feeSource: FeeSource
     /** BRL left after completed conversions; negative when they exceeded this month's net. */
     remainingBrl: number
     realized: {
@@ -33,8 +29,7 @@ export interface MonthSummary {
     projected: {
       /** Positive BRL balance still expected to be converted. */
       sentBrl: number
-      feeBrl: number
-      /** Expected EUR for the remaining BRL; `null` without a rate. */
+      /** Expected EUR for the remaining BRL at the rate, with no fee taken off; `null` without a rate. */
       eur: number | null
     }
     /** Completed EUR plus the projection for the remaining BRL. */
@@ -61,15 +56,9 @@ export interface MonthSummary {
 
 export type MonthPhase = 'past' | 'current' | 'future'
 
-export type FeeSource = 'manual' | 'wise' | 'fallback'
-
 export interface SummaryContext {
   /** Live EUR→BRL rate, used unless the month locked its own. */
   rate: number | null
-  /** Wise quote for (ideally) this month's sentBrl; used when the month has no manual fee. */
-  quote?: WiseQuote | null
-  /** Percentage used when the month has no manual fee and there's no quote. */
-  fallbackFee: number
   /** Day-to-day spending recorded for the month. */
   spends?: Pick<DailySpend, 'day' | 'amount' | 'currency'>[]
   /** Completed BRL→EUR conversions recorded for the month. */
@@ -151,37 +140,31 @@ function totals(items: MonthItem[], currency: Currency): CurrencyTotals {
 }
 
 /**
- * What a daily spend costs the EUR allowance. Reais spent are reais that won't go through Wise, so
- * a BRL spend is worth what it would have become there: amount × (1 − fee) ÷ rate. `null` when a
- * BRL spend has no rate to convert with.
+ * What a daily spend costs the EUR allowance. Reais spent are reais that won't be converted, so a
+ * BRL spend is worth what it would have become at the rate: amount ÷ rate. `null` when a BRL spend
+ * has no rate to convert with.
  */
-export function spendInEur(spend: Pick<DailySpend, 'amount' | 'currency'>, transfer: Pick<MonthSummary['transfer'], 'rate' | 'wiseFee'>) {
+export function spendInEur(spend: Pick<DailySpend, 'amount' | 'currency'>, transfer: Pick<MonthSummary['transfer'], 'rate'>) {
   if (spend.currency === 'EUR')
     return spend.amount
-  return transfer.rate ? round((spend.amount * (1 - transfer.wiseFee)) / transfer.rate) : null
+  return transfer.rate ? round(spend.amount / transfer.rate) : null
 }
 
 /**
- * Wise fee in BRL for sending `sentBrl`. A quote for a different amount (the month was edited
- * since it was fetched) is scaled by its effective percentage until a fresh one arrives.
+ * The fee of a completed conversion: what was sent beyond the BRL the received EUR are worth at
+ * `rate`. Zero when the rate has moved so far that they are worth more than was sent, or without a rate.
  */
-function wiseFee(month: Pick<Month, 'wiseFee'>, sentBrl: number, { quote, fallbackFee }: SummaryContext): { feeBrl: number, fraction: number, source: FeeSource } {
-  if (month.wiseFee !== null)
-    return { feeBrl: sentBrl * month.wiseFee, fraction: month.wiseFee, source: 'manual' }
-  if (quote && quote.sendAmount > 0) {
-    const fraction = quote.fee / quote.sendAmount
-    return { feeBrl: quote.sendAmount === sentBrl ? quote.fee : sentBrl * fraction, fraction, source: 'wise' }
-  }
-  return { feeBrl: sentBrl * fallbackFee, fraction: fallbackFee, source: 'fallback' }
+export function conversionFee(conversion: Pick<Conversion, 'sentBrl' | 'receivedEur'>, rate: number | null) {
+  return rate ? Math.max(0, round(conversion.sentBrl - conversion.receivedEur * rate)) : 0
 }
 
 /**
  * Computes the month's result and allowance. Completed conversions use their actual BRL, fee and
- * EUR amounts; only the BRL left after them is projected through Wise. EUR expenses are then paid
- * from actual plus projected EUR, and the remainder is split across the open days.
+ * EUR amounts; the BRL left after them is projected at the rate, with no fee taken off. EUR
+ * expenses are then paid from actual plus projected EUR, and the remainder is split across the open days.
  */
 export function summarizeMonth(
-  month: Pick<Month, 'year' | 'month' | 'wiseFee' | 'exchangeRate' | 'activeDay'>,
+  month: Pick<Month, 'year' | 'month' | 'exchangeRate' | 'activeDay'>,
   items: MonthItem[],
   context: SummaryContext,
   today = new Date(),
@@ -197,8 +180,7 @@ export function summarizeMonth(
   }), { sentBrl: 0, convertedBrl: 0, feeBrl: 0, receivedEur: 0 })
   const remainingBrl = round(brl.net - realized.sentBrl)
   const projectedBrl = Math.max(0, remainingBrl)
-  const fee = wiseFee(month, projectedBrl, context)
-  const projectedEur = projectedBrl === 0 ? 0 : rate ? round((projectedBrl - fee.feeBrl) / rate) : null
+  const projectedEur = projectedBrl === 0 ? 0 : rate ? round(projectedBrl / rate) : null
   const transferEur = projectedEur === null ? null : round(realized.receivedEur + projectedEur)
 
   const eurIncome = round(eurOwn.income + realized.receivedEur + (projectedEur ?? 0))
@@ -213,7 +195,7 @@ export function summarizeMonth(
   let spentTotal = 0
   for (const spend of context.spends ?? []) {
     // Without a rate a BRL spend can't be converted; it counts once a rate is available.
-    const value = spendInEur(spend, { rate, wiseFee: fee.fraction }) ?? 0
+    const value = spendInEur(spend, { rate }) ?? 0
     spentTotal += value
     // Spends on later days only exist after undoing a close; they are still money already gone.
     if (spend.day === activeDay)
@@ -229,8 +211,6 @@ export function summarizeMonth(
     transfer: {
       rate,
       rateLocked: month.exchangeRate !== null,
-      wiseFee: fee.fraction,
-      feeSource: fee.source,
       remainingBrl,
       realized: {
         sentBrl: round(realized.sentBrl),
@@ -240,7 +220,6 @@ export function summarizeMonth(
       },
       projected: {
         sentBrl: round(projectedBrl),
-        feeBrl: round(fee.feeBrl),
         eur: projectedEur,
       },
       eur: transferEur,

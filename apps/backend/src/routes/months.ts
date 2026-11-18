@@ -1,8 +1,7 @@
-import type { Conversion, DailySpend, LiveRate, Month, MonthDetail, MonthItem, MonthKey, MonthListEntry } from '@maimoni/shared'
+import type { Month, MonthDetail, MonthItem, MonthKey, MonthListEntry } from '@maimoni/shared'
 import type { AuthEnv } from '../auth'
 import type { Database } from '../db'
 import type { RateService } from '../services/rates'
-import type { WiseService } from '../services/wise'
 import { createMonthItemSchema, createMonthSchema, monthKeySchema, reorderSchema, summarizeMonth, updateMonthItemSchema, updateMonthSchema } from '@maimoni/shared'
 import { and, asc, desc, eq, inArray, lt, max, or, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
@@ -11,7 +10,7 @@ import { conversions, dailySpends, monthItems, months, templateItems } from '../
 import { validate } from '../lib/validate'
 import { listConversions, toConversion } from './conversions'
 import { listSpends, toDailySpend } from './spends'
-import { getSettings, listTemplateItems, toTemplateItem } from './template'
+import { listTemplateItems, toTemplateItem } from './template'
 
 const itemParam = monthKeySchema.extend({ id: z.uuid() })
 
@@ -68,42 +67,32 @@ async function seedItems(db: Database, userId: string, { year, month }: MonthKey
   }))
 }
 
-export function monthRoutes(db: Database, rates: RateService, wise: WiseService) {
-  /** Summary with Wise's real fee for the BRL that remains after completed conversions. */
-  async function summarize(month: Month, items: MonthItem[], spends: DailySpend[], monthConversions: Conversion[], rate: LiveRate | null, fallbackFee: number) {
-    const context = { rate: rate?.rate ?? null, fallbackFee, spends, conversions: monthConversions }
-    const draft = summarizeMonth(month, items, context)
-    if (month.wiseFee !== null || draft.transfer.projected.sentBrl <= 0)
-      return { summary: draft, quote: null }
-    const quote = await wise.quote({ sendAmount: draft.transfer.projected.sentBrl })
-    return { summary: quote ? summarizeMonth(month, items, { ...context, quote }) : draft, quote }
-  }
-
+export function monthRoutes(db: Database, rates: RateService) {
   async function detail(row: typeof months.$inferSelect): Promise<MonthDetail> {
-    const [items, spends, monthConversions, rateResult, { wiseFee: fallbackFee }] = await Promise.all([listItems(db, row.id), listSpends(db, row.id), listConversions(db, row.id), rates.get(), getSettings(db, row.userId)])
+    const [items, spends, monthConversions, rateResult] = await Promise.all([listItems(db, row.id), listSpends(db, row.id), listConversions(db, row.id), rates.get()])
     const month = toMonth(row)
-    return { month, items, spends, conversions: monthConversions, rate: rateResult.rate, rateError: rateResult.error, fallbackFee, ...await summarize(month, items, spends, monthConversions, rateResult.rate, fallbackFee) }
+    const summary = summarizeMonth(month, items, { rate: rateResult.rate?.rate ?? null, spends, conversions: monthConversions })
+    return { month, items, spends, conversions: monthConversions, summary, rate: rateResult.rate, rateError: rateResult.error }
   }
 
   return new Hono<AuthEnv>()
     .get('/months', async (c) => {
       const userId = c.var.user.id
-      const [rows, items, spends, conversionRows, rateResult, { wiseFee: fallbackFee }] = await Promise.all([
+      const [rows, items, spends, conversionRows, rateResult] = await Promise.all([
         db.select().from(months).where(eq(months.userId, userId)).orderBy(desc(months.year), desc(months.month)),
         db.select().from(monthItems).where(eq(monthItems.userId, userId)).orderBy(asc(monthItems.position)),
         db.select().from(dailySpends).where(eq(dailySpends.userId, userId)),
         db.select().from(conversions).where(eq(conversions.userId, userId)),
         rates.get(),
-        getSettings(db, userId),
       ])
       const itemsByMonth = Map.groupBy(items.map(toMonthItem), item => item.monthId)
       const spendsByMonth = Map.groupBy(spends.map(toDailySpend), spend => spend.monthId)
       const conversionsByMonth = Map.groupBy(conversionRows.map(toConversion), conversion => conversion.monthId)
-      const body: MonthListEntry[] = await Promise.all(rows.map(async (row) => {
+      const body: MonthListEntry[] = rows.map((row) => {
         const month = toMonth(row)
-        const { summary } = await summarize(month, itemsByMonth.get(month.id) ?? [], spendsByMonth.get(month.id) ?? [], conversionsByMonth.get(month.id) ?? [], rateResult.rate, fallbackFee)
+        const summary = summarizeMonth(month, itemsByMonth.get(month.id) ?? [], { rate: rateResult.rate?.rate ?? null, spends: spendsByMonth.get(month.id) ?? [], conversions: conversionsByMonth.get(month.id) ?? [] })
         return { ...month, summary }
-      }))
+      })
       return c.json(body)
     })
     .post('/months', validate('json', createMonthSchema), async (c) => {
@@ -115,7 +104,6 @@ export function monthRoutes(db: Database, rates: RateService, wise: WiseService)
       if (!items)
         return c.json({ error: 'There is no earlier month to copy from' }, 400)
       const row = await db.transaction(async (tx) => {
-        // No manual fee: new months use Wise's real quote for whatever they end up sending.
         const [created] = await tx.insert(months).values({ ...key, userId }).returning()
         if (items.length)
           await tx.insert(monthItems).values(items.map(item => ({ ...item, monthId: created!.id, userId })))

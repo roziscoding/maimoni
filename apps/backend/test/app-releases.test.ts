@@ -1,7 +1,6 @@
 import type { Auth } from '../src/auth'
 import type { Database } from '../src/db'
 import type { RateService } from '../src/services/rates'
-import type { WiseService } from '../src/services/wise'
 import { describe, expect, test } from 'bun:test'
 import { createApp } from '../src/app'
 import { createAppReleaseService } from '../src/services/app-releases'
@@ -76,7 +75,6 @@ describe('app update routes', () => {
     db: {} as Database,
     auth: {} as Auth,
     rates: {} as RateService,
-    wise: {} as WiseService,
     appReleases: createAppReleaseService({ token: 'test', fetch: fakeGitHub().fetcher }),
   })
 
@@ -105,14 +103,13 @@ describe('app update routes', () => {
       db: {} as Database,
       auth: {} as Auth,
       rates: {} as RateService,
-      wise: {} as WiseService,
       appReleases: createAppReleaseService({ token: 'expired', fetch: (async () => new Response('Bad credentials', { status: 401 })) as typeof fetch }),
     })
     expect((await failing.request('/api/app/android/latest')).status).toBe(502)
   })
 
   test('answers 503 when the server has no token', async () => {
-    const unconfigured = createApp({ db: {} as Database, auth: {} as Auth, rates: {} as RateService, wise: {} as WiseService })
+    const unconfigured = createApp({ db: {} as Database, auth: {} as Auth, rates: {} as RateService })
     expect((await unconfigured.request('/api/app/android/latest')).status).toBe(503)
   })
 })

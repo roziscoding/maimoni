@@ -19,6 +19,22 @@ x-backend-image: &backend-image
     target: dev
 
 services:
+  # Gives each service a hostname on port 80 of localhost (TRAEFIK_PORT changes the port):
+  # app.maimoni.localhost, api.maimoni.localhost and studio.maimoni.localhost. Browsers resolve
+  # *.localhost to this machine on their own. The routes are in the `traefik-routes` config below,
+  # so Traefik doesn't need the Docker socket.
+  traefik:
+    image: traefik:v3.7.18
+    command:
+      - --entrypoints.web.address=:80
+      - --providers.file.filename=/etc/traefik/routes.yaml
+    configs:
+      - source: traefik-routes
+        target: /etc/traefik/routes.yaml
+    ports:
+      - '127.0.0.1:${TRAEFIK_PORT:-80}:80'
+    restart: unless-stopped
+
   postgres:
     # Same exact version as compose.yaml; Dependabot updates both.
     image: postgres:18.7-alpine
@@ -27,7 +43,8 @@ services:
       POSTGRES_PASSWORD: maimoni
       POSTGRES_DB: maimoni
     ports:
-      - '${POSTGRES_PORT:-5434}:5432'
+      # Loopback only: the credentials are in this file.
+      - '127.0.0.1:${POSTGRES_PORT:-5434}:5432'
     volumes:
       - postgres:/var/lib/postgresql
     healthcheck:
@@ -37,21 +54,35 @@ services:
       retries: 10
     restart: unless-stopped
 
-  # Drizzle Studio in the browser, on localhost:4984 (4983 is left to `mise run db:studio`).
-  # The master password is `maimoni`. Connections are added in its UI and kept in the volume:
-  # host `postgres`, port 5432, user, password and database `maimoni`.
+  # Drizzle Gateway takes no connection from the environment; it keeps them in store.json in its
+  # volume. This writes one for the dev database the first time, so the gateway starts connected.
+  drizzle-gateway-seed:
+    image: postgres:18.7-alpine
+    command: [sh, -c, '[ -f /app/store.json ] || cp /seed/store.json /app/store.json']
+    configs:
+      - source: drizzle-gateway-store
+        target: /seed/store.json
+    volumes:
+      - drizzle-gateway:/app
+    restart: 'no'
+
+  # Drizzle Studio in the browser, on studio.maimoni.localhost and localhost:4984 (4983 is left to
+  # `mise run db:studio`). The master password is `maimoni`. It starts with a connection to the dev
+  # database; others are added in its UI and kept in the volume.
   drizzle-gateway:
     # Same exact version as compose.yaml; Dependabot updates both.
     image: ghcr.io/drizzle-team/gateway:1.8.0
     environment:
       MASTERPASS: maimoni
     ports:
-      - '${DRIZZLE_GATEWAY_PORT:-4984}:4983'
+      - '127.0.0.1:${DRIZZLE_GATEWAY_PORT:-4984}:4983'
     volumes:
       - drizzle-gateway:/app
     depends_on:
       postgres:
         condition: service_healthy
+      drizzle-gateway-seed:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   migrate:
@@ -75,7 +106,9 @@ services:
       NODE_ENV: development
       PORT: '3001'
       BETTER_AUTH_SECRET: maimoni-dev-secret-not-for-production
-      BETTER_AUTH_URL: http://localhost:3000
+      BETTER_AUTH_URL: http://app.maimoni.localhost:${TRAEFIK_PORT:-80}
+      # The frontend's own port still works for signing in.
+      BETTER_AUTH_TRUSTED_ORIGINS: http://localhost:${FRONTEND_PORT:-3000}
       # Not secret, and unused until the matching keys are in the env file.
       RESEND_FROM: maimoni <maimoni@roz.ninja>
       APPLE_CLIENT_ID: ninja.roz.maimoni.web
@@ -153,3 +186,60 @@ services:
 volumes:
   postgres:
   drizzle-gateway:
+
+configs:
+  traefik-routes:
+    content: |
+      http:
+        routers:
+          app:
+            rule: Host(`app.maimoni.localhost`)
+            service: app
+          api:
+            rule: Host(`api.maimoni.localhost`)
+            service: api
+          studio:
+            rule: Host(`studio.maimoni.localhost`)
+            service: studio
+        services:
+          app:
+            loadBalancer:
+              servers:
+                - url: http://frontend:3000
+          api:
+            loadBalancer:
+              servers:
+                - url: http://backend:3001
+          studio:
+            loadBalancer:
+              servers:
+                - url: http://drizzle-gateway:4983
+  drizzle-gateway-store:
+    content: |
+      {
+        "id": "00000000-0000-4000-8000-000000000000",
+        "slots": [
+          [
+            "00000000-0000-4000-8000-000000000001",
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "maimoni dev",
+              "dialect": "postgresql",
+              "credentials": {
+                "url": null,
+                "host": "postgres",
+                "port": 5432,
+                "user": "maimoni",
+                "password": "maimoni",
+                "database": "maimoni",
+                "sslmode": null,
+                "sslkey": null,
+                "sslcert": null,
+                "sslrootcert": null
+              },
+              "createdAt": "2026-01-01T00:00:00.000Z",
+              "updatedAt": "2026-01-01T00:00:00.000Z"
+            }
+          ]
+        ]
+      }

@@ -3,6 +3,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../api/client.dart';
 import '../api/models.dart';
+import '../format.dart';
 import '../routes.dart';
 import '../state/app_updates.dart';
 import '../state/months_store.dart';
@@ -12,7 +13,7 @@ import '../widgets/app_drawer.dart';
 import '../widgets/common.dart';
 import '../widgets/fields.dart';
 
-/// Port of `pages/settings.vue`: the fallback Wise fee and the danger zone.
+/// Port of `pages/settings.vue`: app updates, sessions and the danger zone.
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -21,49 +22,11 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  Settings? _settings;
-  double? _wiseFee;
-  ApiException? _error;
-  bool _loading = true;
-  bool _saving = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    try {
-      _settings = (await Api.instance.template()).settings;
-      _wiseFee = _settings!.wiseFee;
-      _error = null;
-    } on ApiException catch (err) {
-      _error = err;
-    }
-    if (mounted) setState(() => _loading = false);
-  }
-
-  Future<void> _save() async {
-    final fee = _wiseFee;
-    if (fee == null) return;
-    FocusScope.of(context).unfocus();
-    setState(() => _saving = true);
-    try {
-      _settings = await Api.instance.updateSettings({'wiseFee': fee});
-      toast('Configurações salvas', tone: ToastTone.success);
-    } catch (err) {
-      toast('Não foi possível salvar', description: errorMessage(err), tone: ToastTone.error);
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-
   Future<void> _confirmClear() async {
     final cleared = await showDialog<bool>(context: context, builder: (context) => const _ClearDataDialog());
     if (cleared != true || !mounted) return;
     await MonthsStore.instance.refresh();
-    toast('Dados apagados', description: 'Meses, template e configurações voltaram ao zero.', icon: LucideIcons.trash2);
+    toast('Dados apagados', description: 'Meses e template voltaram ao zero.', icon: LucideIcons.trash2);
     if (mounted) navigate(context, todayRoute);
   }
 
@@ -76,28 +39,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 24, 16, 48),
         children: [
-          if (_loading)
-            const Center(child: CircularProgressIndicator())
-          else if (_settings != null) ...[
-            Text('Taxa Wise de reserva', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: palette.text)),
-            const SizedBox(height: 2),
-            Text(
-              'Os meses usam a taxa real cotada pela Wise para o valor enviado. Esta só entra quando a Wise não responde.',
-              style: TextStyle(fontSize: 14, color: palette.muted),
-            ),
-            const SizedBox(height: 8),
-            SizedBox(width: 160, child: PercentField(value: _wiseFee, onCommit: (value) => setState(() => _wiseFee = value))),
-            const SizedBox(height: 24),
-            Align(alignment: Alignment.centerLeft, child: ActionButton(label: 'Salvar', loading: _saving, onPressed: _save)),
-          ] else
-            EmptyState(
-              icon: LucideIcons.cloudOff,
-              title: 'Não foi possível carregar as configurações',
-              description: _error?.message,
-              actions: [ActionButton(label: 'Tentar de novo', icon: LucideIcons.refreshCw, style: ActionStyle.subtle, onPressed: _load)],
-            ),
-          const SizedBox(height: 48),
           const _UpdatesSection(),
+          const SizedBox(height: 48),
+          const _SessionsSection(),
           const SizedBox(height: 48),
           Container(
             padding: const EdgeInsets.all(16),
@@ -111,7 +55,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 Text('Zona de perigo', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: palette.error)),
                 const SizedBox(height: 4),
                 Text(
-                  'Apaga todos os meses, o template, as configurações e o histórico de cotações. Não dá para desfazer.',
+                  'Apaga todos os meses e o template. Não dá para desfazer.',
                   style: TextStyle(fontSize: 14, color: palette.muted),
                 ),
                 const SizedBox(height: 12),
@@ -227,6 +171,127 @@ class _UpdatesSection extends StatelessWidget {
   }
 }
 
+/// Where the account is signed in, with a way to end the sessions on other devices.
+class _SessionsSection extends StatefulWidget {
+  const _SessionsSection();
+
+  @override
+  State<_SessionsSection> createState() => _SessionsSectionState();
+}
+
+class _SessionsSectionState extends State<_SessionsSection> {
+  static const _others = 'others';
+
+  List<SessionEntry>? _sessions;
+  String? _error;
+
+  /// ID of the session being ended, or [_others] for all but the current one.
+  String? _ending;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      _sessions = await Api.instance.sessions();
+      _error = null;
+    } catch (err) {
+      _error = errorMessage(err);
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _end([String? id]) async {
+    setState(() => _ending = id ?? _others);
+    try {
+      await (id == null ? Api.instance.endOtherSessions() : Api.instance.endSession(id));
+      toast(id == null ? 'Outras sessões encerradas' : 'Sessão encerrada', tone: ToastTone.success);
+    } catch (err) {
+      toast('Não foi possível encerrar', description: errorMessage(err), tone: ToastTone.error);
+    }
+    await _load();
+    if (mounted) setState(() => _ending = null);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final muted = TextStyle(fontSize: 14, color: palette.muted);
+    final sessions = _sessions;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Sessões', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: palette.text)),
+        const SizedBox(height: 2),
+        Text('Onde sua conta está conectada. Encerre as que você não reconhece ou não usa mais.', style: muted),
+        const SizedBox(height: 12),
+        if (sessions == null && _error == null)
+          const Center(child: CircularProgressIndicator())
+        else if (sessions == null)
+          Text('Não foi possível carregar as sessões: $_error', style: TextStyle(fontSize: 14, color: palette.error))
+        else ...[
+          Panel(
+            child: Column(
+              children: [
+                for (final (index, session) in sessions.indexed)
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+                    decoration: index == 0 ? null : BoxDecoration(border: Border(top: BorderSide(color: palette.border))),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                session.current ? '${deviceLabel(session.userAgent)} · esta sessão' : deviceLabel(session.userAgent),
+                                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: palette.highlighted),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                [
+                                  'Entrou em ${formatDateTime(session.createdAt)}',
+                                  if (session.ipAddress != null && session.ipAddress!.isNotEmpty) session.ipAddress!,
+                                ].join(' · '),
+                                style: muted,
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (!session.current) ...[
+                          const SizedBox(width: 12),
+                          ActionButton(
+                            label: 'Encerrar',
+                            style: ActionStyle.subtle,
+                            loading: _ending == session.id,
+                            onPressed: _ending == null ? () => _end(session.id) : null,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (sessions.length > 1) ...[
+            const SizedBox(height: 12),
+            ActionButton(
+              label: 'Encerrar todas as outras',
+              icon: LucideIcons.logOut,
+              style: ActionStyle.outline,
+              loading: _ending == _others,
+              onPressed: _ending == null ? _end : null,
+            ),
+          ],
+        ],
+      ],
+    );
+  }
+}
+
 class _ClearDataDialog extends StatefulWidget {
   const _ClearDataDialog();
 
@@ -271,7 +336,7 @@ class _ClearDataDialogState extends State<_ClearDataDialog> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text('Meses, itens, template, configurações e cotações salvas serão apagados de vez.'),
+          const Text('Meses, itens e template serão apagados de vez.'),
           const SizedBox(height: 16),
           const FieldLabel('Digite "$_confirmation" para confirmar'),
           TextField(

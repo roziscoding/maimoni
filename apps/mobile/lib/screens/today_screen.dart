@@ -25,7 +25,6 @@ class TodayScreen extends StatefulWidget {
 
 class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver, RouteAware {
   DateTime _now = DateTime.now();
-  final _scroll = ScrollController();
   late MonthController _today = MonthController(_now.year, _now.month);
 
   /// The month shown in the history; the same controller as [_today] for the current month.
@@ -96,8 +95,6 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver, 
       data.month.patch({'activeDay': next}),
       data.items,
       rate: data.rate?.rate,
-      quote: data.quote,
-      fallbackFee: data.fallbackFee,
       spends: data.spends,
       conversions: data.conversions,
     ).allowance;
@@ -127,7 +124,6 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver, 
     WidgetsBinding.instance.removeObserver(this);
     if (_history != _today) _history.dispose();
     _today.dispose();
-    _scroll.dispose();
     super.dispose();
   }
 
@@ -164,7 +160,6 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver, 
           body: RefreshIndicator(
             onRefresh: _refresh,
             child: ListView(
-              controller: _scroll,
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 48),
               children: [
                 ..._main(context, data, summary),
@@ -173,7 +168,6 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver, 
                   view: _view,
                   onViewChanged: (view) => setState(() => _view = view),
                   onMonthChanged: _showHistoryMonth,
-                  onOpenToday: () => _scroll.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut),
                 ),
               ],
             ),
