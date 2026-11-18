@@ -349,6 +349,27 @@ class Settings {
   final double wiseFee;
 }
 
+/// `GET /api/sessions` row: one sign in to the account that is still valid.
+class SessionEntry {
+  SessionEntry({required this.id, required this.current, required this.userAgent, required this.ipAddress, required this.createdAt});
+
+  factory SessionEntry.fromJson(Json json) => SessionEntry(
+        id: json['id'] as String,
+        current: json['current'] as bool,
+        userAgent: json['userAgent'] as String?,
+        ipAddress: json['ipAddress'] as String?,
+        createdAt: json['createdAt'] as String,
+      );
+
+  final String id;
+
+  /// Whether this is the session the app is using.
+  final bool current;
+  final String? userAgent;
+  final String? ipAddress;
+  final String createdAt;
+}
+
 /// `GET /api/months` row.
 class MonthListEntry {
   MonthListEntry({required this.month, required this.summary});

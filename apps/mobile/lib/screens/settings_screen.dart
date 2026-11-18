@@ -3,6 +3,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../api/client.dart';
 import '../api/models.dart';
+import '../format.dart';
 import '../routes.dart';
 import '../state/app_updates.dart';
 import '../state/months_store.dart';
@@ -98,6 +99,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           const SizedBox(height: 48),
           const _UpdatesSection(),
+          const SizedBox(height: 48),
+          const _SessionsSection(),
           const SizedBox(height: 48),
           Container(
             padding: const EdgeInsets.all(16),
@@ -223,6 +226,127 @@ class _UpdatesSection extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+/// Where the account is signed in, with a way to end the sessions on other devices.
+class _SessionsSection extends StatefulWidget {
+  const _SessionsSection();
+
+  @override
+  State<_SessionsSection> createState() => _SessionsSectionState();
+}
+
+class _SessionsSectionState extends State<_SessionsSection> {
+  static const _others = 'others';
+
+  List<SessionEntry>? _sessions;
+  String? _error;
+
+  /// ID of the session being ended, or [_others] for all but the current one.
+  String? _ending;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      _sessions = await Api.instance.sessions();
+      _error = null;
+    } catch (err) {
+      _error = errorMessage(err);
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _end([String? id]) async {
+    setState(() => _ending = id ?? _others);
+    try {
+      await (id == null ? Api.instance.endOtherSessions() : Api.instance.endSession(id));
+      toast(id == null ? 'Outras sessões encerradas' : 'Sessão encerrada', tone: ToastTone.success);
+    } catch (err) {
+      toast('Não foi possível encerrar', description: errorMessage(err), tone: ToastTone.error);
+    }
+    await _load();
+    if (mounted) setState(() => _ending = null);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final muted = TextStyle(fontSize: 14, color: palette.muted);
+    final sessions = _sessions;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Sessões', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: palette.text)),
+        const SizedBox(height: 2),
+        Text('Onde sua conta está conectada. Encerre as que você não reconhece ou não usa mais.', style: muted),
+        const SizedBox(height: 12),
+        if (sessions == null && _error == null)
+          const Center(child: CircularProgressIndicator())
+        else if (sessions == null)
+          Text('Não foi possível carregar as sessões: $_error', style: TextStyle(fontSize: 14, color: palette.error))
+        else ...[
+          Panel(
+            child: Column(
+              children: [
+                for (final (index, session) in sessions.indexed)
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+                    decoration: index == 0 ? null : BoxDecoration(border: Border(top: BorderSide(color: palette.border))),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                session.current ? '${deviceLabel(session.userAgent)} · esta sessão' : deviceLabel(session.userAgent),
+                                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: palette.highlighted),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                [
+                                  'Entrou em ${formatDateTime(session.createdAt)}',
+                                  if (session.ipAddress != null && session.ipAddress!.isNotEmpty) session.ipAddress!,
+                                ].join(' · '),
+                                style: muted,
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (!session.current) ...[
+                          const SizedBox(width: 12),
+                          ActionButton(
+                            label: 'Encerrar',
+                            style: ActionStyle.subtle,
+                            loading: _ending == session.id,
+                            onPressed: _ending == null ? () => _end(session.id) : null,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (sessions.length > 1) ...[
+            const SizedBox(height: 12),
+            ActionButton(
+              label: 'Encerrar todas as outras',
+              icon: LucideIcons.logOut,
+              style: ActionStyle.outline,
+              loading: _ending == _others,
+              onPressed: _ending == null ? _end : null,
+            ),
+          ],
+        ],
+      ],
     );
   }
 }
