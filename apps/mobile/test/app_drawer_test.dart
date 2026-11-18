@@ -27,7 +27,7 @@ void main() {
     Api.instance.httpClient = MockClient((request) async {
       requests.add(request.url.path);
       if (request.url.path == '/api/months') return json([]);
-      if (request.url.path == '/api/auth/sign-out') return json({'success': true});
+      if (request.url.path == '/api/sessions/current') return json({'success': true});
       return json({'error': 'Not found'}, status: 404);
     });
     Session.instance.setToken('t');
@@ -47,7 +47,7 @@ void main() {
     expect(Session.instance.signedIn, isFalse);
     expect(find.byType(LoginScreen), findsOneWidget);
     expect(find.text('Sua sessão expirou'), findsNothing);
-    expect(requests, contains('/api/auth/sign-out'));
+    expect(requests, contains('/api/sessions/current'));
 
     await tester.pumpWidget(const SizedBox());
   });

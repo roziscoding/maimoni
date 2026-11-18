@@ -177,7 +177,7 @@ void main() {
     expect(Session.instance.signedIn, isFalse);
     expect(Session.instance.expired, isFalse);
     await Future<void>.delayed(Duration.zero);
-    expect(path, '/api/auth/sign-out');
+    expect(path, '/api/sessions/current');
     expect(authorization, 'Bearer abc');
     expect(signedInWhenSent, isFalse);
     expect(Session.instance.pendingSignOuts, isEmpty);
@@ -202,6 +202,11 @@ void main() {
     await confirmSignOuts();
     expect(Session.instance.pendingSignOuts, ['abc']);
 
+    // Nor does an answer that isn't the route's own, such as a server too old to have it.
+    Api.instance.httpClient = MockClient((request) async => json({'error': 'Not found'}, status: 404));
+    await confirmSignOuts();
+    expect(Session.instance.pendingSignOuts, ['abc']);
+
     // A new session doesn't change whose sign out is sent.
     Session.instance.setToken('new');
     final sent = <String?>[];
@@ -217,12 +222,16 @@ void main() {
     expect(Session.instance.pendingSignOuts, isEmpty);
   });
 
-  test('a sign out the server refuses is not sent again', () async {
+  test('a token the server no longer accepts is not sent again, and the new session stays', () async {
     await Session.instance.load();
     Session.instance.setToken('abc');
-    Api.instance.httpClient = MockClient((request) async => json({'message': 'Unauthorized'}, status: 401));
+    Api.instance.httpClient = MockClient((request) async => throw Exception('offline'));
     signOut();
     await Future<void>.delayed(Duration.zero);
+    Session.instance.setToken('new');
+    Api.instance.httpClient = MockClient((request) async => json({'error': 'Unauthorized'}, status: 401));
+    await confirmSignOuts();
     expect(Session.instance.pendingSignOuts, isEmpty);
+    expect(Session.instance.token, 'new');
   });
 }

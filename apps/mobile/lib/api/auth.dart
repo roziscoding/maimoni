@@ -150,12 +150,12 @@ Future<void> confirmSignOuts() async {
   final session = Session.instance;
   for (final token in session.pendingSignOuts) {
     try {
-      await Api.instance.request('POST', '/auth/sign-out', headers: {'authorization': 'Bearer $token'});
+      // Not Better Auth's `sign-out`: it answers 200 even when it fails to delete the session.
+      await Api.instance.request('DELETE', '/sessions/current', bearer: token);
     } catch (error) {
-      // No status: no answer. 429 and 5xx: the server didn't get to it. Any other answer means it
-      // looked at the token and has nothing left to end.
-      final status = error is ApiException ? error.status : null;
-      if (status == null || status == 429 || status >= 500) continue;
+      // Only a 401 also settles it: the server no longer accepts the token. Anything else (no
+      // answer, a server error, a server too old to have the route) leaves it for the next try.
+      if (error is! ApiException || error.status != 401) continue;
     }
     session.signOutConfirmed(token);
   }
