@@ -51,6 +51,8 @@ class Api {
     final session = Session.instance;
     final token = session.token;
     final request = http.Request(method, uri);
+    // The server keeps the sign in request's user agent, and the session list names the device from it.
+    request.headers['user-agent'] = 'maimoni-app (${defaultTargetPlatform.name})';
     if (token != null) request.headers['authorization'] = 'Bearer $token';
     if (headers != null) request.headers.addAll(headers);
     if (body != null) {
@@ -190,6 +192,17 @@ class Api {
       Settings.fromJson(await _send('PATCH', '/settings', body: patch) as Json);
 
   Future<void> clearData() => _send('DELETE', '/data');
+
+  /* --------------------------------- Sessions ------------------------------ */
+
+  /// Where the account is signed in, the current session first.
+  Future<List<SessionEntry>> sessions() async =>
+      [for (final row in await _send('GET', '/sessions') as List) SessionEntry.fromJson(row as Json)];
+
+  Future<void> endSession(String id) => _send('DELETE', '/sessions/$id');
+
+  /// Ends every session but the current one.
+  Future<void> endOtherSessions() => _send('DELETE', '/sessions');
 
   /* ------------------------------- App updates ----------------------------- */
 
