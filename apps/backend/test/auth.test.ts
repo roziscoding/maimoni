@@ -1,4 +1,4 @@
-import type { MonthListEntry, TemplateDetail } from '@maimoni/shared'
+import type { MonthListEntry, SessionEntry, TemplateDetail } from '@maimoni/shared'
 import { describe, expect, test } from 'bun:test'
 import { createTestUser, login, setup, signIn, testPassword } from './setup'
 
@@ -129,6 +129,33 @@ describe('auth', () => {
     const token = (await login(app, 'mobile@example.com')).headers.get('set-auth-token')
     expect(token).toBeTruthy()
     expect((await as({ authorization: `Bearer ${token}` })('GET', '/months')).status).toBe(200)
+  })
+
+  test('lists the user\'s sessions and ends the others', async () => {
+    const { app, auth, as } = await setup()
+    await createTestUser(auth, 'mobile@example.com')
+    const session = async () => as({ authorization: `Bearer ${(await login(app, 'mobile@example.com')).headers.get('set-auth-token')}` })
+    const [first, second, third] = [await session(), await session(), await session()]
+
+    const { body: list } = await first<SessionEntry[]>('GET', '/sessions')
+    expect(list).toHaveLength(3)
+    expect(list.map(entry => entry.current)).toEqual([true, false, false])
+    expect(list[0]).not.toHaveProperty('token')
+
+    // Another user's sessions are out of reach, and the current one ends by signing out.
+    const other = as(await signIn(app, auth, 'other@example.com'))
+    expect((await other('DELETE', `/sessions/${list[1]!.id}`)).status).toBe(404)
+    expect((await first('DELETE', `/sessions/${list[0]!.id}`)).status).toBe(400)
+
+    const secondId = (await second<SessionEntry[]>('GET', '/sessions')).body[0]!.id
+    expect((await first('DELETE', `/sessions/${secondId}`)).status).toBe(204)
+    expect((await second('GET', '/months')).status).toBe(401)
+    expect((await third('GET', '/months')).status).toBe(200)
+
+    expect((await first('DELETE', '/sessions')).status).toBe(204)
+    expect((await third('GET', '/months')).status).toBe(401)
+    expect((await first<SessionEntry[]>('GET', '/sessions')).body).toHaveLength(1)
+    expect((await other('GET', '/months')).status).toBe(200)
   })
 
   test('each sign in is its own session', async () => {

@@ -50,6 +50,9 @@ Every route below except `/api/health`, `/api/sign-in-providers`, `/api/password
 | PATCH | `/api/months/:year/:month/spends/:id` | `UpdateDailySpend` | `DailySpend` |
 | DELETE | `/api/months/:year/:month/spends/:id` | | 204 |
 | DELETE | `/api/data` | | 204 — deletes the user's months (with their items, spends and conversions), template items and settings (settings come back with defaults on next read) |
+| GET | `/api/sessions` | | `SessionEntry[]` — the user's valid sessions, the current one first |
+| DELETE | `/api/sessions/:id` | | 204 — ends that session; 400 for the current one, which ends by signing out |
+| DELETE | `/api/sessions` | | 204 — ends every session but the current one |
 
 ## Behaviour notes
 

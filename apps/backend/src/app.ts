@@ -17,6 +17,7 @@ import { appReleaseRoutes } from './routes/app-releases'
 import { conversionRoutes } from './routes/conversions'
 import { dataRoutes } from './routes/data'
 import { monthRoutes } from './routes/months'
+import { sessionRoutes } from './routes/sessions'
 import { spendRoutes } from './routes/spends'
 import { templateRoutes } from './routes/template'
 import { wellKnownRoutes } from './routes/well-known'
@@ -95,6 +96,7 @@ export function createApp({ db, auth, rates, wise, appReleases = createAppReleas
     .route('/', conversionRoutes(db))
     .route('/', spendRoutes(db))
     .route('/', dataRoutes(db))
+    .route('/', sessionRoutes(auth))
 
   const app = new Hono<{ Variables: HonoLogLayerVariables }>()
 
