@@ -95,6 +95,7 @@ All the arithmetic lives in one place, `packages/shared/src/summary.ts`, used by
   - Each sign in is an independent session:
     - Signing out on the web doesn't sign out the mobile app, and the other way around.
     - A password reset ends all of them.
+    - `GET /api/sessions` lists them and `DELETE /api/sessions/:id` ends one from any other. They stand in for Better Auth's `list-sessions` and `revoke-session`, which only answer a session less than a day old and send every session's token to the client.
   - The mobile app's session:
     - The token is kept in the platform's secure storage.
     - On start the app checks it with `GET /api/auth/get-session`, which answers `null` for a token the server no longer accepts.

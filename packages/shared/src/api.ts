@@ -34,3 +34,15 @@ export interface ApiError {
   error: string
   issues?: unknown
 }
+
+/** `GET /api/sessions` row: one sign in to the account that is still valid. */
+export interface SessionEntry {
+  id: string
+  /** Whether this is the session that made the request. */
+  current: boolean
+  /** `User-Agent` of the sign in request. */
+  userAgent: string | null
+  /** Address the sign in came from, as the server saw it. */
+  ipAddress: string | null
+  createdAt: string
+}
