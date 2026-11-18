@@ -27,7 +27,8 @@ services:
       POSTGRES_PASSWORD: maimoni
       POSTGRES_DB: maimoni
     ports:
-      - '${POSTGRES_PORT:-5434}:5432'
+      # Loopback only: the credentials are in this file.
+      - '127.0.0.1:${POSTGRES_PORT:-5434}:5432'
     volumes:
       - postgres:/var/lib/postgresql
     healthcheck:
@@ -46,7 +47,7 @@ services:
     environment:
       MASTERPASS: maimoni
     ports:
-      - '${DRIZZLE_GATEWAY_PORT:-4984}:4983'
+      - '127.0.0.1:${DRIZZLE_GATEWAY_PORT:-4984}:4983'
     volumes:
       - drizzle-gateway:/app
     depends_on:
