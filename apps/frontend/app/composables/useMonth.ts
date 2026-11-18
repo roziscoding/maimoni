@@ -1,8 +1,7 @@
-import type { Conversion, CreateConversion, CreateDailySpend, CreateMonthItem, DailySpend, LiveRate, MonthDetail, MonthItem, MonthListEntry, TemplateItem, UpdateConversion, UpdateDailySpend, UpdateMonth, UpdateMonthItem, WiseQuote } from '@maimoni/shared'
+import type { Conversion, CreateConversion, CreateDailySpend, CreateMonthItem, DailySpend, LiveRate, MonthDetail, MonthItem, MonthListEntry, TemplateItem, UpdateConversion, UpdateDailySpend, UpdateMonth, UpdateMonthItem } from '@maimoni/shared'
 import { nextActiveDay, summarizeMonth } from '@maimoni/shared'
 
 const RATE_REFRESH_MS = 5 * 60 * 1000
-const QUOTE_DEBOUNCE_MS = 600
 
 /**
  * Loads one month and exposes optimistic mutations: local state changes first (so the
@@ -20,27 +19,10 @@ export async function useMonth(year: number, month: number) {
   const summary = computed(() => data.value
     ? summarizeMonth(data.value.month, data.value.items, {
         rate: data.value.rate?.rate ?? null,
-        quote: data.value.quote,
-        fallbackFee: data.value.fallbackFee,
         spends: data.value.spends,
         conversions: data.value.conversions,
       })
     : null)
-
-  // Without a manual fee the fee comes from Wise's quote for the exact amount sent. Edits change that
-  // amount: the summary scales the old quote meanwhile, and a fresh one is fetched once edits settle.
-  let quoteTimer: ReturnType<typeof setTimeout> | undefined
-  watch(() => summary.value?.transfer.projected.sentBrl, (sentBrl) => {
-    clearTimeout(quoteTimer)
-    const current = data.value
-    if (!current || !sentBrl || current.month.wiseFee !== null || current.quote?.sendAmount === sentBrl)
-      return
-    quoteTimer = setTimeout(async () => {
-      const quote = await $fetch<WiseQuote>('/api/wise/quote', { query: { sendAmount: sentBrl } }).catch(() => null)
-      if (data.value && summary.value?.transfer.projected.sentBrl === sentBrl)
-        data.value = { ...data.value, quote }
-    }, QUOTE_DEBOUNCE_MS)
-  })
 
   // Keep the sidebar's net figure in sync without refetching the whole list.
   watch(summary, (value) => {
@@ -97,7 +79,7 @@ export async function useMonth(year: number, month: number) {
       data.value = { ...data.value, month: { ...data.value.month, ...patch } as MonthDetail['month'] }
     const saved = await persist(() => $fetch<MonthDetail>(base, { method: 'PATCH', body: patch }))
     if (saved && data.value)
-      data.value = { ...data.value, month: saved.month, quote: saved.quote }
+      data.value = { ...data.value, month: saved.month }
   }
 
   async function removeMonth() {
@@ -196,7 +178,6 @@ export async function useMonth(year: number, month: number) {
   })
   onBeforeUnmount(() => {
     clearInterval(timer)
-    clearTimeout(quoteTimer)
   })
 
   await fetched

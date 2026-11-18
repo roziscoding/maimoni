@@ -4,9 +4,8 @@ import type { Database } from './db'
 import type { AppLinks } from './lib/app-links'
 import type { AppReleaseService } from './services/app-releases'
 import type { RateService } from './services/rates'
-import type { WiseService } from './services/wise'
 import { honoLogLayer } from '@loglayer/hono'
-import { passwordResetRequestSchema, wiseQuoteQuerySchema } from '@maimoni/shared'
+import { passwordResetRequestSchema } from '@maimoni/shared'
 import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { requireSession, RESET_PASSWORD_PATH } from './auth'
@@ -33,14 +32,13 @@ export interface AppOptions {
   db: Database
   auth: Auth
   rates: RateService
-  wise: WiseService
   /** Mobile app releases; without one, the update endpoints answer 503. */
   appReleases?: AppReleaseService
   /** Mobile app identifiers for the `.well-known` files; without them those answer 404. */
   appLinks?: AppLinks
 }
 
-export function createApp({ db, auth, rates, wise, appReleases = createAppReleaseService(), appLinks = appLinksFromEnv() }: AppOptions) {
+export function createApp({ db, auth, rates, appReleases = createAppReleaseService(), appLinks = appLinksFromEnv() }: AppOptions) {
   // Public: health checks, Better Auth's own endpoints, the sign in provider list, password reset requests, app updates (so a build without sign in can still update), and the app association files.
   const api = new Hono()
     .get('/health', c => c.json({ ok: true }))
@@ -73,15 +71,9 @@ export function createApp({ db, auth, rates, wise, appReleases = createAppReleas
         return c.json({ error: error || 'Nenhuma cotação disponível' }, 503)
       return c.json(rate)
     })
-    .get('/wise/quote', validate('query', wiseQuoteQuerySchema), async (c) => {
-      const quote = await wise.quote(c.req.valid('query'))
-      if (!quote)
-        return c.json({ error: 'Wise quote unavailable' }, 503)
-      return c.json(quote)
-    })
     .route('/', templateRoutes(db))
-    .route('/', monthRoutes(db, rates, wise))
-    .route('/', conversionRoutes(db))
+    .route('/', monthRoutes(db, rates))
+    .route('/', conversionRoutes(db, rates))
     .route('/', spendRoutes(db))
     .route('/', dataRoutes(db))
     .route('/', sessionRoutes(auth))

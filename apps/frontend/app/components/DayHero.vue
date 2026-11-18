@@ -6,7 +6,7 @@ const props = defineProps<{
   allowance: MonthSummary['allowance']
   /** The open day's spending, in the order it was recorded. */
   spends: DailySpend[]
-  /** Rate and Wise fee, to show the BRL equivalent and size BRL spends by their EUR cost. */
+  /** Rate, to show the BRL equivalent and size BRL spends by their EUR cost. */
   transfer: MonthSummary['transfer']
 }>()
 const rate = computed(() => props.transfer.rate)

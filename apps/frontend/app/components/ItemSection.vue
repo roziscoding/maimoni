@@ -18,7 +18,7 @@ const emit = defineEmits<{
 const title = computed(() => props.currency === 'BRL' ? 'Reais' : 'Euros')
 const incomes = computed(() => props.items.filter(item => item.kind === 'income'))
 const expenses = computed(() => props.items.filter(item => item.kind === 'expense'))
-// Sum of the listed incomes only: for EUR, `totals.income` also includes the Wise transfer.
+// Sum of the listed incomes only: for EUR, `totals.income` also includes the converted BRL.
 const incomeTotal = computed(() => incomes.value.reduce((sum, item) => sum + (item.amount ?? 0), 0))
 const paidShare = computed(() => props.totals.expenses > 0 ? Math.min(100, Math.round((props.totals.paid / props.totals.expenses) * 100)) : 0)
 </script>

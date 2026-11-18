@@ -86,6 +86,7 @@ const menu: DropdownMenuItem[] = [
               :year="year"
               :month="month"
               :conversions="data.conversions"
+              :rate="summary.transfer.rate"
               :create="addConversion"
               :update="updateConversion"
               :remove="removeConversion"

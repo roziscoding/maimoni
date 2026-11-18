@@ -1,7 +1,7 @@
 # maimoni
 
 Monthly BRL → EUR budget, replacing the `Financeiro.xlsx` workbook.
-Each month is a copy of a template: fixed values carry over, variable ones (credit-card bills, energy…) are flagged for review, BRL net is converted through Wise (live EUR→BRL rate + Wise fee) and whatever EUR is left becomes a daily allowance for the rest of the month.
+Each month is a copy of a template: fixed values carry over, variable ones (credit-card bills, energy…) are flagged for review, BRL net is converted at the live EUR→BRL rate and whatever EUR is left becomes a daily allowance for the rest of the month.
 
 ```
 apps/frontend     Nuxt 4 + Nuxt UI 4 (client-rendered SPA, proxies /api/** to the backend)

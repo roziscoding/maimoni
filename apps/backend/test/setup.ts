@@ -2,7 +2,6 @@ import type { Auth } from '../src/auth'
 import type { Database } from '../src/db'
 import type { Mail, MailService } from '../src/services/mail'
 import type { RateService } from '../src/services/rates'
-import type { WiseService } from '../src/services/wise'
 import { PGlite } from '@electric-sql/pglite'
 import { drizzle } from 'drizzle-orm/pglite'
 import { migrate } from 'drizzle-orm/pglite/migrator'
@@ -44,14 +43,11 @@ export async function signIn(app: ReturnType<typeof createApp>, auth: Auth, emai
   return cookieHeaders(await login(app, email))
 }
 
-/** Fake Wise pricing: 4% of the amount sent. */
-export const fakeWiseFee = 0.04
-
 /**
- * Fresh in-memory Postgres (PGlite) with migrations applied, plus the app wired to it. Pass `wiseOnline: false` to simulate
- * Wise being unreachable, and `authEnv` to set auth environment variables.
+ * Fresh in-memory Postgres (PGlite) with migrations applied, plus the app wired to it. `rate` is the
+ * live EUR→BRL rate (`null` for none), and `authEnv` sets auth environment variables.
  */
-export async function setup(rate: number | null = 6, wiseOnline = true, authEnv: Record<string, string> = {}) {
+export async function setup(rate: number | null = 6, authEnv: Record<string, string> = {}) {
   const db = drizzle({ client: new PGlite(), schema })
   await migrate(db, { migrationsFolder })
   const rates: RateService = {
@@ -59,20 +55,6 @@ export async function setup(rate: number | null = 6, wiseOnline = true, authEnv:
       rate: rate === null ? null : { base: 'EUR', quote: 'BRL', rate, source: 'wise', fetchedAt: new Date().toISOString(), stale: false },
       error: rate === null ? 'Cotação indisponível no teste' : null,
     }),
-  }
-  const wise: WiseService = {
-    quote: async (input) => {
-      if (!wiseOnline || rate === null)
-        return null
-      const sendAmount = input.sendAmount ?? input.recipientGetsAmount! * rate / (1 - fakeWiseFee)
-      return {
-        sendAmount,
-        fee: sendAmount * fakeWiseFee,
-        receivedAmount: input.recipientGetsAmount ?? (sendAmount * (1 - fakeWiseFee)) / rate,
-        rate: 1 / rate,
-        fetchedAt: new Date().toISOString(),
-      }
-    },
   }
   /** Every email the app tried to send. */
   const mails: Mail[] = []
@@ -82,7 +64,7 @@ export async function setup(rate: number | null = 6, wiseOnline = true, authEnv:
     },
   }
   const auth = createAuth({ db: db as unknown as Database, baseURL: 'http://localhost:3000', secret: 'test-secret-that-is-at-least-32-characters', mail, env: authEnv })
-  const app = createApp({ db: db as unknown as Database, auth, rates, wise })
+  const app = createApp({ db: db as unknown as Database, auth, rates })
   /** Request helper bound to a set of auth headers; `null` sends none. */
   const as = (auth: Record<string, string> | null) => async <T = any>(method: string, path: string, body?: unknown) => {
     const response = await app.request(`/api${path}`, {

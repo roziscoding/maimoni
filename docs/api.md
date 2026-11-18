@@ -25,13 +25,11 @@ Every route below except `/api/health`, `/api/sign-in-providers`, `/api/password
 | GET | `/api/well-known/assetlinks.json` | | Digital Asset Links statement for the Android app (404 unless `ANDROID_APP_PACKAGE` and `ANDROID_APP_CERT_SHA256` are set) |
 | GET | `/api/well-known/apple-app-site-association` | | `{ webcredentials: { apps } }` (404 unless `APPLE_TEAM_ID` and `APPLE_APP_BUNDLE_IDENTIFIER` are set) |
 | GET | `/api/rates/live` | | `LiveRate` (503 when no provider answered and nothing is cached) |
-| GET | `/api/wise/quote?sendAmount=` or `?recipientGetsAmount=` | | `WiseQuote` — fills the other side and fee from Wise (503 when Wise can't be reached) |
-| GET | `/api/template` | | `TemplateDetail` (`{ items, settings }`) |
+| GET | `/api/template` | | `TemplateDetail` (`{ items }`) |
 | POST | `/api/template/items` | `CreateTemplateItem` | `TemplateItem` (201) |
 | PATCH | `/api/template/items/:id` | `UpdateTemplateItem` | `TemplateItem` |
 | DELETE | `/api/template/items/:id` | | 204 |
 | PUT | `/api/template/items/order` | `{ ids: string[] }` | `TemplateItem[]` |
-| PATCH | `/api/settings` | `UpdateSettings` | `Settings` |
 | GET | `/api/months` | | `MonthListEntry[]` (newest first) |
 | POST | `/api/months` | `CreateMonth` (`{ year, month, source? }`) | `MonthDetail` (201, 409 if it exists) |
 | GET | `/api/months/:year/:month` | | `MonthDetail` |
@@ -49,7 +47,7 @@ Every route below except `/api/health`, `/api/sign-in-providers`, `/api/password
 | POST | `/api/months/:year/:month/spends` | `CreateDailySpend` (`{ day, amount, currency?, expression?, note? }`) | `DailySpend` (201) |
 | PATCH | `/api/months/:year/:month/spends/:id` | `UpdateDailySpend` | `DailySpend` |
 | DELETE | `/api/months/:year/:month/spends/:id` | | 204 |
-| DELETE | `/api/data` | | 204 — deletes the user's months (with their items, spends and conversions), template items and settings (settings come back with defaults on next read) |
+| DELETE | `/api/data` | | 204 — deletes the user's months (with their items, spends and conversions), and template items |
 | GET | `/api/sessions` | | `SessionEntry[]` — the user's valid sessions, the current one first |
 | DELETE | `/api/sessions/:id` | | 204 — ends that session; 400 for the current one, which ends by signing out |
 | DELETE | `/api/sessions` | | 204 — ends every session but the current one |
@@ -57,11 +55,10 @@ Every route below except `/api/health`, `/api/sign-in-providers`, `/api/password
 
 ## Behaviour notes
 
-- **Creating a month** copies every template item into the month (`source: "template"`, default) or every item of the closest earlier month (`source: "previous"`). Items copied from a `variable` template item get `needsReview: true`; template items without an amount are copied with `amount: null`. `wiseFee` and `exchangeRate` start as `null`.
+- **Creating a month** copies every template item into the month (`source: "template"`, default) or every item of the closest earlier month (`source: "previous"`). Items copied from a `variable` template item get `needsReview: true`; template items without an amount are copied with `amount: null`. `exchangeRate` starts as `null`.
 - **Editing a month item's `amount`** clears `needsReview` unless the request explicitly sends `needsReview`.
 - **`exchangeRate: null`** on a month means "use the live rate". Locking = PATCH the month with the current live rate.
-- **`wiseFee: null`** on a month means "use Wise's quote for the BRL still expected to be converted"; a number is a manual percentage. `MonthDetail.quote` carries the quote used, and `MonthDetail.fallbackFee` (the settings fee) applies when there is no quote. `summary.transfer.feeSource` says which one was used (`wise`, `manual` or `fallback`).
-- **Conversions** (`MonthDetail.conversions`) record completed BRL→EUR transfers: day, total BRL sent including the fee, fee in BRL, EUR received, and an optional note. The summary separates their actual amounts under `summary.transfer.realized`, then projects only `summary.transfer.remainingBrl` under `summary.transfer.projected`.
-- **Daily spends** (`MonthDetail.spends`) are day-to-day spending in `EUR` (default) or `BRL`, stored apart from the month items and never counted in `summary.eur`. BRL spends count against the allowance through `spendInEur()` (amount × (1 − fee) ÷ rate). The client sends the `day` (the open day it shows), so day boundaries follow the browser's timezone.
+- **Conversions** (`MonthDetail.conversions`) record completed BRL→EUR transfers: day, total BRL sent, EUR received, and an optional note. `feeBrl` is not accepted: the server sets it to `sentBrl − receivedEur × rate` (never below zero) with the month's locked rate, or the live rate, when the amounts are saved. The summary separates the actual amounts under `summary.transfer.realized`, then converts `summary.transfer.remainingBrl` at the rate, with no fee, under `summary.transfer.projected`.
+- **Daily spends** (`MonthDetail.spends`) are day-to-day spending in `EUR` (default) or `BRL`, stored apart from the month items and never counted in `summary.eur`. BRL spends count against the allowance through `spendInEur()` (amount ÷ rate). The client sends the `day` (the open day it shows), so day boundaries follow the browser's timezone.
 - **`activeDay`** on a month is the day open for daily spending; `null` means "today" (or the 1st for a future month). Closing a day is `PATCH { activeDay }` with `nextActiveDay()` from `@maimoni/shared`; 32 means every day was closed. `summary.allowance` is `(eur.net − spends before the open day) ÷ days from the open day to month end`, and `remainingEur` subtracts the open day's own spends.
 - **`summary`** is computed with `summarizeMonth` from `@maimoni/shared`, using the month's locked rate or the live rate. The frontend recomputes it locally with the same function after optimistic edits.

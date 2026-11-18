@@ -5,7 +5,6 @@ const money = {
   EUR: new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'EUR' }),
 }
 const rate = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 4, maximumFractionDigits: 4 })
-const percent = new Intl.NumberFormat('pt-BR', { style: 'percent', maximumFractionDigits: 2 })
 const monthNames = new Intl.DateTimeFormat('pt-BR', { month: 'long', timeZone: 'UTC' })
 const time = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
 
@@ -17,11 +16,6 @@ export function formatMoney(value: number | null | undefined, currency: Currency
 /** EUR→BRL rate with the 4 decimals the spreadsheet showed. */
 export function formatRate(value: number | null | undefined) {
   return value === null || value === undefined ? '—' : `R$ ${rate.format(value)}`
-}
-
-/** Fraction to percent: `0.039` → `3,9%`. */
-export function formatPercent(value: number) {
-  return percent.format(value)
 }
 
 export function formatDateTime(iso: string) {

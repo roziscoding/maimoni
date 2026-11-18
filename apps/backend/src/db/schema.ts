@@ -19,13 +19,6 @@ const owner = () => uuid('user_id').notNull().references(() => user.id, { onDele
  * under a month reference it through `(month_id, user_id)`, which keeps their owner equal to the month's.
  */
 
-/** One row per user with their defaults. */
-export const settings = pgTable('settings', {
-  userId: owner().primaryKey(),
-  wiseFee: numeric('wise_fee', { precision: 6, scale: 5, mode: 'number' }).notNull().default(0.039),
-  ...timestamps,
-})
-
 export const templateItems = pgTable('template_items', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: owner(),
@@ -45,7 +38,6 @@ export const months = pgTable('months', {
   userId: owner(),
   year: smallint('year').notNull(),
   month: smallint('month').notNull(),
-  wiseFee: numeric('wise_fee', { precision: 6, scale: 5, mode: 'number' }),
   exchangeRate: numeric('exchange_rate', { precision: 12, scale: 6, mode: 'number' }),
   activeDay: smallint('active_day'),
   note: text('note'),
@@ -74,7 +66,7 @@ export const dailySpends = pgTable('daily_spends', {
   check('daily_spends_day_range', sql`${table.day} between 1 and 31`),
 ])
 
-/** Completed Wise conversions. The sent amount includes the fee. */
+/** Completed BRL→EUR conversions. The sent amount includes the fee, which is worked out from the exchange rate when the conversion is saved. */
 export const conversions = pgTable('conversions', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: owner(),

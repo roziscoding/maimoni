@@ -1,16 +1,17 @@
 <script setup lang="ts">
-import type { Conversion, CreateConversion, WiseQuote } from '@maimoni/shared'
+import type { Conversion, CreateConversion } from '@maimoni/shared'
 import type { FormSubmitEvent } from '@nuxt/ui'
 import type * as z from 'zod'
-import { createConversionSchema, daysInMonth } from '@maimoni/shared'
+import { conversionFee, createConversionSchema, daysInMonth } from '@maimoni/shared'
 
 type ConversionForm = z.output<typeof createConversionSchema>
-type QuoteMode = 'EUR' | 'BRL'
 
 const props = defineProps<{
   year: number
   month: number
   conversions: Conversion[]
+  /** EUR→BRL rate the month is using, which the fee of a new conversion is worked out from. */
+  rate: number | null
   create: (input: CreateConversion) => Promise<Conversion | undefined>
   update: (id: string, input: CreateConversion) => Promise<Conversion | undefined>
   remove: (id: string) => Promise<void>
@@ -19,87 +20,34 @@ const props = defineProps<{
 const open = ref(false)
 const editing = ref<Conversion | null>(null)
 const deleting = ref<Conversion | null>(null)
-const mode = ref<QuoteMode>('EUR')
 const saving = ref(false)
 const deletingNow = ref(false)
-const quoting = ref(false)
-const quoteError = ref<string | null>(null)
-const state = reactive<ConversionForm>({ day: 1, sentBrl: 0, feeBrl: 0, receivedEur: 0, note: null })
-let quoteTimer: ReturnType<typeof setTimeout> | undefined
-let quoteVersion = 0
-let lastQuoteKey = ''
+const state = reactive<ConversionForm>({ day: 1, sentBrl: 0, receivedEur: 0, note: null })
 
 const sorted = computed(() => props.conversions.toSorted((a, b) => b.day - a.day || b.createdAt.localeCompare(a.createdAt)))
 const maxDay = computed(() => daysInMonth(props.year, props.month))
+
+// The fee isn't typed in. The server works it out from the rate when the amounts are saved; this
+// shows what it will be. A conversion being edited keeps its fee while its amounts stay the same.
+const amountsChanged = computed(() => !editing.value || editing.value.sentBrl !== state.sentBrl || editing.value.receivedEur !== state.receivedEur)
+const fee = computed(() => {
+  if (!amountsChanged.value)
+    return editing.value!.feeBrl
+  return state.sentBrl > 0 && state.receivedEur > 0 && props.rate ? conversionFee(state, props.rate) : null
+})
 
 function defaultDay() {
   const now = new Date()
   return now.getFullYear() === props.year && now.getMonth() + 1 === props.month ? now.getDate() : 1
 }
 
-function reset(conversion?: Conversion) {
-  editing.value = conversion ?? null
-  mode.value = 'EUR'
-  quoteError.value = null
-  Object.assign(state, conversion
-    ? { day: conversion.day, sentBrl: conversion.sentBrl, feeBrl: conversion.feeBrl, receivedEur: conversion.receivedEur, note: conversion.note }
-    : { day: defaultDay(), sentBrl: 0, feeBrl: 0, receivedEur: 0, note: null })
-  lastQuoteKey = conversion ? `EUR:${conversion.receivedEur}` : ''
-}
-
 function show(conversion?: Conversion) {
-  reset(conversion)
+  editing.value = conversion ?? null
+  Object.assign(state, conversion
+    ? { day: conversion.day, sentBrl: conversion.sentBrl, receivedEur: conversion.receivedEur, note: conversion.note }
+    : { day: defaultDay(), sentBrl: 0, receivedEur: 0, note: null })
   open.value = true
 }
-
-function quoteKey() {
-  const amount = mode.value === 'EUR' ? state.receivedEur : state.sentBrl
-  return amount > 0 ? `${mode.value}:${amount}` : ''
-}
-
-async function requestQuote(force = false) {
-  const key = quoteKey()
-  if (!key || (!force && key === lastQuoteKey))
-    return
-  lastQuoteKey = key
-  quoteError.value = null
-  quoting.value = true
-  const version = ++quoteVersion
-  try {
-    const query = mode.value === 'EUR'
-      ? { recipientGetsAmount: state.receivedEur }
-      : { sendAmount: state.sentBrl }
-    const quote = await $fetch<WiseQuote>('/api/wise/quote', { query })
-    if (version !== quoteVersion || key !== quoteKey())
-      return
-    state.sentBrl = quote.sendAmount
-    state.feeBrl = quote.fee
-    state.receivedEur = quote.receivedAmount
-  }
-  catch (error) {
-    if (version === quoteVersion)
-      quoteError.value = errorMessage(error)
-  }
-  finally {
-    if (version === quoteVersion)
-      quoting.value = false
-  }
-}
-
-watch([open, mode, () => mode.value === 'EUR' ? state.receivedEur : state.sentBrl], ([isOpen]) => {
-  clearTimeout(quoteTimer)
-  if (!isOpen)
-    return
-  quoteTimer = setTimeout(() => requestQuote(), 600)
-})
-
-watch(open, (isOpen) => {
-  if (isOpen)
-    return
-  clearTimeout(quoteTimer)
-  quoteVersion++
-  quoting.value = false
-})
 
 async function submit(event: FormSubmitEvent<ConversionForm>) {
   saving.value = true
@@ -119,8 +67,6 @@ async function confirmDelete() {
   deletingNow.value = false
   deleting.value = null
 }
-
-onBeforeUnmount(() => clearTimeout(quoteTimer))
 </script>
 
 <template>
@@ -169,7 +115,7 @@ onBeforeUnmount(() => clearTimeout(quoteTimer))
   <UModal
     v-model:open="open"
     :title="editing ? 'Editar conversão' : 'Lançar conversão'"
-    description="A cotação da Wise é só uma ajuda. Ajuste os valores para o que aconteceu de fato."
+    description="Informe quanto saiu em reais e quanto chegou em euros. A taxa é o que sobra da conta com o câmbio."
     :ui="{ footer: 'justify-end' }"
   >
     <template #body>
@@ -178,40 +124,7 @@ onBeforeUnmount(() => clearTimeout(quoteTimer))
           <UInputNumber v-model="state.day" :min="1" :max="maxDay" :format-options="{ useGrouping: false }" class="w-full" />
         </UFormField>
 
-        <div class="space-y-2">
-          <span class="text-sm font-medium text-default">Cotação a partir de</span>
-          <UFieldGroup class="w-full" aria-label="Valor usado para cotar">
-            <UButton
-              label="EUR recebido"
-              class="flex-1 justify-center"
-              color="neutral"
-              :variant="mode === 'EUR' ? 'solid' : 'outline'"
-              :aria-pressed="mode === 'EUR'"
-              @click="mode = 'EUR'"
-            />
-            <UButton
-              label="BRL enviado"
-              class="flex-1 justify-center"
-              color="neutral"
-              :variant="mode === 'BRL' ? 'solid' : 'outline'"
-              :aria-pressed="mode === 'BRL'"
-              @click="mode = 'BRL'"
-            />
-          </UFieldGroup>
-        </div>
-
         <div class="grid gap-4 sm:grid-cols-2">
-          <UFormField name="receivedEur" label="EUR recebido">
-            <UInputNumber
-              v-model="state.receivedEur"
-              :min="0"
-              :step="0.01"
-              locale="pt-BR"
-              :format-options="{ style: 'currency', currency: 'EUR', currencyDisplay: 'narrowSymbol' }"
-              class="w-full"
-              :highlight="mode === 'EUR'"
-            />
-          </UFormField>
           <UFormField name="sentBrl" label="BRL enviado">
             <UInputNumber
               v-model="state.sentBrl"
@@ -220,37 +133,32 @@ onBeforeUnmount(() => clearTimeout(quoteTimer))
               locale="pt-BR"
               :format-options="{ style: 'currency', currency: 'BRL', currencyDisplay: 'narrowSymbol' }"
               class="w-full"
-              :highlight="mode === 'BRL'"
+            />
+          </UFormField>
+          <UFormField name="receivedEur" label="EUR recebido">
+            <UInputNumber
+              v-model="state.receivedEur"
+              :min="0"
+              :step="0.01"
+              locale="pt-BR"
+              :format-options="{ style: 'currency', currency: 'EUR', currencyDisplay: 'narrowSymbol' }"
+              class="w-full"
             />
           </UFormField>
         </div>
 
-        <div class="flex items-center gap-2 text-xs text-muted">
-          <UIcon v-if="quoting" name="i-lucide-loader-circle" class="size-4 animate-spin" aria-hidden="true" />
-          <UIcon v-else name="i-lucide-sparkles" class="size-4" aria-hidden="true" />
-          {{ quoting ? 'Consultando a Wise…' : 'Os três valores continuam editáveis antes de salvar.' }}
-        </div>
-
-        <UAlert
-          v-if="quoteError"
-          color="error"
-          variant="subtle"
-          icon="i-lucide-circle-alert"
-          title="Não foi possível consultar a Wise"
-          :description="quoteError"
-          :actions="[{ label: 'Tentar novamente', color: 'neutral', variant: 'outline', icon: 'i-lucide-refresh-cw', onClick: () => requestQuote(true) }]"
-        />
-
-        <UFormField name="feeBrl" label="Taxa Wise em BRL">
-          <UInputNumber
-            v-model="state.feeBrl"
-            :min="0"
-            :step="0.01"
-            locale="pt-BR"
-            :format-options="{ style: 'currency', currency: 'BRL', currencyDisplay: 'narrowSymbol' }"
-            class="w-full"
-          />
-        </UFormField>
+        <p v-if="fee !== null" class="text-sm text-muted">
+          Taxa: <span class="money font-medium text-highlighted">{{ formatMoney(fee, 'BRL') }}</span>
+          <template v-if="amountsChanged">
+            , com o euro a <span class="money">{{ formatRate(rate) }}</span>.
+          </template>
+          <template v-else>
+            , calculada quando a conversão foi lançada.
+          </template>
+        </p>
+        <p v-else-if="!rate" class="text-sm text-warning">
+          Sem cotação do euro agora, a taxa desta conversão fica em zero.
+        </p>
 
         <UFormField name="note" label="Anotação" hint="Opcional">
           <UInput v-model="state.note" placeholder="Ex.: dinheiro para aluguel" class="w-full" />

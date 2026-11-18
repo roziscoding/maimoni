@@ -22,12 +22,6 @@ const sources: Record<LiveRate['source'], string> = {
 }
 
 const locked = computed(() => props.month.exchangeRate !== null)
-const manualFee = computed(() => props.month.wiseFee !== null)
-
-function setFee(value: number | null | undefined) {
-  if (value !== null && value !== undefined && value !== props.month.wiseFee)
-    emit('update', { wiseFee: value })
-}
 </script>
 
 <template>
@@ -90,56 +84,6 @@ function setFee(value: number | null | undefined) {
         :loading="refreshing"
         @click="emit('retry')"
       />
-    </div>
-
-    <div class="space-y-2 p-4">
-      <div class="flex items-center justify-between gap-2">
-        <label :for="manualFee ? 'wise-fee' : undefined" class="text-sm font-medium text-muted">Taxa da projeção</label>
-        <UFieldGroup size="xs" aria-label="Origem da taxa Wise">
-          <UButton
-            label="Wise"
-            color="neutral"
-            :variant="manualFee ? 'outline' : 'solid'"
-            :aria-pressed="!manualFee"
-            @click="manualFee && emit('update', { wiseFee: null })"
-          />
-          <UButton
-            label="Manual"
-            color="neutral"
-            :variant="manualFee ? 'solid' : 'outline'"
-            :aria-pressed="manualFee"
-            @click="!manualFee && emit('update', { wiseFee: Math.round(summary.transfer.wiseFee * 1e5) / 1e5 })"
-          />
-        </UFieldGroup>
-      </div>
-
-      <UInputNumber
-        v-if="manualFee"
-        id="wise-fee"
-        :model-value="month.wiseFee"
-        :min="0"
-        :max="0.99"
-        :step="0.001"
-        locale="pt-BR"
-        :format-options="{ style: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 2 }"
-        class="w-full"
-        :ui="{ base: 'money' }"
-        @update:model-value="setFee"
-      />
-      <p v-else class="money text-xl font-semibold text-highlighted">
-        {{ formatMoney(summary.transfer.projected.feeBrl, 'BRL') }}
-        <span class="text-sm font-normal text-muted">({{ formatPercent(summary.transfer.wiseFee) }})</span>
-      </p>
-
-      <p v-if="summary.transfer.feeSource === 'fallback'" class="text-xs text-warning">
-        A Wise não respondeu; usando a taxa de reserva de {{ formatPercent(summary.transfer.wiseFee) }} das configurações.
-      </p>
-      <p v-else-if="summary.transfer.feeSource === 'wise'" class="text-xs text-muted">
-        Estimativa da Wise para converter os <span class="money">{{ formatMoney(summary.transfer.projected.sentBrl, 'BRL') }}</span> restantes: parte fixa + percentual.
-      </p>
-      <p v-else class="text-xs text-muted">
-        Desconta <span class="money">{{ formatMoney(summary.transfer.projected.feeBrl, 'BRL') }}</span> dos reais que ainda serão convertidos.
-      </p>
     </div>
   </section>
 </template>

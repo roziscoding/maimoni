@@ -43,11 +43,11 @@ describe('Apple client secret', () => {
   test('enables Apple sign in only with a usable key', async () => {
     const { pem } = await appleKey()
     const env = { APPLE_CLIENT_ID: 'ninja.roz.maimoni.web', APPLE_TEAM_ID: 'TEAM123456', APPLE_KEY_ID: 'KEY1234567' }
-    const working = await setup(6, true, { ...env, APPLE_PRIVATE_KEY: pem })
+    const working = await setup(6, { ...env, APPLE_PRIVATE_KEY: pem })
     expect((await working.as(null)('GET', '/sign-in-providers')).body).toEqual(['apple'])
-    const broken = await setup(6, true, { ...env, APPLE_PRIVATE_KEY: 'not a key' })
+    const broken = await setup(6, { ...env, APPLE_PRIVATE_KEY: 'not a key' })
     expect((await broken.as(null)('GET', '/sign-in-providers')).body).toEqual([])
-    const incomplete = await setup(6, true, { APPLE_CLIENT_ID: env.APPLE_CLIENT_ID })
+    const incomplete = await setup(6, { APPLE_CLIENT_ID: env.APPLE_CLIENT_ID })
     expect((await incomplete.as(null)('GET', '/sign-in-providers')).body).toEqual([])
   })
 })

@@ -2,7 +2,6 @@ import type { Auth } from '../src/auth'
 import type { Database } from '../src/db'
 import type { AppLinks } from '../src/lib/app-links'
 import type { RateService } from '../src/services/rates'
-import type { WiseService } from '../src/services/wise'
 import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { createApp } from '../src/app'
 import { androidOrigin, appLinksFromEnv, passkeyOrigins } from '../src/lib/app-links'
@@ -62,7 +61,7 @@ describe('passkeyOrigins', () => {
 })
 
 function app(appLinks: AppLinks) {
-  return createApp({ db: {} as Database, auth: {} as Auth, rates: {} as RateService, wise: {} as WiseService, appLinks })
+  return createApp({ db: {} as Database, auth: {} as Auth, rates: {} as RateService, appLinks })
 }
 
 describe('well-known routes', () => {
