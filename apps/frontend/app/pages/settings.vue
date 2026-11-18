@@ -94,6 +94,8 @@ async function clearData() {
           :actions="[{ label: 'Tentar de novo', icon: 'i-lucide-refresh-cw', color: 'neutral', variant: 'subtle', onClick: () => refresh() }]"
         />
 
+        <SessionList class="mt-12" />
+
         <section aria-labelledby="danger-title" class="mt-12 space-y-3 rounded-xl border border-error/40 p-4">
           <div class="space-y-1">
             <h2 id="danger-title" class="text-sm font-semibold text-error">

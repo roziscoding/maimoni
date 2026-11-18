@@ -46,6 +46,22 @@ export function dayLabel(year: number, month: number, day: number) {
   return label.charAt(0).toUpperCase() + label.slice(1)
 }
 
+const BROWSERS: [RegExp, string][] = [[/Edg\//, 'Edge'], [/OPR\//, 'Opera'], [/Firefox\//, 'Firefox'], [/Chrome\//, 'Chrome'], [/Safari\//, 'Safari']]
+const SYSTEMS: [RegExp, string][] = [[/Android/i, 'Android'], [/iPhone|iPad|iOS/i, 'iPhone'], [/Mac OS X|macOS/i, 'macOS'], [/Windows/i, 'Windows'], [/Linux/i, 'Linux']]
+
+/** Names the device behind a session's `User-Agent`: `Chrome no Linux`, `App maimoni no Android`. */
+export function deviceLabel(userAgent: string | null) {
+  if (!userAgent)
+    return 'Dispositivo desconhecido'
+  // The mobile app sends `maimoni-app (<system>)`; builds before that sent Dart's default.
+  const app = /^maimoni-app|^Dart\//.test(userAgent)
+  const name = app ? 'App maimoni' : BROWSERS.find(([pattern]) => pattern.test(userAgent))?.[1]
+  const system = SYSTEMS.find(([pattern]) => pattern.test(userAgent))?.[1]
+  if (!name)
+    return system ?? 'Dispositivo desconhecido'
+  return system ? `${name} no ${system}` : name
+}
+
 /** Pulls the backend's `{ error }` message out of a failed `$fetch`. */
 export function errorMessage(error: unknown) {
   const data = (error as { data?: { error?: string } } | null)?.data
