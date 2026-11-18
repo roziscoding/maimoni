@@ -127,6 +127,10 @@ class Api {
 
   Future<void> deleteMonth(int year, int month) => _send('DELETE', _month(year, month));
 
+  /// Asks Wise for a new quote for the month and stores it; the month otherwise keeps the one it has.
+  Future<MonthDetail> refreshQuote(int year, int month) async =>
+      MonthDetail.fromJson(await _send('POST', '${_month(year, month)}/quote') as Json);
+
   /* ------------------------------- Month items ----------------------------- */
 
   Future<MonthItem> addItem(int year, int month, Json body) async =>

@@ -148,9 +148,7 @@ class _ConversionFormState extends State<_ConversionForm> {
   bool _quoting = false;
   String? _quoteError;
   Map<String, String> _errors = {};
-  Timer? _quoteTimer;
   int _quoteVersion = 0;
-  String _lastQuoteKey = '';
 
   int get _maxDay => daysInMonth(widget.controller.year, widget.controller.month);
 
@@ -166,7 +164,6 @@ class _ConversionFormState extends State<_ConversionForm> {
       _sent.text = formatPlain(conversion.sentBrl);
       _fee.text = formatPlain(conversion.feeBrl);
       _note.text = conversion.note ?? '';
-      _lastQuoteKey = 'eur:${conversion.receivedEur}';
     }
   }
 
@@ -177,15 +174,10 @@ class _ConversionFormState extends State<_ConversionForm> {
     return amount != null && amount > 0 ? '${_mode.name}:$amount' : '';
   }
 
-  void _scheduleQuote() {
-    _quoteTimer?.cancel();
-    _quoteTimer = Timer(const Duration(milliseconds: 600), _requestQuote);
-  }
-
-  Future<void> _requestQuote({bool force = false}) async {
+  /// Fills the other amount and the fee from Wise. Only on request: the form never asks Wise by itself.
+  Future<void> _requestQuote() async {
     final key = _quoteKey();
-    if (key.isEmpty || (!force && key == _lastQuoteKey)) return;
-    _lastQuoteKey = key;
+    if (key.isEmpty) return;
     final version = ++_quoteVersion;
     setState(() {
       _quoteError = null;
@@ -236,7 +228,6 @@ class _ConversionFormState extends State<_ConversionForm> {
 
   @override
   void dispose() {
-    _quoteTimer?.cancel();
     _quoteVersion++;
     _received.dispose();
     _sent.dispose();
@@ -264,10 +255,7 @@ class _ConversionFormState extends State<_ConversionForm> {
           value: _mode,
           expand: true,
           options: const [(value: _QuoteMode.eur, label: 'EUR recebido', icon: null), (value: _QuoteMode.brl, label: 'BRL enviado', icon: null)],
-          onChanged: (mode) {
-            setState(() => _mode = mode);
-            _scheduleQuote();
-          },
+          onChanged: (mode) => setState(() => _mode = mode),
         ),
         const SizedBox(height: 16),
         Row(
@@ -280,7 +268,8 @@ class _ConversionFormState extends State<_ConversionForm> {
                 prefix: '€',
                 highlight: _mode == _QuoteMode.eur,
                 errorText: _errors['receivedEur'],
-                onChanged: (_) => _mode == _QuoteMode.eur ? _scheduleQuote() : null,
+                // Rebuilds so the Wise button follows whether there is an amount to quote.
+                onChanged: (_) => setState(() {}),
               ),
             ),
             const SizedBox(width: 12),
@@ -291,26 +280,26 @@ class _ConversionFormState extends State<_ConversionForm> {
                 prefix: r'R$',
                 highlight: _mode == _QuoteMode.brl,
                 errorText: _errors['sentBrl'],
-                onChanged: (_) => _mode == _QuoteMode.brl ? _scheduleQuote() : null,
+                onChanged: (_) => setState(() {}),
               ),
             ),
           ],
         ),
         const SizedBox(height: 12),
-        Row(
-          children: [
-            if (_quoting)
-              SizedBox.square(dimension: 14, child: CircularProgressIndicator(strokeWidth: 2, color: palette.muted))
-            else
-              Icon(LucideIcons.sparkles, size: 16, color: palette.muted),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                _quoting ? 'Consultando a Wise…' : 'Os três valores continuam editáveis antes de salvar.',
-                style: TextStyle(fontSize: 12, color: palette.muted),
-              ),
-            ),
-          ],
+        Align(
+          alignment: Alignment.centerLeft,
+          child: ActionButton(
+            label: 'Calcular com a Wise',
+            icon: LucideIcons.sparkles,
+            style: ActionStyle.subtle,
+            loading: _quoting,
+            onPressed: _quoteKey().isEmpty ? null : _requestQuote,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Preenche o outro valor e a taxa a partir do ${_mode == _QuoteMode.eur ? 'EUR recebido' : 'BRL enviado'}. Os três continuam editáveis.',
+          style: TextStyle(fontSize: 12, color: palette.muted),
         ),
         if (_quoteError != null) ...[
           const SizedBox(height: 12),
@@ -320,7 +309,7 @@ class _ConversionFormState extends State<_ConversionForm> {
             title: 'Não foi possível consultar a Wise',
             description: _quoteError,
             action: OutlinedButton.icon(
-              onPressed: () => _requestQuote(force: true),
+              onPressed: _requestQuote,
               icon: const Icon(LucideIcons.refreshCw, size: 16),
               label: const Text('Tentar novamente'),
             ),

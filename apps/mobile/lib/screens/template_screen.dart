@@ -25,10 +25,8 @@ class _TemplateScreenState extends State<TemplateScreen> {
   final _api = Api.instance;
   TemplateDetail? _data;
   LiveRate? _rate;
-  WiseQuote? _quote;
   ApiException? _error;
   bool _loading = true;
-  double? _quotedFor;
 
   @override
   void initState() {
@@ -47,7 +45,6 @@ class _TemplateScreenState extends State<TemplateScreen> {
     }
     if (!mounted) return;
     setState(() => _loading = false);
-    _refreshQuote();
   }
 
   List<TemplateItem> get _items => [...?_data?.items]..sort((a, b) => a.position.compareTo(b.position));
@@ -87,29 +84,13 @@ class _TemplateScreenState extends State<TemplateScreen> {
       note: null,
       createdAt: '',
     );
-    return summarizeMonth(month, monthItems, rate: _rate?.rate, quote: _quote, fallbackFee: data.settings.wiseFee, today: now);
-  }
-
-  // New months use Wise's real fee, so quote the amount the preview would send.
-  Future<void> _refreshQuote() async {
-    final amount = _preview?.transfer.projected.sentBrl;
-    if (amount == _quotedFor) return;
-    _quotedFor = amount;
-    WiseQuote? fresh;
-    if (amount != null && amount > 0) {
-      try {
-        fresh = await _api.quote(sendAmount: amount);
-      } catch (_) {
-        fresh = null;
-      }
-    }
-    if (mounted && _quotedFor == amount) setState(() => _quote = fresh);
+    // A real month gets Wise's quote when it is created; the preview doesn't ask Wise and uses the fallback fee.
+    return summarizeMonth(month, monthItems, rate: _rate?.rate, fallbackFee: data.settings.wiseFee, today: now);
   }
 
   void _setItems(List<TemplateItem> Function(List<TemplateItem>) update) {
     if (_data == null || !mounted) return;
     setState(() => _data!.items = update(_data!.items));
-    _refreshQuote();
   }
 
   Future<T?> _persist<T>(Future<T> Function() request) async {
@@ -242,8 +223,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
           Text('Prévia de um mês novo', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.highlighted)),
           const SizedBox(height: 4),
           Text(
-            'Com a cotação de agora (${formatRate(_rate?.rate)}) e '
-            '${preview.transfer.feeSource == FeeSource.wise ? 'a taxa que a Wise cobraria hoje' : 'a taxa de reserva de ${formatPercent(data.settings.wiseFee)}'}. '
+            'Com a cotação de agora (${formatRate(_rate?.rate)}) e a taxa de reserva de ${formatPercent(data.settings.wiseFee)}. '
             'Itens variáveis em branco contam como zero.',
             style: muted,
           ),

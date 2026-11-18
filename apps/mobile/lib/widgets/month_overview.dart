@@ -283,8 +283,11 @@ class RatePanel extends StatelessWidget {
     required this.error,
     required this.summary,
     required this.refreshing,
+    required this.quote,
+    required this.quoting,
     required this.onUpdate,
     required this.onRetry,
+    required this.onQuote,
   });
 
   final Month month;
@@ -292,8 +295,15 @@ class RatePanel extends StatelessWidget {
   final String? error;
   final MonthSummary summary;
   final bool refreshing;
+
+  /// The month's stored Wise quote.
+  final WiseQuote? quote;
+
+  /// Whether a new quote is being fetched.
+  final bool quoting;
   final ValueChanged<Json> onUpdate;
   final VoidCallback onRetry;
+  final VoidCallback onQuote;
 
   @override
   Widget build(BuildContext context) {
@@ -318,9 +328,13 @@ class RatePanel extends StatelessWidget {
     final String feeNote;
     switch (transfer.feeSource) {
       case FeeSource.fallback:
-        feeNote = 'A Wise não respondeu; usando a taxa de reserva de ${formatPercent(transfer.wiseFee)} das configurações.';
+        feeNote = 'Sem cotação da Wise para este mês; usando a taxa de reserva de ${formatPercent(transfer.wiseFee)} das configurações.';
       case FeeSource.wise:
-        feeNote = 'Estimativa da Wise para converter os ${formatMoney(transfer.projected.sentBrl, Currency.brl)} restantes: parte fixa + percentual.';
+        final stored = quote;
+        feeNote = stored == null
+            ? 'Cotação da Wise: parte fixa + percentual.'
+            : 'Cotação da Wise de ${formatDateTime(stored.fetchedAt)}, para ${formatMoney(stored.sendAmount, Currency.brl)}: parte fixa + percentual.'
+                '${stored.sendAmount == transfer.projected.sentBrl ? '' : ' Aplicada em proporção aos ${formatMoney(transfer.projected.sentBrl, Currency.brl)} restantes.'}';
       case FeeSource.manual:
         feeNote = 'Desconta ${formatMoney(transfer.projected.feeBrl, Currency.brl)} dos reais que ainda serão convertidos.';
     }
@@ -414,6 +428,20 @@ class RatePanel extends StatelessWidget {
                   ),
                 const SizedBox(height: 8),
                 Text(feeNote, style: small.copyWith(color: transfer.feeSource == FeeSource.fallback ? palette.warning : palette.muted)),
+                // The quote never updates by itself: the app asks Wise only when a month is created and here.
+                if (!manualFee && transfer.projected.sentBrl > 0) ...[
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: ActionButton(
+                      label: quote == null ? 'Buscar cotação da Wise' : 'Atualizar cotação',
+                      icon: LucideIcons.refreshCw,
+                      style: ActionStyle.subtle,
+                      loading: quoting,
+                      onPressed: onQuote,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
