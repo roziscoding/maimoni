@@ -18,6 +18,10 @@ export interface WiseServiceOptions {
   fetch?: typeof fetch
   /** How long a quote for a given amount is reused. */
   ttlMs?: number
+  /** How many requests to Wise run at once; the rest wait for a free slot. */
+  concurrency?: number
+  /** How long a request to Wise may take, and how long a quote waits for a slot before giving up. */
+  timeoutMs?: number
 }
 
 export interface WiseService {
@@ -26,42 +30,90 @@ export interface WiseService {
 }
 
 /** Uses Wise's public comparison API, which prices a transfer the same way the app does: mid-market rate, fee charged on the amount sent. */
-export function createWiseService({ fetch: fetcher = fetch, ttlMs = 5 * 60_000 }: WiseServiceOptions = {}): WiseService {
+export function createWiseService({ fetch: fetcher = fetch, ttlMs = 5 * 60_000, concurrency = 4, timeoutMs = 5000 }: WiseServiceOptions = {}): WiseService {
   const cache = new Map<string, { quote: WiseQuote, expiresAt: number }>()
+  /** Requests under way, by cache key, so the same amount is asked for once. */
+  const pending = new Map<string, Promise<WiseQuote | null>>()
+  let active = 0
+  const waiting: (() => void)[] = []
+
+  // The month list asks for one quote per month at once; without a limit, an account with many
+  // months turns one request into as many requests to Wise.
+  function acquire() {
+    if (active < concurrency) {
+      active++
+      return Promise.resolve(true)
+    }
+    return new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => {
+        waiting.splice(waiting.indexOf(grant), 1)
+        resolve(false)
+      }, timeoutMs)
+      function grant() {
+        clearTimeout(timer)
+        resolve(true)
+      }
+      waiting.push(grant)
+    })
+  }
+
+  function release() {
+    // A waiting request takes over the slot; otherwise it is freed.
+    const next = waiting.shift()
+    if (next)
+      next()
+    else
+      active--
+  }
+
+  async function request(input: WiseQuoteQuery, field: string, amount: number, key: string) {
+    if (!await acquire()) {
+      log.warn('Wise quote skipped, too many requests under way')
+      return null
+    }
+    try {
+      const url = `https://api.wise.com/v4/comparisons/?${field}=${amount}&sourceCurrency=BRL&targetCurrency=EUR`
+      const response = await fetcher(url, { signal: AbortSignal.timeout(timeoutMs) })
+      if (!response.ok)
+        throw new Error(`HTTP ${response.status}`)
+      const { providers } = comparisonSchema.parse(await response.json())
+      const wise = providers.find(provider => provider.alias === 'wise')?.quotes[0]
+      if (!wise)
+        throw new Error('no Wise quote in response')
+      const sendAmount = input.sendAmount ?? wise.sendAmount
+      const receivedAmount = input.recipientGetsAmount ?? wise.receivedAmount
+      if (sendAmount === undefined || receivedAmount === null)
+        throw new Error('incomplete Wise quote')
+      const quote: WiseQuote = { sendAmount, fee: wise.fee, receivedAmount, rate: wise.rate, fetchedAt: new Date().toISOString() }
+      // Amounts change with every edit; keep the cache from growing without bound.
+      if (cache.size >= 100)
+        cache.clear()
+      cache.set(key, { quote, expiresAt: Date.now() + ttlMs })
+      return quote
+    }
+    catch (error) {
+      log.withError(error).warn('Wise quote failed')
+      return null
+    }
+    finally {
+      release()
+    }
+  }
 
   return {
-    async quote(input) {
+    quote(input) {
       const field = input.sendAmount === undefined ? 'recipientGetsAmount' : 'sendAmount'
       const amount = Math.round((input.sendAmount ?? input.recipientGetsAmount!) * 100) / 100
       const key = `${field}:${amount}`
       const cached = cache.get(key)
       if (cached && cached.expiresAt > Date.now())
-        return cached.quote
-
-      try {
-        const url = `https://api.wise.com/v4/comparisons/?${field}=${amount}&sourceCurrency=BRL&targetCurrency=EUR`
-        const response = await fetcher(url, { signal: AbortSignal.timeout(5000) })
-        if (!response.ok)
-          throw new Error(`HTTP ${response.status}`)
-        const { providers } = comparisonSchema.parse(await response.json())
-        const wise = providers.find(provider => provider.alias === 'wise')?.quotes[0]
-        if (!wise)
-          throw new Error('no Wise quote in response')
-        const sendAmount = input.sendAmount ?? wise.sendAmount
-        const receivedAmount = input.recipientGetsAmount ?? wise.receivedAmount
-        if (sendAmount === undefined || receivedAmount === null)
-          throw new Error('incomplete Wise quote')
-        const quote: WiseQuote = { sendAmount, fee: wise.fee, receivedAmount, rate: wise.rate, fetchedAt: new Date().toISOString() }
-        // Amounts change with every edit; keep the cache from growing without bound.
-        if (cache.size >= 100)
-          cache.clear()
-        cache.set(key, { quote, expiresAt: Date.now() + ttlMs })
-        return quote
+        return Promise.resolve(cached.quote)
+      let quote = pending.get(key)
+      if (!quote) {
+        quote = request(input, field, amount, key).finally(() => pending.delete(key))
+        pending.set(key, quote)
       }
-      catch (error) {
-        log.withError(error).warn('Wise quote failed')
-        return null
-      }
+      return quote
     },
   }
 }
