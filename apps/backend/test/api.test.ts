@@ -32,6 +32,7 @@ describe('template', () => {
     const ids = template.items.map(item => item.id).reverse()
     const { body: reordered } = await request<TemplateItem[]>('PUT', '/template/items/order', { ids })
     expect(reordered.map(item => item.id)).toEqual(ids)
+    expect((await request('PUT', '/template/items/order', { ids: [apple.id, apple.id] })).status).toBe(400)
 
     expect((await request('DELETE', `/template/items/${apple.id}`)).status).toBe(204)
     expect((await request('DELETE', `/template/items/${apple.id}`)).status).toBe(404)

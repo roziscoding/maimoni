@@ -67,7 +67,8 @@ export const updateTemplateItemSchema = templateItemFields.partial()
 export type UpdateTemplateItem = z.input<typeof updateTemplateItemSchema>
 
 export const reorderSchema = z.object({
-  ids: z.array(id).min(1),
+  // Each ID costs one UPDATE, so the list is capped and a repeated ID is refused.
+  ids: z.array(id).min(1).max(500).refine(ids => new Set(ids).size === ids.length, 'IDs must not repeat'),
 })
 export type Reorder = z.infer<typeof reorderSchema>
 
