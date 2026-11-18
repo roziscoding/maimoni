@@ -180,5 +180,49 @@ void main() {
     expect(path, '/api/auth/sign-out');
     expect(authorization, 'Bearer abc');
     expect(signedInWhenSent, isFalse);
+    expect(Session.instance.pendingSignOuts, isEmpty);
+  });
+
+  test('a sign out the server never heard of is sent again later', () async {
+    await Session.instance.load();
+    Session.instance.setToken('abc');
+    Api.instance.httpClient = MockClient((request) async => throw Exception('offline'));
+    signOut();
+    await Future<void>.delayed(Duration.zero);
+    expect(Session.instance.signedIn, isFalse);
+    expect(Session.instance.pendingSignOuts, ['abc']);
+
+    // The token survives a restart, apart from the session's own.
+    await Session.instance.load();
+    expect(Session.instance.signedIn, isFalse);
+    expect(Session.instance.pendingSignOuts, ['abc']);
+
+    // A server error leaves it for the next try.
+    Api.instance.httpClient = MockClient((request) async => json({'error': 'down'}, status: 503));
+    await confirmSignOuts();
+    expect(Session.instance.pendingSignOuts, ['abc']);
+
+    // A new session doesn't change whose sign out is sent.
+    Session.instance.setToken('new');
+    final sent = <String?>[];
+    Api.instance.httpClient = MockClient((request) async {
+      sent.add(request.headers['authorization']);
+      return json({'success': true});
+    });
+    await confirmSignOuts();
+    expect(sent, ['Bearer abc']);
+    expect(Session.instance.pendingSignOuts, isEmpty);
+    expect(Session.instance.token, 'new');
+    await Session.instance.load();
+    expect(Session.instance.pendingSignOuts, isEmpty);
+  });
+
+  test('a sign out the server refuses is not sent again', () async {
+    await Session.instance.load();
+    Session.instance.setToken('abc');
+    Api.instance.httpClient = MockClient((request) async => json({'message': 'Unauthorized'}, status: 401));
+    signOut();
+    await Future<void>.delayed(Duration.zero);
+    expect(Session.instance.pendingSignOuts, isEmpty);
   });
 }
