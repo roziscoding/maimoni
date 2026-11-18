@@ -48,16 +48,19 @@ export function createApp({ db, auth, rates, wise, appReleases = createAppReleas
     .get('/sign-in-providers', async c => c.json((await auth.$context).socialProviders.map(provider => provider.id)))
     // Answers 204 whether or not the email belongs to a user, so it can't be used to find out who has an account.
     // Goes through Better Auth's handler rather than `auth.api` to keep its rate limit and origin check.
-    .post('/password-reset', validate('json', passwordResetRequestSchema), async (c) => {
+    .post('/password-reset', validate('json', passwordResetRequestSchema), (c) => {
       const headers = new Headers(c.req.raw.headers)
       headers.delete('content-length')
-      const response = await auth.handler(new Request(new URL('/api/auth/request-password-reset', c.req.url), {
+      // Not awaited: Better Auth reads the database for an unknown email and writes to it for a
+      // known one, and the difference in time would tell the two apart.
+      void auth.handler(new Request(new URL('/api/auth/request-password-reset', c.req.url), {
         method: 'POST',
         headers,
         body: JSON.stringify({ email: c.req.valid('json').email, redirectTo: RESET_PASSWORD_PATH }),
-      }))
-      if (!response.ok)
-        log.withMetadata({ status: response.status }).warn('password reset request refused')
+      })).then((response) => {
+        if (!response.ok)
+          log.withMetadata({ status: response.status }).warn('password reset request refused')
+      }, error => log.withError(error).error('password reset request failed'))
       return c.body(null, 204)
     })
     .route('/', appReleaseRoutes(appReleases))

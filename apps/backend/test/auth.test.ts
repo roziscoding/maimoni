@@ -2,6 +2,16 @@ import type { MonthListEntry, TemplateDetail } from '@maimoni/shared'
 import { describe, expect, test } from 'bun:test'
 import { createTestUser, login, setup, signIn, testPassword } from './setup'
 
+/** Waits for something that happens after a response, such as the password reset email. */
+async function until(condition: () => boolean) {
+  const deadline = Date.now() + 5000
+  while (!condition()) {
+    if (Date.now() > deadline)
+      throw new Error('timed out waiting')
+    await Bun.sleep(5)
+  }
+}
+
 describe('auth', () => {
   test('protects the API but leaves health and auth endpoints open', async () => {
     const { as } = await setup()
@@ -77,10 +87,10 @@ describe('auth', () => {
     const { as, mails } = await setup()
     const anonymous = as(null)
     expect((await anonymous('POST', '/password-reset', { email: 'nobody@example.com' })).status).toBe(204)
-    expect(mails).toHaveLength(0)
     expect((await anonymous('POST', '/password-reset', { email: 'owner@example.com' })).status).toBe(204)
-    expect(mails).toHaveLength(1)
-    expect(mails[0]!.to).toBe('owner@example.com')
+    // The email is sent after the response.
+    await until(() => mails.length > 0)
+    expect(mails.map(mail => mail.to)).toEqual(['owner@example.com'])
     expect((await anonymous('POST', '/password-reset', { email: 'not an email' })).status).toBe(400)
   })
 
@@ -88,6 +98,7 @@ describe('auth', () => {
     const { app, as, mails } = await setup()
     const anonymous = as(null)
     await anonymous('POST', '/password-reset', { email: 'owner@example.com' })
+    await until(() => mails.length > 0)
     const link = new URL(mails[0]!.text.match(/https?:\S+/)![0])
     expect(link.origin).toBe('http://localhost:3000')
 
