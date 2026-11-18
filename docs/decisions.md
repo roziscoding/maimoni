@@ -100,6 +100,7 @@ All the arithmetic lives in one place, `packages/shared/src/summary.ts`, used by
     - The token is kept in the platform's secure storage.
     - On start the app checks it with `GET /api/auth/get-session`, which answers `null` for a token the server no longer accepts.
     - A 401 from a data route ends the session and shows the login screen.
+    - Signing out ends the session on the device at once and keeps the token in secure storage until the server confirms it ended the session. A sign out made offline is sent again when the app next starts.
   - The mobile app signs in to Google and Apple with the platform SDKs and posts the provider's ID token to `/api/auth/sign-in/social`.
     - `GOOGLE_IOS_CLIENT_ID` adds the iOS OAuth client as an accepted audience of Google ID tokens, next to the web client.
     - `APPLE_APP_BUNDLE_IDENTIFIER` is the audience of Apple identity tokens from the app.

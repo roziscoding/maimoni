@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -24,7 +25,10 @@ class Session extends ChangeNotifier {
     iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock_this_device),
   );
 
+  static const _pendingKey = 'pending_sign_outs';
+
   String? _token;
+  List<String> _pendingSignOuts = [];
   SessionUser? _user;
   bool _expired = false;
 
@@ -35,11 +39,41 @@ class Session extends ChangeNotifier {
   /// Whether the last session ended on its own (the server stopped accepting it) rather than by signing out.
   bool get expired => _expired;
 
+  /// Tokens of sessions signed out here that the server hasn't confirmed ending yet.
+  List<String> get pendingSignOuts => List.unmodifiable(_pendingSignOuts);
+
   Future<void> load() async {
     try {
       _token = await _storage.read(key: _key);
+      final pending = await _storage.read(key: _pendingKey);
+      _pendingSignOuts = pending == null ? [] : (jsonDecode(pending) as List).whereType<String>().toList();
     } catch (_) {
       // Storage unavailable: start signed out.
+    }
+  }
+
+  /// Ends the session on this device and keeps its token in [pendingSignOuts], since the server
+  /// still accepts it until it is told otherwise.
+  void signOut() {
+    final token = _token;
+    if (token == null) return;
+    _pendingSignOuts = [..._pendingSignOuts, token];
+    unawaited(_persistPending());
+    clear();
+  }
+
+  /// Forgets a token the server has stopped accepting.
+  void signOutConfirmed(String token) {
+    if (!_pendingSignOuts.contains(token)) return;
+    _pendingSignOuts = _pendingSignOuts.where((pending) => pending != token).toList();
+    unawaited(_persistPending());
+  }
+
+  Future<void> _persistPending() async {
+    try {
+      await _storage.write(key: _pendingKey, value: _pendingSignOuts.isEmpty ? null : jsonEncode(_pendingSignOuts));
+    } catch (_) {
+      // Not persisted; the retry still happens until the app closes.
     }
   }
 
