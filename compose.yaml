@@ -16,6 +16,9 @@
 #   BETTER_AUTH_SECRET          required, no default; signs sessions (`openssl rand -base64 32`)
 #   BETTER_AUTH_URL             required, no default; public URL of the frontend, e.g. https://maimoni.example.com
 #   BETTER_AUTH_TRUSTED_ORIGINS no default; extra comma-separated origins allowed to call /api/auth
+#   AUTH_TRUSTED_PROXIES        no default; comma-separated addresses or CIDR ranges of the reverse
+#                               proxy. Set it, or a client can dodge the sign in and password reset
+#                               rate limits by sending its own X-Forwarded-For
 #   AUTH_SIGNUP_ENABLED         false; `true` lets anyone sign up with email, Google or Apple
 #   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET  no default; Google sign in is off without both
 #   GOOGLE_IOS_CLIENT_ID        no default; iOS OAuth client ID, for native Google sign in on iOS
@@ -108,6 +111,7 @@ services:
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:?}
       BETTER_AUTH_TRUSTED_ORIGINS: ${BETTER_AUTH_TRUSTED_ORIGINS:-}
+      AUTH_TRUSTED_PROXIES: ${AUTH_TRUSTED_PROXIES:-}
       AUTH_SIGNUP_ENABLED: ${AUTH_SIGNUP_ENABLED:-false}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}

@@ -75,6 +75,7 @@ Both Dockerfiles install dependencies in a layer built only from the `package.js
 | `BETTER_AUTH_SECRET` | backend (signs sessions) | dev value in `mise.toml`; required in `compose.yaml` |
 | `BETTER_AUTH_URL` | backend (public URL of the frontend) | `http://localhost:3000`; required in `compose.yaml` |
 | `BETTER_AUTH_TRUSTED_ORIGINS` | backend (extra comma-separated origins for `/api/auth`) | none |
+| `AUTH_TRUSTED_PROXIES` | backend (comma-separated addresses or CIDR ranges of the reverse proxy, so the auth rate limits count the address it saw instead of a client-sent `X-Forwarded-For`) | none |
 | `AUTH_SIGNUP_ENABLED` | backend (`true` allows sign up with email, Google or Apple) | `false` |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | backend (Google sign in, off without both) | none |
 | `GOOGLE_IOS_CLIENT_ID` | backend (iOS OAuth client ID, for native Google sign in on iOS) | none |

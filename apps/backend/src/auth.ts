@@ -102,7 +102,14 @@ export function createAuth({ db, baseURL, secret, trustedOrigins, mail, env = pr
     secret: secret ?? env.BETTER_AUTH_SECRET,
     trustedOrigins: [...(trustedOrigins ?? list(env.BETTER_AUTH_TRUSTED_ORIGINS)), 'https://appleid.apple.com'],
     database: drizzleAdapter(db, { provider: 'pg', schema }),
-    advanced: { database: { generateId: 'uuid' } },
+    advanced: {
+      database: { generateId: 'uuid' },
+      // The rate limit counts per client address, read from X-Forwarded-For. Without trusted
+      // proxies Better Auth accepts only a header with a single address, which the client can
+      // write itself if the proxy passes it along. With them it takes the last address that isn't
+      // one of the proxies, which is the one the reverse proxy saw.
+      ipAddress: { trustedProxies: list(env.AUTH_TRUSTED_PROXIES) },
+    },
     emailAndPassword: {
       enabled: true,
       disableSignUp,

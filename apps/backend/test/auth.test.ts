@@ -43,6 +43,12 @@ describe('auth', () => {
     expect(passkey?.options?.origin).toEqual(['http://localhost:3000', 'android:apk-key-hash:-sYXRdwJA3hvue3mKpYrOZ9zSPC7b4mbgzJmdZEDO5w'])
   })
 
+  test('AUTH_TRUSTED_PROXIES sets the proxies whose X-Forwarded-For is trusted', async () => {
+    expect((await setup()).auth.options.advanced?.ipAddress?.trustedProxies).toEqual([])
+    const { auth } = await setup(6, true, { AUTH_TRUSTED_PROXIES: '10.0.1.2, 172.18.0.0/16' })
+    expect(auth.options.advanced?.ipAddress?.trustedProxies).toEqual(['10.0.1.2', '172.18.0.0/16'])
+  })
+
   test('sign up is disabled by default', async () => {
     const { as } = await setup()
     const response = await as(null)('POST', '/auth/sign-up/email', { email: 'new@example.com', password: testPassword, name: 'New' })
