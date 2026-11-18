@@ -165,14 +165,6 @@ class Api {
 
   Future<LiveRate> liveRate() async => LiveRate.fromJson(await _send('GET', '/rates/live') as Json);
 
-  /// Pass exactly one of [sendAmount] (BRL) or [recipientGetsAmount] (EUR).
-  Future<WiseQuote> quote({double? sendAmount, double? recipientGetsAmount}) async => WiseQuote.fromJson(
-        await _send('GET', '/wise/quote', query: {
-          if (sendAmount != null) 'sendAmount': '$sendAmount',
-          if (recipientGetsAmount != null) 'recipientGetsAmount': '$recipientGetsAmount',
-        }) as Json,
-      );
-
   /* --------------------------------- Template ------------------------------ */
 
   Future<TemplateDetail> template() async => TemplateDetail.fromJson(await _send('GET', '/template') as Json);
@@ -190,10 +182,7 @@ class Api {
           TemplateItem.fromJson(row as Json),
       ];
 
-  /* --------------------------------- Settings ------------------------------ */
-
-  Future<Settings> updateSettings(Json patch) async =>
-      Settings.fromJson(await _send('PATCH', '/settings', body: patch) as Json);
+  /* ----------------------------------- Data -------------------------------- */
 
   Future<void> clearData() => _send('DELETE', '/data');
 

@@ -30,7 +30,6 @@ class Month {
     required this.id,
     required this.year,
     required this.month,
-    required this.wiseFee,
     required this.exchangeRate,
     required this.activeDay,
     required this.note,
@@ -41,7 +40,6 @@ class Month {
         id: json['id'] as String,
         year: json['year'] as int,
         month: json['month'] as int,
-        wiseFee: _numOrNull(json['wiseFee']),
         exchangeRate: _numOrNull(json['exchangeRate']),
         activeDay: json['activeDay'] as int?,
         note: json['note'] as String?,
@@ -51,9 +49,6 @@ class Month {
   final String id;
   final int year;
   final int month;
-
-  /// Manual Wise fee as a fraction. `null` means the real fee quoted by Wise for the amount is used.
-  final double? wiseFee;
 
   /// Locked EUR→BRL rate. `null` means the live rate is used.
   final double? exchangeRate;
@@ -67,7 +62,6 @@ class Month {
         'id': id,
         'year': year,
         'month': month,
-        'wiseFee': wiseFee,
         'exchangeRate': exchangeRate,
         'activeDay': activeDay,
         'note': note,
@@ -258,8 +252,11 @@ class Conversion {
   final String monthId;
   final int day;
 
-  /// Total BRL debited by Wise, including the fee.
+  /// Total BRL sent, including whatever the transfer cost.
   final double sentBrl;
+
+  /// What the transfer cost: the BRL sent beyond what the EUR received were worth at the exchange
+  /// rate when the conversion was recorded. The server works it out.
   final double feeBrl;
   final double receivedEur;
   final String? note;
@@ -311,44 +308,6 @@ class LiveRate {
   final bool stale;
 }
 
-class WiseQuote {
-  WiseQuote({
-    required this.sendAmount,
-    required this.fee,
-    required this.receivedAmount,
-    required this.rate,
-    required this.fetchedAt,
-  });
-
-  factory WiseQuote.fromJson(Json json) => WiseQuote(
-        sendAmount: _num(json['sendAmount']),
-        fee: _num(json['fee']),
-        receivedAmount: _num(json['receivedAmount']),
-        rate: _num(json['rate']),
-        fetchedAt: json['fetchedAt'] as String,
-      );
-
-  /// BRL sent.
-  final double sendAmount;
-
-  /// Total Wise fee in BRL for this amount (fixed + variable part).
-  final double fee;
-
-  /// EUR that arrives.
-  final double receivedAmount;
-  final double rate;
-  final String fetchedAt;
-}
-
-class Settings {
-  Settings({required this.wiseFee});
-
-  factory Settings.fromJson(Json json) => Settings(wiseFee: _num(json['wiseFee']));
-
-  /// Fallback Wise fee, used when Wise can't be reached for a quote.
-  final double wiseFee;
-}
-
 /// `GET /api/sessions` row: one sign in to the account that is still valid.
 class SessionEntry {
   SessionEntry({required this.id, required this.current, required this.userAgent, required this.ipAddress, required this.createdAt});
@@ -393,8 +352,6 @@ class MonthDetail {
     required this.conversions,
     required this.rate,
     required this.rateError,
-    required this.quote,
-    required this.fallbackFee,
   });
 
   factory MonthDetail.fromJson(Json json) => MonthDetail(
@@ -404,8 +361,6 @@ class MonthDetail {
         conversions: [for (final conversion in json['conversions'] as List) Conversion.fromJson(conversion as Json)],
         rate: json['rate'] == null ? null : LiveRate.fromJson(json['rate'] as Json),
         rateError: json['rateError'] as String?,
-        quote: json['quote'] == null ? null : WiseQuote.fromJson(json['quote'] as Json),
-        fallbackFee: _num(json['fallbackFee']),
       );
 
   Month month;
@@ -420,12 +375,6 @@ class MonthDetail {
 
   /// Why the live providers failed; present with a missing or stale rate.
   String? rateError;
-
-  /// Wise's quote for the BRL still projected to be converted.
-  WiseQuote? quote;
-
-  /// Settings fee, used when there's no manual fee and no quote.
-  double fallbackFee;
 }
 
 /// `GET /api/app/android/latest`: the newest Android release of a channel.
@@ -455,13 +404,10 @@ class AppRelease {
 
 /// `GET /api/template`
 class TemplateDetail {
-  TemplateDetail({required this.items, required this.settings});
+  TemplateDetail({required this.items});
 
-  factory TemplateDetail.fromJson(Json json) => TemplateDetail(
-        items: [for (final item in json['items'] as List) TemplateItem.fromJson(item as Json)],
-        settings: Settings.fromJson(json['settings'] as Json),
-      );
+  factory TemplateDetail.fromJson(Json json) =>
+      TemplateDetail(items: [for (final item in json['items'] as List) TemplateItem.fromJson(item as Json)]);
 
   List<TemplateItem> items;
-  Settings settings;
 }

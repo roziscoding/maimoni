@@ -96,8 +96,6 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver, 
       data.month.patch({'activeDay': next}),
       data.items,
       rate: data.rate?.rate,
-      quote: data.quote,
-      fallbackFee: data.fallbackFee,
       spends: data.spends,
       conversions: data.conversions,
     ).allowance;

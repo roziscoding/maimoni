@@ -45,8 +45,6 @@ class CurrencyTotals {
       );
 }
 
-enum FeeSource { manual, wise, fallback }
-
 class Realized {
   Realized({required this.sentBrl, required this.convertedBrl, required this.feeBrl, required this.receivedEur});
 
@@ -65,16 +63,14 @@ class Realized {
 }
 
 class Projected {
-  Projected({required this.sentBrl, required this.feeBrl, required this.eur});
+  Projected({required this.sentBrl, required this.eur});
 
-  factory Projected.fromJson(Json json) =>
-      Projected(sentBrl: _d(json['sentBrl']), feeBrl: _d(json['feeBrl']), eur: _dn(json['eur']));
+  factory Projected.fromJson(Json json) => Projected(sentBrl: _d(json['sentBrl']), eur: _dn(json['eur']));
 
   /// Positive BRL balance still expected to be converted.
   final double sentBrl;
-  final double feeBrl;
 
-  /// Expected EUR for the remaining BRL; `null` without a rate.
+  /// Expected EUR for the remaining BRL at the rate, with no fee taken off; `null` without a rate.
   final double? eur;
 }
 
@@ -82,8 +78,6 @@ class Transfer {
   Transfer({
     required this.rate,
     required this.rateLocked,
-    required this.wiseFee,
-    required this.feeSource,
     required this.remainingBrl,
     required this.realized,
     required this.projected,
@@ -93,8 +87,6 @@ class Transfer {
   factory Transfer.fromJson(Json json) => Transfer(
         rate: _dn(json['rate']),
         rateLocked: json['rateLocked'] as bool,
-        wiseFee: _d(json['wiseFee']),
-        feeSource: FeeSource.values.byName(json['feeSource'] as String),
         remainingBrl: _d(json['remainingBrl']),
         realized: Realized.fromJson(json['realized'] as Json),
         projected: Projected.fromJson(json['projected'] as Json),
@@ -104,10 +96,6 @@ class Transfer {
   /// EUR→BRL rate used for the conversion.
   final double? rate;
   final bool rateLocked;
-
-  /// Effective fee as a fraction of sentBrl.
-  final double wiseFee;
-  final FeeSource feeSource;
 
   /// BRL left after completed conversions; negative when they exceeded this month's net.
   final double remainingBrl;
@@ -244,44 +232,31 @@ CurrencyTotals _totals(List<MonthItem> items, Currency currency) {
   );
 }
 
-/// What a daily spend costs the EUR allowance. A BRL spend is worth what it would have become
-/// through Wise: amount × (1 − fee) ÷ rate. `null` when a BRL spend has no rate to convert with.
-double? spendInEur(DailySpend spend, {required double? rate, required double wiseFee}) {
+/// What a daily spend costs the EUR allowance. A BRL spend is worth what it would have become at
+/// the rate: amount ÷ rate. `null` when a BRL spend has no rate to convert with.
+double? spendInEur(DailySpend spend, {required double? rate}) {
   if (spend.currency == Currency.eur) return spend.amount;
-  return rate != null && rate != 0 ? round2((spend.amount * (1 - wiseFee)) / rate) : null;
+  return rate != null && rate != 0 ? round2(spend.amount / rate) : null;
 }
 
-double? spendInEurFor(DailySpend spend, Transfer transfer) =>
-    spendInEur(spend, rate: transfer.rate, wiseFee: transfer.wiseFee);
+double? spendInEurFor(DailySpend spend, Transfer transfer) => spendInEur(spend, rate: transfer.rate);
 
-({double feeBrl, double fraction, FeeSource source}) _wiseFee(
-  Month month,
-  double sentBrl,
-  WiseQuote? quote,
-  double fallbackFee,
-) {
-  final manual = month.wiseFee;
-  if (manual != null) return (feeBrl: sentBrl * manual, fraction: manual, source: FeeSource.manual);
-  if (quote != null && quote.sendAmount > 0) {
-    final fraction = quote.fee / quote.sendAmount;
-    return (
-      feeBrl: quote.sendAmount == sentBrl ? quote.fee : sentBrl * fraction,
-      fraction: fraction,
-      source: FeeSource.wise,
-    );
-  }
-  return (feeBrl: sentBrl * fallbackFee, fraction: fallbackFee, source: FeeSource.fallback);
+/// The fee of a completed conversion: what was sent beyond the BRL the received EUR are worth at
+/// [rate]. Zero when they are worth more than was sent, or without a rate. The server does this
+/// sum when a conversion is saved; here it only previews the result.
+double conversionFee({required double sentBrl, required double receivedEur, required double? rate}) {
+  if (rate == null || rate == 0) return 0;
+  final fee = round2(sentBrl - receivedEur * rate);
+  return fee > 0 ? fee : 0;
 }
 
-/// Computes the month's result and allowance. Completed conversions use their actual amounts; only
-/// the BRL left after them is projected through Wise. EUR expenses are paid from actual plus
-/// projected EUR, and the remainder is split across the open days.
+/// Computes the month's result and allowance. Completed conversions use their actual amounts; the
+/// BRL left after them is projected at the rate, with no fee taken off. EUR expenses are paid from
+/// actual plus projected EUR, and the remainder is split across the open days.
 MonthSummary summarizeMonth(
   Month month,
   List<MonthItem> items, {
   required double? rate,
-  WiseQuote? quote,
-  required double fallbackFee,
   List<DailySpend> spends = const [],
   List<Conversion> conversions = const [],
   DateTime? today,
@@ -300,11 +275,10 @@ MonthSummary summarizeMonth(
   }
   final remainingBrl = round2(brl.net - sentBrl);
   final projectedBrl = remainingBrl > 0 ? remainingBrl : 0.0;
-  final fee = _wiseFee(month, projectedBrl, quote, fallbackFee);
   final double? projectedEur = projectedBrl == 0
       ? 0
       : effectiveRate != null && effectiveRate != 0
-          ? round2((projectedBrl - fee.feeBrl) / effectiveRate)
+          ? round2(projectedBrl / effectiveRate)
           : null;
   final transferEur = projectedEur == null ? null : round2(receivedEur + projectedEur);
 
@@ -318,7 +292,7 @@ MonthSummary summarizeMonth(
   var spentBefore = 0.0, spentToday = 0.0, spentTotal = 0.0;
   for (final spend in spends) {
     // Without a rate a BRL spend can't be converted; it counts once a rate is available.
-    final value = spendInEur(spend, rate: effectiveRate, wiseFee: fee.fraction) ?? 0;
+    final value = spendInEur(spend, rate: effectiveRate) ?? 0;
     spentTotal += value;
     if (spend.day == activeDay) {
       spentToday += value;
@@ -334,8 +308,6 @@ MonthSummary summarizeMonth(
     transfer: Transfer(
       rate: effectiveRate,
       rateLocked: month.exchangeRate != null,
-      wiseFee: fee.fraction,
-      feeSource: fee.source,
       remainingBrl: remainingBrl,
       realized: Realized(
         sentBrl: round2(sentBrl),
@@ -343,7 +315,7 @@ MonthSummary summarizeMonth(
         feeBrl: round2(realizedFee),
         receivedEur: round2(receivedEur),
       ),
-      projected: Projected(sentBrl: round2(projectedBrl), feeBrl: round2(fee.feeBrl), eur: projectedEur),
+      projected: Projected(sentBrl: round2(projectedBrl), eur: projectedEur),
       eur: transferEur,
     ),
     allowance: Allowance(

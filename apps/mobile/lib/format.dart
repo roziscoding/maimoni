@@ -7,7 +7,6 @@ final _money = {
   Currency.eur: NumberFormat.currency(locale: 'pt_BR', name: 'EUR', symbol: '€'),
 };
 final _rate = NumberFormat('0.0000', 'pt_BR');
-final _percent = NumberFormat('#,##0.##', 'pt_BR');
 final _plain = NumberFormat('0.##', 'pt_BR');
 
 /// Every currency figure in pt-BR: `R$ 1.250,99` / `€ 45,00`. Missing values render as an em dash.
@@ -15,9 +14,6 @@ String formatMoney(double? value, Currency currency) => value == null ? '—' : 
 
 /// EUR→BRL rate with 4 decimals.
 String formatRate(double? value) => value == null ? '—' : 'R\$ ${_rate.format(value)}';
-
-/// Fraction to percent: `0.039` → `3,9%`.
-String formatPercent(double value) => '${_percent.format(value * 100)}%';
 
 /// Plain number with a pt-BR comma, for editing: `1250.5` → `1250,5`.
 String formatPlain(double value) => _plain.format(value);

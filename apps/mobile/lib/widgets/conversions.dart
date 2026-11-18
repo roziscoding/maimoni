@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-import '../api/client.dart';
 import '../api/models.dart';
 import '../domain/expression.dart';
 import '../domain/summary.dart';
@@ -13,8 +12,8 @@ import '../theme.dart';
 import 'common.dart';
 import 'fields.dart';
 
-/// Port of `ConversionSection.vue`: completed BRL→EUR conversions, with a form that pre-fills
-/// from a Wise quote.
+/// Port of `ConversionSection.vue`: completed BRL→EUR conversions, with a form that takes what was
+/// sent and what arrived.
 class ConversionSection extends StatelessWidget {
   const ConversionSection({super.key, required this.controller, required this.conversions});
 
@@ -120,12 +119,10 @@ Future<void> showConversionSheet(BuildContext context, MonthController controlle
   return showSheet(
     context,
     title: editing != null ? 'Editar conversão' : 'Lançar conversão',
-    description: 'A cotação da Wise é só uma ajuda. Ajuste os valores para o que aconteceu de fato.',
+    description: 'Informe quanto saiu em reais e quanto chegou em euros. A taxa é o que sobra da conta com o câmbio.',
     body: (context) => _ConversionForm(controller: controller, editing: editing),
   );
 }
-
-enum _QuoteMode { eur, brl }
 
 class _ConversionForm extends StatefulWidget {
   const _ConversionForm({required this.controller, this.editing});
@@ -141,16 +138,9 @@ class _ConversionFormState extends State<_ConversionForm> {
   late int _day;
   final _received = TextEditingController();
   final _sent = TextEditingController();
-  final _fee = TextEditingController();
   final _note = TextEditingController();
-  _QuoteMode _mode = _QuoteMode.eur;
   bool _saving = false;
-  bool _quoting = false;
-  String? _quoteError;
   Map<String, String> _errors = {};
-  Timer? _quoteTimer;
-  int _quoteVersion = 0;
-  String _lastQuoteKey = '';
 
   int get _maxDay => daysInMonth(widget.controller.year, widget.controller.month);
 
@@ -164,68 +154,38 @@ class _ConversionFormState extends State<_ConversionForm> {
     if (conversion != null) {
       _received.text = formatPlain(conversion.receivedEur);
       _sent.text = formatPlain(conversion.sentBrl);
-      _fee.text = formatPlain(conversion.feeBrl);
       _note.text = conversion.note ?? '';
-      _lastQuoteKey = 'eur:${conversion.receivedEur}';
     }
   }
 
   double? _value(TextEditingController controller) => evaluateExpression(controller.text);
 
-  String _quoteKey() {
-    final amount = _mode == _QuoteMode.eur ? _value(_received) : _value(_sent);
-    return amount != null && amount > 0 ? '${_mode.name}:$amount' : '';
-  }
+  /// EUR→BRL rate the month is using, which the fee of a new conversion is worked out from.
+  double? get _rate => widget.controller.summary?.transfer.rate;
 
-  void _scheduleQuote() {
-    _quoteTimer?.cancel();
-    _quoteTimer = Timer(const Duration(milliseconds: 600), _requestQuote);
-  }
-
-  Future<void> _requestQuote({bool force = false}) async {
-    final key = _quoteKey();
-    if (key.isEmpty || (!force && key == _lastQuoteKey)) return;
-    _lastQuoteKey = key;
-    final version = ++_quoteVersion;
-    setState(() {
-      _quoteError = null;
-      _quoting = true;
-    });
-    try {
-      final quote = _mode == _QuoteMode.eur
-          ? await Api.instance.quote(recipientGetsAmount: _value(_received))
-          : await Api.instance.quote(sendAmount: _value(_sent));
-      if (!mounted || version != _quoteVersion || key != _quoteKey()) return;
-      setState(() {
-        _sent.text = formatPlain(quote.sendAmount);
-        _fee.text = formatPlain(quote.fee);
-        _received.text = formatPlain(quote.receivedAmount);
-      });
-    } catch (err) {
-      if (mounted && version == _quoteVersion) setState(() => _quoteError = errorMessage(err));
-    } finally {
-      if (mounted && version == _quoteVersion) setState(() => _quoting = false);
-    }
+  /// The fee isn't typed in. The server works it out from the rate when the amounts are saved; this
+  /// previews it. A conversion being edited keeps its fee while its amounts stay the same.
+  ({double? fee, bool kept}) _fee() {
+    final sent = _value(_sent);
+    final received = _value(_received);
+    final editing = widget.editing;
+    if (editing != null && sent == editing.sentBrl && received == editing.receivedEur) return (fee: editing.feeBrl, kept: true);
+    if (sent == null || sent <= 0 || received == null || received <= 0 || _rate == null) return (fee: null, kept: false);
+    return (fee: conversionFee(sentBrl: sent, receivedEur: received, rate: _rate), kept: false);
   }
 
   Future<void> _submit() async {
     final received = _value(_received);
     final sent = _value(_sent);
-    final fee = _value(_fee);
     final errors = <String, String>{};
     if (received == null || received <= 0) errors['receivedEur'] = 'Informe um valor maior que zero';
     if (sent == null || sent <= 0) errors['sentBrl'] = 'Informe um valor maior que zero';
-    if (fee == null || fee < 0) {
-      errors['feeBrl'] = 'Informe um valor';
-    } else if (sent != null && fee > sent) {
-      errors['feeBrl'] = 'A taxa não pode passar do total enviado';
-    }
     setState(() => _errors = errors);
     if (errors.isNotEmpty) return;
 
     setState(() => _saving = true);
     final note = _note.text.trim();
-    final body = {'day': _day, 'sentBrl': sent, 'feeBrl': fee, 'receivedEur': received, 'note': note.isEmpty ? null : note};
+    final body = {'day': _day, 'sentBrl': sent, 'receivedEur': received, 'note': note.isEmpty ? null : note};
     final saved = widget.editing != null
         ? await widget.controller.updateConversion(widget.editing!.id, body)
         : await widget.controller.addConversion(body);
@@ -236,11 +196,8 @@ class _ConversionFormState extends State<_ConversionForm> {
 
   @override
   void dispose() {
-    _quoteTimer?.cancel();
-    _quoteVersion++;
     _received.dispose();
     _sent.dispose();
-    _fee.dispose();
     _note.dispose();
     super.dispose();
   }
@@ -248,6 +205,7 @@ class _ConversionFormState extends State<_ConversionForm> {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final fee = _fee();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -259,75 +217,41 @@ class _ConversionFormState extends State<_ConversionForm> {
           onChanged: (value) => setState(() => _day = value ?? _day),
         ),
         const SizedBox(height: 20),
-        const FieldLabel('Cotação a partir de'),
-        Segmented<_QuoteMode>(
-          value: _mode,
-          expand: true,
-          options: const [(value: _QuoteMode.eur, label: 'EUR recebido', icon: null), (value: _QuoteMode.brl, label: 'BRL enviado', icon: null)],
-          onChanged: (mode) {
-            setState(() => _mode = mode);
-            _scheduleQuote();
-          },
-        ),
-        const SizedBox(height: 16),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
               child: MoneyFormField(
-                controller: _received,
-                label: 'EUR recebido',
-                prefix: '€',
-                highlight: _mode == _QuoteMode.eur,
-                errorText: _errors['receivedEur'],
-                onChanged: (_) => _mode == _QuoteMode.eur ? _scheduleQuote() : null,
+                controller: _sent,
+                label: 'BRL enviado',
+                prefix: r'R$',
+                errorText: _errors['sentBrl'],
+                // Rebuilds so the fee below follows the amounts.
+                onChanged: (_) => setState(() {}),
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: MoneyFormField(
-                controller: _sent,
-                label: 'BRL enviado',
-                prefix: r'R$',
-                highlight: _mode == _QuoteMode.brl,
-                errorText: _errors['sentBrl'],
-                onChanged: (_) => _mode == _QuoteMode.brl ? _scheduleQuote() : null,
+                controller: _received,
+                label: 'EUR recebido',
+                prefix: '€',
+                errorText: _errors['receivedEur'],
+                onChanged: (_) => setState(() {}),
               ),
             ),
           ],
         ),
         const SizedBox(height: 12),
-        Row(
-          children: [
-            if (_quoting)
-              SizedBox.square(dimension: 14, child: CircularProgressIndicator(strokeWidth: 2, color: palette.muted))
-            else
-              Icon(LucideIcons.sparkles, size: 16, color: palette.muted),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                _quoting ? 'Consultando a Wise…' : 'Os três valores continuam editáveis antes de salvar.',
-                style: TextStyle(fontSize: 12, color: palette.muted),
-              ),
-            ),
-          ],
-        ),
-        if (_quoteError != null) ...[
-          const SizedBox(height: 12),
-          Callout(
-            icon: LucideIcons.circleAlert,
-            tone: Tone.error,
-            title: 'Não foi possível consultar a Wise',
-            description: _quoteError,
-            action: OutlinedButton.icon(
-              onPressed: () => _requestQuote(force: true),
-              icon: const Icon(LucideIcons.refreshCw, size: 16),
-              label: const Text('Tentar novamente'),
-            ),
-          ),
-        ],
-        const SizedBox(height: 16),
-        MoneyFormField(controller: _fee, label: 'Taxa Wise em BRL', prefix: r'R$', errorText: _errors['feeBrl']),
+        if (fee.fee != null)
+          Text(
+            fee.kept
+                ? 'Taxa: ${formatMoney(fee.fee, Currency.brl)}, calculada quando a conversão foi lançada.'
+                : 'Taxa: ${formatMoney(fee.fee, Currency.brl)}, com o euro a ${formatRate(_rate)}.',
+            style: TextStyle(fontSize: 14, color: palette.muted),
+          )
+        else if (_rate == null)
+          Text('Sem cotação do euro agora, a taxa desta conversão fica em zero.', style: TextStyle(fontSize: 14, color: palette.warning)),
         const SizedBox(height: 16),
         const FieldLabel('Anotação', hint: 'Opcional'),
         TextField(

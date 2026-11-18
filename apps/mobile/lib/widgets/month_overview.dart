@@ -6,7 +6,6 @@ import '../domain/summary.dart';
 import '../format.dart';
 import '../theme.dart';
 import 'common.dart';
-import 'fields.dart';
 
 /// Port of `AllowanceHero.vue`: the daily budget (or the final result of a past month) and one
 /// tick per day of the month.
@@ -129,7 +128,7 @@ class _Cell {
   final String? tone;
 }
 
-/// Port of `FlowStrip.vue`, stacked like a receipt: reais, the Wise transfer, then euros.
+/// Port of `FlowStrip.vue`, stacked like a receipt: reais, the conversion, then euros.
 class FlowStrip extends StatelessWidget {
   const FlowStrip({super.key, required this.summary});
 
@@ -146,7 +145,7 @@ class FlowStrip extends StatelessWidget {
           _Cell('', 'Entrada', summary.brl.income),
           _Cell('−', 'Despesas', summary.brl.expenses),
           _Cell('−', 'Conversão', transfer.realized.convertedBrl),
-          _Cell('−', 'Taxa Wise', transfer.realized.feeBrl),
+          _Cell('−', 'Taxa', transfer.realized.feeBrl),
           _Cell('=', 'Em reais', transfer.remainingBrl, tone: 'result'),
         ],
       ),
@@ -228,7 +227,6 @@ class FlowStrip extends StatelessWidget {
                     parts: [
                       Text('Projetado', style: label),
                       Text(formatMoney(transfer.projected.sentBrl, Currency.brl), style: secondary),
-                      Text('− ${formatMoney(transfer.projected.feeBrl, Currency.brl)}', style: secondary),
                       Row(mainAxisSize: MainAxisSize.min, children: [
                         Text('÷ ${formatRate(transfer.rate)}', style: secondary),
                         if (transfer.rateLocked)
@@ -299,7 +297,6 @@ class RatePanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final locked = month.exchangeRate != null;
-    final manualFee = month.wiseFee != null;
     final transfer = summary.transfer;
     final live = rate;
     final small = TextStyle(fontSize: 12, color: palette.muted);
@@ -313,16 +310,6 @@ class RatePanel extends StatelessWidget {
       badge = const Pill(label: 'ao vivo', icon: LucideIcons.radio, outline: true);
     } else {
       badge = const SizedBox();
-    }
-
-    final String feeNote;
-    switch (transfer.feeSource) {
-      case FeeSource.fallback:
-        feeNote = 'A Wise não respondeu; usando a taxa de reserva de ${formatPercent(transfer.wiseFee)} das configurações.';
-      case FeeSource.wise:
-        feeNote = 'Estimativa da Wise para converter os ${formatMoney(transfer.projected.sentBrl, Currency.brl)} restantes: parte fixa + percentual.';
-      case FeeSource.manual:
-        feeNote = 'Desconta ${formatMoney(transfer.projected.feeBrl, Currency.brl)} dos reais que ainda serão convertidos.';
     }
 
     return Panel(
@@ -383,37 +370,6 @@ class RatePanel extends StatelessWidget {
                     loading: refreshing,
                     onPressed: onRetry,
                   ),
-              ],
-            ),
-          ),
-          const Divider(),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(children: [
-                  Expanded(child: Text('Taxa da projeção', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: palette.muted))),
-                  Segmented<bool>(
-                    value: manualFee,
-                    small: true,
-                    options: const [(value: false, label: 'Wise', icon: null), (value: true, label: 'Manual', icon: null)],
-                    onChanged: (manual) => onUpdate({'wiseFee': manual ? (transfer.wiseFee * 1e5).round() / 1e5 : null}),
-                  ),
-                ]),
-                const SizedBox(height: 8),
-                if (manualFee)
-                  PercentField(value: month.wiseFee, onCommit: (value) => onUpdate({'wiseFee': value}))
-                else
-                  Text.rich(
-                    TextSpan(children: [
-                      TextSpan(text: formatMoney(transfer.projected.feeBrl, Currency.brl)),
-                      TextSpan(text: ' (${formatPercent(transfer.wiseFee)})', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w400, color: palette.muted)),
-                    ]),
-                    style: money(fontSize: 20, fontWeight: FontWeight.w600, color: palette.highlighted),
-                  ),
-                const SizedBox(height: 8),
-                Text(feeNote, style: small.copyWith(color: transfer.feeSource == FeeSource.fallback ? palette.warning : palette.muted)),
               ],
             ),
           ),
