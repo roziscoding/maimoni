@@ -277,6 +277,7 @@ class Conversion {
 }
 
 enum RateSource {
+  // No longer a source. Kept so the app still reads the rate of a server that hasn't been updated.
   wise('wise', 'Wise'),
   frankfurter('frankfurter', 'Frankfurter (BCE)'),
   openErApi('open-er-api', 'Open Exchange Rates'),

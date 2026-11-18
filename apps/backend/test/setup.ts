@@ -52,7 +52,7 @@ export async function setup(rate: number | null = 6, authEnv: Record<string, str
   await migrate(db, { migrationsFolder })
   const rates: RateService = {
     get: async () => ({
-      rate: rate === null ? null : { base: 'EUR', quote: 'BRL', rate, source: 'wise', fetchedAt: new Date().toISOString(), stale: false },
+      rate: rate === null ? null : { base: 'EUR', quote: 'BRL', rate, source: 'frankfurter', fetchedAt: new Date().toISOString(), stale: false },
       error: rate === null ? 'Cotação indisponível no teste' : null,
     }),
   }

@@ -191,7 +191,7 @@ export type UpdateConversion = z.input<typeof updateConversionSchema>
 
 /**
  * Day-to-day spending, kept apart from the month's obligations. BRL spends count against the EUR
- * allowance as what those reais would have become through Wise (see `spendInEur`).
+ * allowance as what those reais would have become at the rate (see `spendInEur`).
  */
 export const dailySpendSchema = z.object({
   id,
@@ -227,7 +227,7 @@ export type UpdateDailySpend = z.input<typeof updateDailySpendSchema>
 /*                                Exchange rate                               */
 /* -------------------------------------------------------------------------- */
 
-export const rateSourceSchema = z.enum(['wise', 'frankfurter', 'open-er-api', 'cache'])
+export const rateSourceSchema = z.enum(['frankfurter', 'open-er-api', 'cache'])
 export const liveRateSchema = z.object({
   base: z.literal('EUR'),
   quote: z.literal('BRL'),

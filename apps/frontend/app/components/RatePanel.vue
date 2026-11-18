@@ -15,7 +15,6 @@ const emit = defineEmits<{
 }>()
 
 const sources: Record<LiveRate['source'], string> = {
-  'wise': 'Wise',
   'frankfurter': 'Frankfurter (BCE)',
   'open-er-api': 'Open Exchange Rates',
   'cache': 'último valor salvo',
