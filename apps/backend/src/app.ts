@@ -24,6 +24,8 @@ import { createAppReleaseService } from './services/app-releases'
 
 const EXCLUDED_LOG_PATHS = [
   '/api/health',
+  // The emailed reset link: its path ends in the reset token, which stays valid until it is used.
+  /^\/api\/auth\/reset-password\/./,
 ]
 
 export interface AppOptions {
