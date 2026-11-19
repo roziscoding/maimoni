@@ -11,6 +11,11 @@ docs/             API contract and design decisions
 .mise/tasks       All project tasks (mise run <task>)
 ```
 
+## Installing the mobile app
+
+- **Android**: add `https://github.com/roziscoding/maimoni` to [Obtainium](https://obtainium.imranr.dev), which installs the APK from the GitHub releases and keeps it updated. Every release so far is a pre-release, so turn on ***Include prereleases*** when adding the app.
+- **iOS**: there is no public build. [Open an issue](https://github.com/roziscoding/maimoni/issues/new) asking for access and it will be considered case by case.
+
 ## Requirements
 
 [mise](https://mise.jdx.dev) (installs Bun 1.4.2 from `mise.toml`), Docker with Compose.
