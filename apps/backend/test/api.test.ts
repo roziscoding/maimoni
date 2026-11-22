@@ -338,6 +338,41 @@ describe('currencies', () => {
     expect(await list()).toEqual(body)
   })
 
+  test('replaces the whole list at once', async () => {
+    const first = await request<UserCurrency[]>('PUT', base, { currencies: [{ currency: 'BRL', enabled: true }, { currency: 'EUR', enabled: true }], main: 'BRL' })
+    expect(first.status).toBe(200)
+    expect(first.body).toEqual([entry('BRL', true), entry('EUR', false)])
+
+    // Swaps the main one and disables the other in one request.
+    const swapped = await request<UserCurrency[]>('PUT', base, { currencies: [{ currency: 'BRL', enabled: false }, { currency: 'EUR', enabled: true }], main: 'EUR' })
+    expect(swapped.body).toEqual([entry('EUR', true), entry('BRL', false, false)])
+
+    // One left out is removed.
+    expect((await request<UserCurrency[]>('PUT', base, { currencies: [{ currency: 'EUR', enabled: true }], main: 'EUR' })).body).toEqual([entry('EUR', true)])
+    expect(await list()).toEqual([entry('EUR', true)])
+  })
+
+  test('refuses a list that leaves out a currency in use, or has a bad main', async () => {
+    const both = [{ currency: 'BRL', enabled: true }, { currency: 'EUR', enabled: true }]
+    await request('PUT', base, { currencies: both, main: 'EUR' })
+    await request('POST', '/template/items', { name: 'Carro', currency: 'BRL', amount: 1000 })
+
+    const invalid = [
+      { currencies: [{ currency: 'EUR', enabled: true }], main: 'BRL' },
+      { currencies: [{ currency: 'BRL', enabled: false }, { currency: 'EUR', enabled: true }], main: 'BRL' },
+      { currencies: [...both, { currency: 'EUR', enabled: false }], main: 'EUR' },
+      { currencies: [], main: 'EUR' },
+      { currencies: [{ currency: 'USD', enabled: true }], main: 'USD' },
+    ]
+    for (const body of invalid)
+      expect((await request('PUT', base, body)).status).toBe(400)
+
+    // BRL has a template item, so it can be disabled but not left out. Nothing changes when it is refused.
+    expect((await request('PUT', base, { currencies: [{ currency: 'EUR', enabled: true }], main: 'EUR' })).status).toBe(409)
+    expect(await list()).toEqual([entry('EUR', true), entry('BRL', false)])
+    expect((await request<UserCurrency[]>('PUT', base, { currencies: [{ currency: 'BRL', enabled: false }, { currency: 'EUR', enabled: true }], main: 'EUR' })).body).toEqual([entry('EUR', true), entry('BRL', false, false)])
+  })
+
   test('removes a currency unless it is the main one or in use', async () => {
     await request('POST', base, { currency: 'EUR' })
     await request('POST', base, { currency: 'BRL' })

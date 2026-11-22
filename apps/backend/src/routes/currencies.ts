@@ -1,8 +1,8 @@
 import type { Currency, UserCurrency } from '@maimoni/shared'
 import type { AuthEnv } from '../auth'
 import type { Database } from '../db'
-import { addUserCurrencySchema, currencySchema, updateUserCurrencySchema } from '@maimoni/shared'
-import { and, asc, desc, eq } from 'drizzle-orm'
+import { addUserCurrencySchema, currencySchema, replaceUserCurrenciesSchema, updateUserCurrencySchema } from '@maimoni/shared'
+import { and, asc, desc, eq, inArray } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { dailySpends, monthItems, templateItems, userCurrencies } from '../db/schema'
@@ -77,6 +77,30 @@ export function currencyRoutes(db: Database) {
       if ('refused' in result)
         return c.json({ error: result.refused.error }, result.refused.status)
       return c.json(toUserCurrency(result.row), 201)
+    })
+    // Replaces the whole list: currencies left out are removed, which one in use refuses.
+    .put('/settings/currencies', validate('json', replaceUserCurrenciesSchema), async (c) => {
+      const userId = c.var.user.id
+      const { currencies, main } = c.req.valid('json')
+      const result = await db.transaction(async (tx) => {
+        const existing = await tx.select({ currency: userCurrencies.currency }).from(userCurrencies).where(eq(userCurrencies.userId, userId))
+        const removed = existing.map(row => row.currency).filter(currency => !currencies.some(entry => entry.currency === currency))
+        for (const currency of removed) {
+          if (await currencyInUse(tx, userId, currency))
+            return refuse(409, `${currency} is in use; send it with enabled: false to keep it out of the way`)
+        }
+        if (removed.length)
+          await tx.delete(userCurrencies).where(and(eq(userCurrencies.userId, userId), inArray(userCurrencies.currency, removed)))
+        await demoteMain(tx, userId)
+        for (const { currency, enabled } of currencies) {
+          const values = { enabled, isMainCurrency: currency === main }
+          await tx.insert(userCurrencies).values({ userId, currency, ...values }).onConflictDoUpdate({ target: [userCurrencies.userId, userCurrencies.currency], set: values })
+        }
+        return { currencies: await listUserCurrencies(tx, userId) }
+      })
+      if ('refused' in result)
+        return c.json({ error: result.refused.error }, result.refused.status)
+      return c.json(result.currencies)
     })
     .patch('/settings/currencies/:currency', validate('param', currencyParam), validate('json', updateUserCurrencySchema), async (c) => {
       const userId = c.var.user.id
