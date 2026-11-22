@@ -5,7 +5,7 @@ import { addUserCurrencySchema, currencySchema, replaceUserCurrenciesSchema, upd
 import { and, asc, desc, eq, inArray } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { dailySpends, monthItems, templateItems, userCurrencies } from '../db/schema'
+import { dailySpends, monthItems, templateItems, user, userCurrencies } from '../db/schema'
 import { validate } from '../lib/validate'
 
 const currencyParam = z.object({ currency: currencySchema })
@@ -15,6 +15,18 @@ function toUserCurrency(row: Pick<typeof userCurrencies.$inferSelect, 'currency'
 }
 
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0]
+
+/**
+ * Makes requests that change the same user's currencies wait for each other, until the transaction
+ * ends. Each one decides from what it read (is the currency there, is it the main one, is it the
+ * first), and the unique index only rules out two main currencies, not none.
+ *
+ * The lock is on the user's row because the list can be empty. `no key update` leaves inserts that
+ * reference the user, such as a new item, free to go on.
+ */
+async function lockCurrencies(tx: Transaction, userId: string) {
+  await tx.select({ id: user.id }).from(user).where(eq(user.id, userId)).for('no key update')
+}
 
 /** Takes the main mark off the user's main currency. It goes before another gets it: the unique index allows one main currency per user at any moment. */
 async function demoteMain(tx: Transaction, userId: string) {
@@ -62,6 +74,7 @@ export function currencyRoutes(db: Database) {
       const userId = c.var.user.id
       const { currency, enabled, main } = c.req.valid('json')
       const result = await db.transaction(async (tx) => {
+        await lockCurrencies(tx, userId)
         const existing = await tx.select({ currency: userCurrencies.currency }).from(userCurrencies).where(eq(userCurrencies.userId, userId))
         if (existing.some(row => row.currency === currency))
           return refuse(409, 'Currency already added')
@@ -83,6 +96,7 @@ export function currencyRoutes(db: Database) {
       const userId = c.var.user.id
       const { currencies, main } = c.req.valid('json')
       const result = await db.transaction(async (tx) => {
+        await lockCurrencies(tx, userId)
         const existing = await tx.select({ currency: userCurrencies.currency }).from(userCurrencies).where(eq(userCurrencies.userId, userId))
         const removed = existing.map(row => row.currency).filter(currency => !currencies.some(entry => entry.currency === currency))
         for (const currency of removed) {
@@ -108,6 +122,7 @@ export function currencyRoutes(db: Database) {
       const input = c.req.valid('json')
       const mine = and(eq(userCurrencies.userId, userId), eq(userCurrencies.currency, currency))
       const result = await db.transaction(async (tx) => {
+        await lockCurrencies(tx, userId)
         const [row] = await tx.select().from(userCurrencies).where(mine)
         if (!row)
           return refuse(404, 'Currency not found')
@@ -131,6 +146,7 @@ export function currencyRoutes(db: Database) {
       const { currency } = c.req.valid('param')
       const mine = and(eq(userCurrencies.userId, userId), eq(userCurrencies.currency, currency))
       const result = await db.transaction(async (tx) => {
+        await lockCurrencies(tx, userId)
         const [row] = await tx.select().from(userCurrencies).where(mine)
         if (!row)
           return refuse(404, 'Currency not found')
