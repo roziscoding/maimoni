@@ -47,7 +47,7 @@ Every route below except `/api/health`, `/api/sign-in-providers`, `/api/password
 | POST | `/api/months/:year/:month/spends` | `CreateDailySpend` (`{ day, amount, currency?, expression?, note? }`) | `DailySpend` (201) |
 | PATCH | `/api/months/:year/:month/spends/:id` | `UpdateDailySpend` | `DailySpend` |
 | DELETE | `/api/months/:year/:month/spends/:id` | | 204 |
-| DELETE | `/api/data` | | 204 — deletes the user's months (with their items, spends and conversions), and template items |
+| DELETE | `/api/data` | | 204 — deletes the user's months (with their items, spends and conversions), and template items; 404 unless `FLAG_ENABLE_PURGE` is `true` |
 | GET | `/api/sessions` | | `SessionEntry[]` — the user's valid sessions, the current one first |
 | DELETE | `/api/sessions/:id` | | 204 — ends that session; 400 for the current one, which ends by signing out |
 | DELETE | `/api/sessions` | | 204 — ends every session but the current one |

@@ -218,7 +218,16 @@ test('live rate endpoint reports unavailability', async () => {
   expect(response.body.error).toBe('Cotação indisponível no teste')
 })
 
+test('clearing data answers 404 unless purging is enabled', async () => {
+  await request('POST', '/months', { year: 2026, month: 10 })
+
+  expect((await request('DELETE', '/data')).status).toBe(404)
+
+  expect((await request<MonthListEntry[]>('GET', '/months')).body).toHaveLength(1)
+})
+
 test('clearing data wipes months and template', async () => {
+  ({ request } = await setup(6, {}, true))
   await seedTemplate()
   await request('POST', '/months', { year: 2026, month: 10 })
 

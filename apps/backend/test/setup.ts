@@ -45,9 +45,9 @@ export async function signIn(app: ReturnType<typeof createApp>, auth: Auth, emai
 
 /**
  * Fresh in-memory Postgres (PGlite) with migrations applied, plus the app wired to it. `rate` is the
- * live EUR→BRL rate (`null` for none), and `authEnv` sets auth environment variables.
+ * live EUR→BRL rate (`null` for none), and `authEnv` sets auth environment variables, and `enablePurge` serves `DELETE /data`.
  */
-export async function setup(rate: number | null = 6, authEnv: Record<string, string> = {}) {
+export async function setup(rate: number | null = 6, authEnv: Record<string, string> = {}, enablePurge = false) {
   const db = drizzle({ client: new PGlite(), schema })
   await migrate(db, { migrationsFolder })
   const rates: RateService = {
@@ -64,7 +64,7 @@ export async function setup(rate: number | null = 6, authEnv: Record<string, str
     },
   }
   const auth = createAuth({ db: db as unknown as Database, baseURL: 'http://localhost:3000', secret: 'test-secret-that-is-at-least-32-characters', mail, env: authEnv })
-  const app = createApp({ db: db as unknown as Database, auth, rates })
+  const app = createApp({ db: db as unknown as Database, auth, rates, enablePurge })
   /** Request helper bound to a set of auth headers; `null` sends none. */
   const as = (auth: Record<string, string> | null) => async <T = any>(method: string, path: string, body?: unknown) => {
     const response = await app.request(`/api${path}`, {
