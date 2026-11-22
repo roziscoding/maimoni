@@ -80,8 +80,12 @@ export function deviceLabel(userAgent: string | null) {
   return system ? `${name} no ${system}` : name
 }
 
-/** Pulls the backend's `{ error }` message out of a failed `$fetch`. */
+/**
+ * Pulls the message out of a failed `$fetch`. The backend answers `{ error: string }`; when the
+ * request never reaches it, Nuxt's proxy answers `{ error: true, statusMessage, message }` instead.
+ */
 export function errorMessage(error: unknown) {
-  const data = (error as { data?: { error?: string } } | null)?.data
-  return data?.error ?? (error instanceof Error ? error.message : 'Erro inesperado')
+  const data = (error as { data?: { error?: unknown, statusMessage?: unknown, message?: unknown } } | null)?.data
+  const message = [data?.error, data?.statusMessage, data?.message].find(value => typeof value === 'string' && value)
+  return typeof message === 'string' ? message : error instanceof Error ? error.message : 'Erro inesperado'
 }
