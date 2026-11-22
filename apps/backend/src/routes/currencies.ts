@@ -1,4 +1,4 @@
-import type { Currency, UserCurrency } from '@maimoni/shared'
+import type { CurrenciesInUseError, Currency, UserCurrency } from '@maimoni/shared'
 import type { AuthEnv } from '../auth'
 import type { Database } from '../db'
 import { addUserCurrencySchema, currencySchema, replaceUserCurrenciesSchema, updateUserCurrencySchema } from '@maimoni/shared'
@@ -99,10 +99,14 @@ export function currencyRoutes(db: Database) {
         await lockCurrencies(tx, userId)
         const existing = await tx.select({ currency: userCurrencies.currency }).from(userCurrencies).where(eq(userCurrencies.userId, userId))
         const removed = existing.map(row => row.currency).filter(currency => !currencies.some(entry => entry.currency === currency))
+        // All of them, so the client can name every currency that has to stay.
+        const inUse: Currency[] = []
         for (const currency of removed) {
           if (await currencyInUse(tx, userId, currency))
-            return refuse(409, `${currency} is in use; send it with enabled: false to keep it out of the way`)
+            inUse.push(currency)
         }
+        if (inUse.length)
+          return { inUse }
         if (removed.length)
           await tx.delete(userCurrencies).where(and(eq(userCurrencies.userId, userId), inArray(userCurrencies.currency, removed)))
         await demoteMain(tx, userId)
@@ -112,8 +116,10 @@ export function currencyRoutes(db: Database) {
         }
         return { currencies: await listUserCurrencies(tx, userId) }
       })
-      if ('refused' in result)
-        return c.json({ error: result.refused.error }, result.refused.status)
+      if (result.inUse) {
+        const body: CurrenciesInUseError = { error: `In use: ${result.inUse.join(', ')}. Send them with enabled: false instead of leaving them out`, inUse: result.inUse }
+        return c.json(body, 409)
+      }
       return c.json(result.currencies)
     })
     .patch('/settings/currencies/:currency', validate('param', currencyParam), validate('json', updateUserCurrencySchema), async (c) => {

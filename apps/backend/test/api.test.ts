@@ -370,7 +370,9 @@ describe('currencies', () => {
       expect((await request('PUT', base, body)).status).toBe(400)
 
     // BRL has a template item, so it can be disabled but not left out. Nothing changes when it is refused.
-    expect((await request('PUT', base, { currencies: [{ currency: 'EUR', enabled: true }], main: 'EUR' })).status).toBe(409)
+    const refused = await request('PUT', base, { currencies: [{ currency: 'EUR', enabled: true }], main: 'EUR' })
+    expect(refused.status).toBe(409)
+    expect(refused.body.inUse).toEqual(['BRL'])
     expect(await list()).toEqual([entry('EUR', true), entry('BRL', false)])
     expect((await request<UserCurrency[]>('PUT', base, { currencies: [{ currency: 'BRL', enabled: false }, { currency: 'EUR', enabled: true }], main: 'EUR' })).body).toEqual([entry('EUR', true), entry('BRL', false, false)])
   })
