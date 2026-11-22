@@ -1,4 +1,4 @@
-import type { Conversion, DailySpend, MonthDetail, MonthItem, MonthListEntry, TemplateDetail, TemplateItem } from '@maimoni/shared'
+import type { Conversion, DailySpend, MonthDetail, MonthItem, MonthListEntry, TemplateDetail, TemplateItem, UserCurrency } from '@maimoni/shared'
 import { daysInMonth } from '@maimoni/shared'
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { setup } from './setup'
@@ -218,7 +218,16 @@ test('live rate endpoint reports unavailability', async () => {
   expect(response.body.error).toBe('Cotação indisponível no teste')
 })
 
+test('clearing data answers 404 unless purging is enabled', async () => {
+  await request('POST', '/months', { year: 2026, month: 10 })
+
+  expect((await request('DELETE', '/data')).status).toBe(404)
+
+  expect((await request<MonthListEntry[]>('GET', '/months')).body).toHaveLength(1)
+})
+
 test('clearing data wipes months and template', async () => {
+  ({ request } = await setup(6, {}, { enablePurge: true }))
   await seedTemplate()
   await request('POST', '/months', { year: 2026, month: 10 })
 
@@ -227,6 +236,156 @@ test('clearing data wipes months and template', async () => {
   expect((await request<MonthListEntry[]>('GET', '/months')).body).toEqual([])
   const { body: template } = await request<TemplateDetail>('GET', '/template')
   expect(template.items).toEqual([])
+})
+
+describe('currencies', () => {
+  const base = '/settings/currencies'
+
+  // These start from a user with no currencies.
+  beforeEach(async () => {
+    ({ request } = await setup(6, {}, { currencies: false }))
+  })
+
+  const entry = (currency: UserCurrency['currency'], main: boolean, enabled = true): UserCurrency => ({ currency, enabled, main })
+  const list = async () => (await request<UserCurrency[]>('GET', base)).body
+
+  test('the first currency added is the main one', async () => {
+    expect(await list()).toEqual([])
+
+    // It has to be enabled, since it is the main one.
+    expect((await request('POST', base, { currency: 'BRL', enabled: false })).status).toBe(409)
+    const first = await request<UserCurrency>('POST', base, { currency: 'BRL', main: false })
+    expect(first.status).toBe(201)
+    expect(first.body).toEqual(entry('BRL', true))
+    expect((await request<UserCurrency>('POST', base, { currency: 'EUR' })).body).toEqual(entry('EUR', false))
+
+    expect((await request('POST', base, { currency: 'EUR' })).status).toBe(409)
+    expect((await request('POST', base, { currency: 'USD' })).status).toBe(400)
+    expect(await list()).toEqual([entry('BRL', true), entry('EUR', false)])
+  })
+
+  test('a currency added as the main one demotes the previous one', async () => {
+    await request('POST', base, { currency: 'BRL' })
+
+    const added = await request<UserCurrency>('POST', base, { currency: 'EUR', main: true })
+    expect(added.status).toBe(201)
+    expect(added.body).toEqual(entry('EUR', true))
+    expect(await list()).toEqual([entry('EUR', true), entry('BRL', false)])
+
+    // One that is already there is refused without changing which one is main.
+    expect((await request('POST', base, { currency: 'BRL', main: true })).status).toBe(409)
+    expect(await list()).toEqual([entry('EUR', true), entry('BRL', false)])
+  })
+
+  test('a disabled currency can\'t be the main one', async () => {
+    await request('POST', base, { currency: 'EUR' })
+    expect((await request('POST', base, { currency: 'BRL', enabled: false, main: true })).status).toBe(400)
+    expect((await request<UserCurrency>('POST', base, { currency: 'BRL', enabled: false })).body).toEqual(entry('BRL', false, false))
+
+    expect((await request('PATCH', `${base}/BRL`, { enabled: false, main: true })).status).toBe(400)
+    // Neither making the disabled one main nor disabling the main one goes through.
+    expect((await request('PATCH', `${base}/BRL`, { main: true })).status).toBe(409)
+    expect((await request('PATCH', `${base}/EUR`, { enabled: false })).status).toBe(409)
+    expect(await list()).toEqual([entry('EUR', true), entry('BRL', false, false)])
+
+    const { body } = await request<UserCurrency[]>('PATCH', `${base}/BRL`, { enabled: true, main: true })
+    expect(body).toEqual([entry('BRL', true), entry('EUR', false)])
+    expect((await request<UserCurrency[]>('PATCH', `${base}/EUR`, { enabled: false })).body).toEqual([entry('BRL', true), entry('EUR', false, false)])
+  })
+
+  test('a disabled currency still takes items and spends', async () => {
+    await request('POST', base, { currency: 'EUR' })
+    await request('POST', base, { currency: 'BRL', enabled: false })
+    expect((await request('POST', '/template/items', { name: 'Carro', currency: 'BRL', amount: 1000 })).status).toBe(201)
+  })
+
+  test('items and spends are refused in a currency the user doesn\'t have', async () => {
+    await request('POST', base, { currency: 'EUR' })
+    await request('POST', '/months', { year: 2026, month: 10 })
+    const { body: template } = await request<TemplateItem>('POST', '/template/items', { name: 'Aluguel', currency: 'EUR', amount: 1000 })
+    const { body: item } = await request<MonthItem>('POST', '/months/2026/10/items', { name: 'Aluguel', currency: 'EUR', amount: 1000 })
+    const { body: spend } = await request<DailySpend>('POST', '/months/2026/10/spends', { day: 1, amount: 10, currency: 'EUR' })
+
+    const refused = [
+      await request('POST', '/template/items', { name: 'Carro', currency: 'BRL', amount: 1000 }),
+      await request('PATCH', `/template/items/${template.id}`, { currency: 'BRL' }),
+      await request('POST', '/months/2026/10/items', { name: 'Carro', currency: 'BRL', amount: 1000 }),
+      await request('PATCH', `/months/2026/10/items/${item.id}`, { currency: 'BRL' }),
+      await request('POST', '/months/2026/10/spends', { day: 1, amount: 10, currency: 'BRL' }),
+      await request('PATCH', `/months/2026/10/spends/${spend.id}`, { currency: 'BRL' }),
+    ]
+    expect(refused.map(response => response.status)).toEqual([400, 400, 400, 400, 400, 400])
+    expect(refused[0]!.body).toEqual({ error: 'Currency is not one of the user\'s currencies' })
+
+    await request('POST', base, { currency: 'BRL' })
+    expect((await request('PATCH', `/template/items/${template.id}`, { currency: 'BRL' })).status).toBe(200)
+    expect((await request('PATCH', `/months/2026/10/items/${item.id}`, { currency: 'BRL' })).status).toBe(200)
+    expect((await request('PATCH', `/months/2026/10/spends/${spend.id}`, { currency: 'BRL' })).status).toBe(200)
+  })
+
+  test('making a currency the main one demotes the previous one', async () => {
+    await request('POST', base, { currency: 'BRL' })
+    expect((await request('PATCH', `${base}/EUR`, { main: true })).status).toBe(404)
+    await request('POST', base, { currency: 'EUR' })
+
+    const { body } = await request<UserCurrency[]>('PATCH', `${base}/EUR`, { main: true })
+    expect(body).toEqual([entry('EUR', true), entry('BRL', false)])
+    // Idempotent on the one that is already main.
+    expect((await request<UserCurrency[]>('PATCH', `${base}/EUR`, { main: true })).body).toEqual(body)
+    // `main: false` changes nothing on one that isn't main, and is refused on the main one: another has to take its place.
+    expect((await request<UserCurrency[]>('PATCH', `${base}/BRL`, { main: false })).body).toEqual(body)
+    expect((await request('PATCH', `${base}/EUR`, { main: false })).status).toBe(409)
+    expect(await list()).toEqual(body)
+  })
+
+  test('replaces the whole list at once', async () => {
+    const first = await request<UserCurrency[]>('PUT', base, { currencies: [{ currency: 'BRL', enabled: true }, { currency: 'EUR', enabled: true }], main: 'BRL' })
+    expect(first.status).toBe(200)
+    expect(first.body).toEqual([entry('BRL', true), entry('EUR', false)])
+
+    // Swaps the main one and disables the other in one request.
+    const swapped = await request<UserCurrency[]>('PUT', base, { currencies: [{ currency: 'BRL', enabled: false }, { currency: 'EUR', enabled: true }], main: 'EUR' })
+    expect(swapped.body).toEqual([entry('EUR', true), entry('BRL', false, false)])
+
+    // One left out is removed.
+    expect((await request<UserCurrency[]>('PUT', base, { currencies: [{ currency: 'EUR', enabled: true }], main: 'EUR' })).body).toEqual([entry('EUR', true)])
+    expect(await list()).toEqual([entry('EUR', true)])
+  })
+
+  test('refuses a list that leaves out a currency in use, or has a bad main', async () => {
+    const both = [{ currency: 'BRL', enabled: true }, { currency: 'EUR', enabled: true }]
+    await request('PUT', base, { currencies: both, main: 'EUR' })
+    await request('POST', '/template/items', { name: 'Carro', currency: 'BRL', amount: 1000 })
+
+    const invalid = [
+      { currencies: [{ currency: 'EUR', enabled: true }], main: 'BRL' },
+      { currencies: [{ currency: 'BRL', enabled: false }, { currency: 'EUR', enabled: true }], main: 'BRL' },
+      { currencies: [...both, { currency: 'EUR', enabled: false }], main: 'EUR' },
+      { currencies: [], main: 'EUR' },
+      { currencies: [{ currency: 'USD', enabled: true }], main: 'USD' },
+    ]
+    for (const body of invalid)
+      expect((await request('PUT', base, body)).status).toBe(400)
+
+    // BRL has a template item, so it can be disabled but not left out. Nothing changes when it is refused.
+    expect((await request('PUT', base, { currencies: [{ currency: 'EUR', enabled: true }], main: 'EUR' })).status).toBe(409)
+    expect(await list()).toEqual([entry('EUR', true), entry('BRL', false)])
+    expect((await request<UserCurrency[]>('PUT', base, { currencies: [{ currency: 'BRL', enabled: false }, { currency: 'EUR', enabled: true }], main: 'EUR' })).body).toEqual([entry('EUR', true), entry('BRL', false, false)])
+  })
+
+  test('removes a currency unless it is the main one or in use', async () => {
+    await request('POST', base, { currency: 'EUR' })
+    await request('POST', base, { currency: 'BRL' })
+    expect((await request('DELETE', `${base}/EUR`)).status).toBe(409)
+
+    const { body: item } = await request<TemplateItem>('POST', '/template/items', { name: 'Carro', currency: 'BRL', amount: 1000 })
+    expect((await request('DELETE', `${base}/BRL`)).status).toBe(409)
+    await request('DELETE', `/template/items/${item.id}`)
+
+    expect((await request('DELETE', `${base}/BRL`)).status).toBe(204)
+    expect((await request('DELETE', `${base}/BRL`)).status).toBe(404)
+    expect(await list()).toEqual([entry('EUR', true)])
+  })
 })
 
 describe('daily spends', () => {

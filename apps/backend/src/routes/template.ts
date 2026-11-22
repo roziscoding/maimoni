@@ -7,6 +7,7 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import { templateItems } from '../db/schema'
 import { validate } from '../lib/validate'
+import { CURRENCY_NOT_ADDED, userHasCurrency } from './currencies'
 
 const idParam = z.object({ id: z.uuid() })
 
@@ -35,6 +36,8 @@ export function templateRoutes(db: Database) {
     .post('/template/items', validate('json', createTemplateItemSchema), async (c) => {
       const userId = c.var.user.id
       const input = c.req.valid('json')
+      if (!await userHasCurrency(db, userId, input.currency))
+        return c.json(CURRENCY_NOT_ADDED, 400)
       const [row] = await db.insert(templateItems).values({ ...input, userId, position: await nextTemplatePosition(db, userId) }).returning()
       return c.json(toTemplateItem(row!), 201)
     })
@@ -53,6 +56,8 @@ export function templateRoutes(db: Database) {
     .patch('/template/items/:id', validate('param', idParam), validate('json', updateTemplateItemSchema), async (c) => {
       const { id } = c.req.valid('param')
       const input = c.req.valid('json')
+      if (input.currency && !await userHasCurrency(db, c.var.user.id, input.currency))
+        return c.json(CURRENCY_NOT_ADDED, 400)
       // A plain amount replaces whatever expression produced the previous one.
       const expression = input.amount !== undefined && input.expression === undefined ? null : input.expression
       const [row] = await db.update(templateItems).set({ ...input, expression }).where(and(eq(templateItems.id, id), eq(templateItems.userId, c.var.user.id))).returning()

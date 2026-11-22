@@ -64,7 +64,7 @@ describe('auth', () => {
   })
 
   test('keeps each user\'s data apart', async () => {
-    const { app, auth, as, request } = await setup()
+    const { app, auth, as, request } = await setup(6, {}, { enablePurge: true })
     await request('POST', '/template/items', { name: 'Aluguel', currency: 'EUR', amount: 1000 })
     await request('POST', '/months', { year: 2026, month: 10 })
     await request('POST', '/months/2026/10/spends', { day: 1, amount: 10 })

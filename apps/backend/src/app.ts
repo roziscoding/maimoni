@@ -4,6 +4,7 @@ import type { Database } from './db'
 import type { AppLinks } from './lib/app-links'
 import type { AppReleaseService } from './services/app-releases'
 import type { RateService } from './services/rates'
+import process from 'node:process'
 import { honoLogLayer } from '@loglayer/hono'
 import { passwordResetRequestSchema } from '@maimoni/shared'
 import { Hono } from 'hono'
@@ -14,6 +15,7 @@ import { log } from './lib/log'
 import { validate } from './lib/validate'
 import { appReleaseRoutes } from './routes/app-releases'
 import { conversionRoutes } from './routes/conversions'
+import { currencyRoutes } from './routes/currencies'
 import { dataRoutes } from './routes/data'
 import { monthRoutes } from './routes/months'
 import { sessionRoutes } from './routes/sessions'
@@ -36,9 +38,11 @@ export interface AppOptions {
   appReleases?: AppReleaseService
   /** Mobile app identifiers for the `.well-known` files; without them those answer 404. */
   appLinks?: AppLinks
+  /** Serves `DELETE /data`; without it that answers 404. Defaults to whether `FLAG_ENABLE_PURGE` is `true`. */
+  enablePurge?: boolean
 }
 
-export function createApp({ db, auth, rates, appReleases = createAppReleaseService(), appLinks = appLinksFromEnv() }: AppOptions) {
+export function createApp({ db, auth, rates, appReleases = createAppReleaseService(), appLinks = appLinksFromEnv(), enablePurge = process.env.FLAG_ENABLE_PURGE?.trim().toLowerCase() === 'true' }: AppOptions) {
   // Public: health checks, Better Auth's own endpoints, the sign in provider list, password reset requests, app updates (so a build without sign in can still update), and the app association files.
   const api = new Hono()
     .get('/health', c => c.json({ ok: true }))
@@ -75,8 +79,11 @@ export function createApp({ db, auth, rates, appReleases = createAppReleaseServi
     .route('/', monthRoutes(db, rates))
     .route('/', conversionRoutes(db, rates))
     .route('/', spendRoutes(db))
-    .route('/', dataRoutes(db))
+    .route('/', currencyRoutes(db))
     .route('/', sessionRoutes(auth))
+
+  if (enablePurge)
+    api.route('/', dataRoutes(db))
 
   const app = new Hono<{ Variables: HonoLogLayerVariables }>()
 

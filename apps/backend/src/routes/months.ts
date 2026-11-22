@@ -9,6 +9,7 @@ import { z } from 'zod'
 import { conversions, dailySpends, monthItems, months, templateItems } from '../db/schema'
 import { validate } from '../lib/validate'
 import { listConversions, toConversion } from './conversions'
+import { CURRENCY_NOT_ADDED, userHasCurrency } from './currencies'
 import { listSpends, toDailySpend } from './spends'
 import { listTemplateItems, toTemplateItem } from './template'
 
@@ -138,9 +139,12 @@ export function monthRoutes(db: Database, rates: RateService) {
       const row = await findMonth(db, c.var.user.id, c.req.valid('param'))
       if (!row)
         return c.json({ error: 'Month not found' }, 404)
+      const input = c.req.valid('json')
+      if (!await userHasCurrency(db, row.userId, input.currency))
+        return c.json(CURRENCY_NOT_ADDED, 400)
       const [last] = await db.select({ value: max(monthItems.position) }).from(monthItems).where(eq(monthItems.monthId, row.id))
       const [item] = await db.insert(monthItems)
-        .values({ ...c.req.valid('json'), monthId: row.id, userId: row.userId, position: (last?.value ?? -1) + 1 })
+        .values({ ...input, monthId: row.id, userId: row.userId, position: (last?.value ?? -1) + 1 })
         .returning()
       return c.json(toMonthItem(item!), 201)
     })
@@ -164,6 +168,8 @@ export function monthRoutes(db: Database, rates: RateService) {
       if (!row)
         return c.json({ error: 'Month not found' }, 404)
       const input = c.req.valid('json')
+      if (input.currency && !await userHasCurrency(db, row.userId, input.currency))
+        return c.json(CURRENCY_NOT_ADDED, 400)
       const amountChanged = input.amount !== undefined
       const [item] = await db.update(monthItems)
         .set({

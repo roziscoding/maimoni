@@ -82,6 +82,7 @@ Both Dockerfiles install dependencies in a layer built only from the `package.js
 | `BETTER_AUTH_TRUSTED_ORIGINS` | backend (extra comma-separated origins for `/api/auth`) | none |
 | `AUTH_TRUSTED_PROXIES` | backend (comma-separated addresses or CIDR ranges of the reverse proxy, so the auth rate limits count the address it saw instead of a client-sent `X-Forwarded-For`) | none |
 | `AUTH_SIGNUP_ENABLED` | backend (`true` allows sign up with email, Google or Apple) | `false` |
+| `FLAG_ENABLE_PURGE` | backend (`true` serves `DELETE /api/data`, which deletes all of a user's months and template items) | `false`; `true` in `mise.toml` and `compose.dev.yaml` |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | backend (Google sign in, off without both) | none |
 | `GOOGLE_IOS_CLIENT_ID` | backend (iOS OAuth client ID, for native Google sign in on iOS) | none |
 | `APPLE_CLIENT_ID` / `APPLE_TEAM_ID` / `APPLE_KEY_ID` / `APPLE_PRIVATE_KEY` | backend (Apple sign in, off without all four: the Services ID, the team ID, the Sign in with Apple key's ID and its `.p8` contents, where line breaks may be written as `\n`). The backend signs the client secret itself when it starts; it lasts 180 days | none |

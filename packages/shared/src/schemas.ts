@@ -26,6 +26,59 @@ export const passwordResetRequestSchema = z.object({
 export type PasswordResetRequest = z.infer<typeof passwordResetRequestSchema>
 
 /* -------------------------------------------------------------------------- */
+/*                                  Settings                                  */
+/* -------------------------------------------------------------------------- */
+
+/** A currency the user works with. Exactly one of a user's currencies is the main one. */
+export const userCurrencySchema = z.object({
+  currency: currencySchema,
+  /**
+   * Whether the clients offer it. A currency with history can be disabled instead of removed; the
+   * server accepts items and spends in a disabled one all the same.
+   */
+  enabled: z.boolean(),
+  main: z.boolean(),
+})
+export type UserCurrency = z.infer<typeof userCurrencySchema>
+
+const mainIsEnabled = {
+  check: (value: { enabled?: boolean, main?: boolean }) => !(value.enabled === false && value.main === true),
+  params: { error: 'A disabled currency can\'t be the main one', path: ['main'] },
+}
+
+/** `main: true` makes the new currency the main one, in place of the current one. */
+export const addUserCurrencySchema = z.object({
+  currency: currencySchema,
+  enabled: z.boolean().default(true),
+  main: z.boolean().default(false),
+}).refine(mainIsEnabled.check, mainIsEnabled.params)
+export type AddUserCurrency = z.input<typeof addUserCurrencySchema>
+
+/** `main: true` takes the place of the current main currency. The main one stops being it when another becomes it, not through `main: false`. */
+export const updateUserCurrencySchema = z.object({
+  enabled: z.boolean().optional(),
+  main: z.boolean().optional(),
+}).refine(mainIsEnabled.check, mainIsEnabled.params)
+export type UpdateUserCurrency = z.input<typeof updateUserCurrencySchema>
+
+/** The user's whole list of currencies at once. `main` has to be one of `currencies`, and enabled. */
+export const replaceUserCurrenciesSchema = z.object({
+  currencies: z.array(z.object({ currency: currencySchema, enabled: z.boolean() })),
+  main: currencySchema,
+}).superRefine(({ currencies, main }, ctx) => {
+  for (const [index, { currency }] of currencies.entries()) {
+    if (currencies.findIndex(other => other.currency === currency) !== index)
+      ctx.addIssue({ code: 'custom', message: 'Currency is listed more than once', path: ['currencies', index, 'currency'] })
+  }
+  const entry = currencies.find(({ currency }) => currency === main)
+  if (!entry)
+    ctx.addIssue({ code: 'custom', message: 'The main currency has to be one of the currencies', path: ['main'] })
+  else if (!entry.enabled)
+    ctx.addIssue({ code: 'custom', message: mainIsEnabled.params.error, path: ['main'] })
+})
+export type ReplaceUserCurrencies = z.input<typeof replaceUserCurrenciesSchema>
+
+/* -------------------------------------------------------------------------- */
 /*                                  Template                                  */
 /* -------------------------------------------------------------------------- */
 

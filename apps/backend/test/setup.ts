@@ -46,8 +46,11 @@ export async function signIn(app: ReturnType<typeof createApp>, auth: Auth, emai
 /**
  * Fresh in-memory Postgres (PGlite) with migrations applied, plus the app wired to it. `rate` is the
  * live EUR→BRL rate (`null` for none), and `authEnv` sets auth environment variables.
+ *
+ * - `enablePurge` serves `DELETE /data`.
+ * - `currencies` gives the signed in user EUR as the main currency and BRL; `false` leaves them with none.
  */
-export async function setup(rate: number | null = 6, authEnv: Record<string, string> = {}) {
+export async function setup(rate: number | null = 6, authEnv: Record<string, string> = {}, { enablePurge = false, currencies = true }: { enablePurge?: boolean, currencies?: boolean } = {}) {
   const db = drizzle({ client: new PGlite(), schema })
   await migrate(db, { migrationsFolder })
   const rates: RateService = {
@@ -64,7 +67,7 @@ export async function setup(rate: number | null = 6, authEnv: Record<string, str
     },
   }
   const auth = createAuth({ db: db as unknown as Database, baseURL: 'http://localhost:3000', secret: 'test-secret-that-is-at-least-32-characters', mail, env: authEnv })
-  const app = createApp({ db: db as unknown as Database, auth, rates })
+  const app = createApp({ db: db as unknown as Database, auth, rates, enablePurge })
   /** Request helper bound to a set of auth headers; `null` sends none. */
   const as = (auth: Record<string, string> | null) => async <T = any>(method: string, path: string, body?: unknown) => {
     const response = await app.request(`/api${path}`, {
@@ -75,6 +78,13 @@ export async function setup(rate: number | null = 6, authEnv: Record<string, str
     const text = await response.text()
     return { status: response.status, body: (text ? JSON.parse(text) : null) as T }
   }
-  const request = as(await signIn(app, auth, 'owner@example.com'))
+  const owner = await createTestUser(auth, 'owner@example.com')
+  if (currencies) {
+    await db.insert(schema.userCurrencies).values([
+      { userId: owner.id, currency: 'EUR', isMainCurrency: true },
+      { userId: owner.id, currency: 'BRL' },
+    ])
+  }
+  const request = as(cookieHeaders(await login(app, 'owner@example.com')))
   return { db, app, auth, as, request, mails }
 }
