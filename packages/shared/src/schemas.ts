@@ -38,6 +38,8 @@ export const userCurrencySchema = z.object({
    */
   enabled: z.boolean(),
   main: z.boolean(),
+  /** Whether a template item, month item or daily spend is in it. One in use can be disabled, not removed. */
+  inUse: z.boolean(),
 })
 export type UserCurrency = z.infer<typeof userCurrencySchema>
 

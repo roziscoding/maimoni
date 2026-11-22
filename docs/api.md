@@ -25,6 +25,7 @@ Every route below except `/api/health`, `/api/sign-in-providers`, `/api/password
 | POST | `/api/password-reset` | `PasswordResetRequest` (`{ email }`) | 204, whether or not the email belongs to a user. A user with that email is sent a link, valid for 1 hour, to `/reset-password?token=...`; the page sets the new password with Better Auth's `POST /api/auth/reset-password` (`{ newPassword, token }`) |
 | GET | `/api/well-known/assetlinks.json` | | Digital Asset Links statement for the Android app (404 unless `ANDROID_APP_PACKAGE` and `ANDROID_APP_CERT_SHA256` are set) |
 | GET | `/api/well-known/apple-app-site-association` | | `{ webcredentials: { apps } }` (404 unless `APPLE_TEAM_ID` and `APPLE_APP_BUNDLE_IDENTIFIER` are set) |
+| GET | `/api/flags` | | `Flags` (`{ purge }`): whether `DELETE /api/data` is served, so the clients know to offer it |
 | GET | `/api/rates/live` | | `LiveRate` (503 when no provider answered and nothing is cached) |
 | GET | `/api/template` | | `TemplateDetail` (`{ items }`) |
 | POST | `/api/template/items` | `CreateTemplateItem` | `TemplateItem` (201) |
@@ -49,10 +50,10 @@ Every route below except `/api/health`, `/api/sign-in-providers`, `/api/password
 | PATCH | `/api/months/:year/:month/spends/:id` | `UpdateDailySpend` | `DailySpend` |
 | DELETE | `/api/months/:year/:month/spends/:id` | | 204 |
 | DELETE | `/api/data` | | 204 — deletes the user's months (with their items, spends and conversions), and template items; 404 unless `FLAG_ENABLE_PURGE` is `true` |
-| GET | `/api/settings/currencies` | | `UserCurrency[]` (`{ currency, enabled, main }`), the main one first. `enabled` tells the clients which ones to offer; the server takes items and spends in a disabled one all the same |
-| POST | `/api/settings/currencies` | `AddUserCurrency` (`{ currency, enabled?, main? }`) | `UserCurrency` (201, 409 if already added). `main: true` makes it the main one, in place of the previous one. The user's first currency is the main one whatever `main` says. 400 for `enabled: false` with `main: true` |
-| PUT | `/api/settings/currencies` | `ReplaceUserCurrencies` (`{ currencies: { currency, enabled }[], main }`) | `UserCurrency[]` — replaces the whole list. `main` has to be one of `currencies` and enabled (400 otherwise). A currency left out is removed; 409 when one left out is in use, which changes nothing |
-| PATCH | `/api/settings/currencies/:currency` | `UpdateUserCurrency` (`{ enabled?, main? }`) | `UserCurrency[]`. `main: true` makes that currency the main one, in place of the previous one. 409 when it would leave the main currency disabled, or the user without a main one (`main: false` on it) |
+| GET | `/api/settings/currencies` | | `UserCurrency[]` (`{ currency, enabled, main, inUse }`), the main one first. `enabled` tells the clients which ones to offer; the server takes items and spends in a disabled one all the same. `inUse` says a template item, month item or daily spend is in it, so it can't be removed |
+| POST | `/api/settings/currencies` | `AddUserCurrency` (`{ currency, enabled?, main? }`) | `UserCurrency` (201, 409 if already added). `main: true` makes it the main one, in place of the previous one. The user's first currency is the main one whatever `main` says, so adding it with `enabled: false` answers 409. 400 for `enabled: false` with `main: true` |
+| PUT | `/api/settings/currencies` | `ReplaceUserCurrencies` (`{ currencies: { currency, enabled }[], main }`) | `UserCurrency[]` — replaces the whole list. `main` has to be one of `currencies` and enabled (400 otherwise). A currency left out is removed. When any left out is in use it answers 409 `CurrenciesInUseError` (`{ error, inUse }`, the currencies in use) and changes nothing |
+| PATCH | `/api/settings/currencies/:currency` | `UpdateUserCurrency` (`{ enabled?, main? }`) | `UserCurrency[]`. `main: true` makes that currency the main one, in place of the previous one. 400 for `enabled: false` with `main: true` in the same body. 409 when the stored state makes the change impossible: it would leave the main currency disabled, or the user without a main one (`main: false` on it) |
 | DELETE | `/api/settings/currencies/:currency` | | 204; 409 for the main currency, or for one that a template item, month item or daily spend is in |
 | GET | `/api/sessions` | | `SessionEntry[]` — the user's valid sessions, the current one first |
 | DELETE | `/api/sessions/:id` | | 204 — ends that session; 400 for the current one, which ends by signing out |

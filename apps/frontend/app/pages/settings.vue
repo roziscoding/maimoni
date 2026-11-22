@@ -1,7 +1,11 @@
 <script setup lang="ts">
+import type { Flags } from '@maimoni/shared'
+
 useHead({ title: 'Configurações · maimoni' })
 
 const toast = useToast()
+// The danger zone only shows when the server serves `DELETE /api/data`.
+const { data: flags } = await useFetch<Flags>('/api/flags', { key: 'flags' })
 
 const CONFIRMATION = 'apagar'
 const clearing = ref(false)
@@ -18,7 +22,7 @@ async function clearData() {
     confirmingClear.value = false
     clearNuxtData()
     await refreshNuxtData()
-    toast.add({ title: 'Dados apagados', description: 'Meses e template voltaram ao zero.', color: 'neutral', icon: 'i-lucide-trash-2' })
+    toast.add({ title: 'Dados apagados', description: 'Todos os meses e o template foram apagados.', color: 'neutral', icon: 'i-lucide-trash-2' })
     await navigateTo('/')
   }
   catch (err) {
@@ -37,25 +41,29 @@ async function clearData() {
     </template>
 
     <template #body>
-      <div class="mx-auto w-full max-w-xl py-4">
+      <div class="mx-auto w-full max-w-2xl space-y-6 py-4">
+        <CurrencySettings />
+
         <SessionList />
 
-        <section aria-labelledby="danger-title" class="mt-12 space-y-3 rounded-xl border border-error/40 p-4">
-          <div class="space-y-1">
-            <h2 id="danger-title" class="text-sm font-semibold text-error">
-              Zona de perigo
-            </h2>
-            <p class="text-sm text-muted">
-              Apaga todos os meses e o template. Não dá para desfazer.
-            </p>
+        <SettingsSection v-if="flags?.purge" title="Zona de perigo" description="Ações que não podem ser desfeitas." danger>
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium text-highlighted">
+                Apagar todos os dados
+              </p>
+              <p class="text-sm text-muted">
+                Apaga todos os meses e o template. Moedas e sessões são mantidas.
+              </p>
+            </div>
+            <UButton label="Apagar todos os dados" icon="i-lucide-trash-2" color="error" variant="subtle" size="sm" @click="confirmingClear = true" />
           </div>
-          <UButton label="Apagar todos os dados" icon="i-lucide-trash-2" color="error" variant="subtle" @click="confirmingClear = true" />
-        </section>
+        </SettingsSection>
 
         <UModal
           v-model:open="confirmingClear"
           title="Apagar todos os dados?"
-          description="Meses, itens e template serão apagados de vez."
+          description="Todos os meses e o template serão apagados. Esta ação não pode ser desfeita."
           :ui="{ footer: 'justify-end' }"
         >
           <template #body>
@@ -65,7 +73,7 @@ async function clearData() {
           </template>
           <template #footer="{ close }">
             <UButton label="Cancelar" color="neutral" variant="outline" @click="close" />
-            <UButton label="Apagar tudo" color="error" icon="i-lucide-trash-2" :disabled="confirmation !== CONFIRMATION" :loading="clearing" @click="clearData" />
+            <UButton label="Apagar todos os dados" color="error" icon="i-lucide-trash-2" :disabled="confirmation !== CONFIRMATION" :loading="clearing" @click="clearData" />
           </template>
         </UModal>
       </div>

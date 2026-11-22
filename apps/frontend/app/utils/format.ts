@@ -13,6 +13,30 @@ export function formatMoney(value: number | null | undefined, currency: Currency
   return value === null || value === undefined ? '—' : money[currency].format(value)
 }
 
+const currencyNames = new Intl.DisplayNames('pt-BR', { type: 'currency' })
+
+/** pt-BR name of a currency: `Real brasileiro`, `Euro`. */
+export function currencyName(currency: Currency) {
+  const name = currencyNames.of(currency) ?? currency
+  return name.charAt(0).toUpperCase() + name.slice(1)
+}
+
+const currencyPlurals = Object.fromEntries(Object.entries(money).map(([currency]) => [
+  currency,
+  new Intl.NumberFormat('pt-BR', { style: 'currency', currency, currencyDisplay: 'name' }),
+])) as Record<Currency, Intl.NumberFormat>
+
+/** pt-BR plural name of a currency, for a heading over amounts in it: `Reais brasileiros`, `Euros`. */
+export function currencyPlural(currency: Currency) {
+  const name = currencyPlurals[currency].formatToParts(2).find(part => part.type === 'currency')?.value ?? currency
+  return name.charAt(0).toUpperCase() + name.slice(1)
+}
+
+/** The sign a currency's amounts are written with: `R$`, `€`. */
+export function currencySymbol(currency: Currency) {
+  return money[currency].formatToParts(0).find(part => part.type === 'currency')?.value ?? currency
+}
+
 /** EUR→BRL rate with the 4 decimals the spreadsheet showed. */
 export function formatRate(value: number | null | undefined) {
   return value === null || value === undefined ? '—' : `R$ ${rate.format(value)}`
@@ -56,8 +80,12 @@ export function deviceLabel(userAgent: string | null) {
   return system ? `${name} no ${system}` : name
 }
 
-/** Pulls the backend's `{ error }` message out of a failed `$fetch`. */
+/**
+ * Pulls the message out of a failed `$fetch`. The backend answers `{ error: string }`; when the
+ * request never reaches it, Nuxt's proxy answers `{ error: true, statusMessage, message }` instead.
+ */
 export function errorMessage(error: unknown) {
-  const data = (error as { data?: { error?: string } } | null)?.data
-  return data?.error ?? (error instanceof Error ? error.message : 'Erro inesperado')
+  const data = (error as { data?: { error?: unknown, statusMessage?: unknown, message?: unknown } } | null)?.data
+  const message = [data?.error, data?.statusMessage, data?.message].find(value => typeof value === 'string' && value)
+  return typeof message === 'string' ? message : error instanceof Error ? error.message : 'Erro inesperado'
 }

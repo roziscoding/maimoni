@@ -15,6 +15,11 @@ const { data, error, summary, refreshingRate, refreshRate, addSpend, updateSpend
 const { data: months } = useNuxtData<MonthListEntry[]>('months')
 const hasPrevious = computed(() => months.value?.some(entry => entry.year * 12 + entry.month < year * 12 + month) ?? false)
 
+const currencies = useCurrencies()
+await currencies.ready
+/** With a single currency in the month there is no equivalent in another one to show. */
+const exchange = computed(() => currencies.shownInMonth(data.value).length > 1)
+
 const allowance = computed(() => summary.value?.allowance)
 const activeDay = computed(() => allowance.value?.activeDay ?? null)
 /** Days before today that were never closed: their budget hasn't been spread yet. */
@@ -86,8 +91,9 @@ async function confirmClose() {
         />
 
         <template v-if="activeDay !== null && allowance.eur !== null">
-          <DayHero v-if="summary" :allowance="allowance" :spends="spendsToday" :transfer="summary.transfer" />
+          <DayHero v-if="summary" :allowance="allowance" :spends="spendsToday" :transfer="summary.transfer" :exchange="exchange" />
 
+          <NoCurrenciesAlert v-if="currencies.none.value" />
           <SpendForm :day="activeDay" :create="addSpend" autofocus />
 
           <section v-if="spendsToday.length" aria-labelledby="today-spends" class="space-y-2">

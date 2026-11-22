@@ -8,8 +8,10 @@ const props = defineProps<{
   spends: DailySpend[]
   /** Rate, to show the BRL equivalent and size BRL spends by their EUR cost. */
   transfer: MonthSummary['transfer']
+  /** Whether the month has more than one currency, and so an equivalent in reais to show. */
+  exchange: boolean
 }>()
-const rate = computed(() => props.transfer.rate)
+const rate = computed(() => props.exchange ? props.transfer.rate : null)
 
 const budget = computed(() => props.allowance.eur ?? 0)
 const remaining = computed(() => props.allowance.remainingEur ?? 0)

@@ -221,6 +221,7 @@ test('live rate endpoint reports unavailability', async () => {
 test('clearing data answers 404 unless purging is enabled', async () => {
   await request('POST', '/months', { year: 2026, month: 10 })
 
+  expect((await request('GET', '/flags')).body).toEqual({ purge: false })
   expect((await request('DELETE', '/data')).status).toBe(404)
 
   expect((await request<MonthListEntry[]>('GET', '/months')).body).toHaveLength(1)
@@ -228,6 +229,7 @@ test('clearing data answers 404 unless purging is enabled', async () => {
 
 test('clearing data wipes months and template', async () => {
   ({ request } = await setup(6, {}, { enablePurge: true }))
+  expect((await request('GET', '/flags')).body).toEqual({ purge: true })
   await seedTemplate()
   await request('POST', '/months', { year: 2026, month: 10 })
 
@@ -246,7 +248,7 @@ describe('currencies', () => {
     ({ request } = await setup(6, {}, { currencies: false }))
   })
 
-  const entry = (currency: UserCurrency['currency'], main: boolean, enabled = true): UserCurrency => ({ currency, enabled, main })
+  const entry = (currency: UserCurrency['currency'], main: boolean, enabled = true, inUse = false): UserCurrency => ({ currency, enabled, main, inUse })
   const list = async () => (await request<UserCurrency[]>('GET', base)).body
 
   test('the first currency added is the main one', async () => {
@@ -368,9 +370,11 @@ describe('currencies', () => {
       expect((await request('PUT', base, body)).status).toBe(400)
 
     // BRL has a template item, so it can be disabled but not left out. Nothing changes when it is refused.
-    expect((await request('PUT', base, { currencies: [{ currency: 'EUR', enabled: true }], main: 'EUR' })).status).toBe(409)
-    expect(await list()).toEqual([entry('EUR', true), entry('BRL', false)])
-    expect((await request<UserCurrency[]>('PUT', base, { currencies: [{ currency: 'BRL', enabled: false }, { currency: 'EUR', enabled: true }], main: 'EUR' })).body).toEqual([entry('EUR', true), entry('BRL', false, false)])
+    const refused = await request('PUT', base, { currencies: [{ currency: 'EUR', enabled: true }], main: 'EUR' })
+    expect(refused.status).toBe(409)
+    expect(refused.body.inUse).toEqual(['BRL'])
+    expect(await list()).toEqual([entry('EUR', true), entry('BRL', false, true, true)])
+    expect((await request<UserCurrency[]>('PUT', base, { currencies: [{ currency: 'BRL', enabled: false }, { currency: 'EUR', enabled: true }], main: 'EUR' })).body).toEqual([entry('EUR', true), entry('BRL', false, false, true)])
   })
 
   test('removes a currency unless it is the main one or in use', async () => {

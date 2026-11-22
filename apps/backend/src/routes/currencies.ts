@@ -1,4 +1,4 @@
-import type { Currency, UserCurrency } from '@maimoni/shared'
+import type { CurrenciesInUseError, Currency, UserCurrency } from '@maimoni/shared'
 import type { AuthEnv } from '../auth'
 import type { Database } from '../db'
 import { addUserCurrencySchema, currencySchema, replaceUserCurrenciesSchema, updateUserCurrencySchema } from '@maimoni/shared'
@@ -10,8 +10,8 @@ import { validate } from '../lib/validate'
 
 const currencyParam = z.object({ currency: currencySchema })
 
-function toUserCurrency(row: Pick<typeof userCurrencies.$inferSelect, 'currency' | 'enabled' | 'isMainCurrency'>): UserCurrency {
-  return { currency: row.currency, enabled: row.enabled, main: row.isMainCurrency }
+function toUserCurrency(row: Pick<typeof userCurrencies.$inferSelect, 'currency' | 'enabled' | 'isMainCurrency'>, inUse: boolean): UserCurrency {
+  return { currency: row.currency, enabled: row.enabled, main: row.isMainCurrency, inUse }
 }
 
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0]
@@ -39,20 +39,27 @@ function refuse<Status extends 404 | 409>(status: Status, error: string) {
 }
 const MAIN_DISABLED = 'A disabled currency can\'t be the main one'
 
-/** The user's currencies, the main one first. */
-async function listUserCurrencies(db: Database, userId: string) {
-  const rows = await db.select().from(userCurrencies).where(eq(userCurrencies.userId, userId)).orderBy(desc(userCurrencies.isMainCurrency), asc(userCurrencies.currency))
-  return rows.map(toUserCurrency)
+/** The currencies any of the user's template items, month items or daily spends is in. */
+async function usedCurrencies(db: Database, userId: string) {
+  const used = new Set<Currency>()
+  for (const table of [templateItems, monthItems, dailySpends]) {
+    const rows = await db.selectDistinct({ currency: table.currency }).from(table).where(eq(table.userId, userId))
+    for (const row of rows)
+      used.add(row.currency)
+  }
+  return used
 }
 
 /** Whether any of the user's template items, month items or daily spends is in that currency. */
 async function currencyInUse(db: Database, userId: string, currency: Currency) {
-  for (const table of [templateItems, monthItems, dailySpends]) {
-    const [row] = await db.select({ userId: table.userId }).from(table).where(and(eq(table.userId, userId), eq(table.currency, currency))).limit(1)
-    if (row)
-      return true
-  }
-  return false
+  return (await usedCurrencies(db, userId)).has(currency)
+}
+
+/** The user's currencies, the main one first. */
+async function listUserCurrencies(db: Database, userId: string) {
+  const rows = await db.select().from(userCurrencies).where(eq(userCurrencies.userId, userId)).orderBy(desc(userCurrencies.isMainCurrency), asc(userCurrencies.currency))
+  const used = await usedCurrencies(db, userId)
+  return rows.map(row => toUserCurrency(row, used.has(row.currency)))
 }
 
 /**
@@ -85,11 +92,11 @@ export function currencyRoutes(db: Database) {
         if (isMainCurrency)
           await demoteMain(tx, userId)
         const [row] = await tx.insert(userCurrencies).values({ userId, currency, enabled, isMainCurrency }).returning()
-        return { row: row! }
+        return { row: row!, inUse: await currencyInUse(tx, userId, currency) }
       })
       if ('refused' in result)
         return c.json({ error: result.refused.error }, result.refused.status)
-      return c.json(toUserCurrency(result.row), 201)
+      return c.json(toUserCurrency(result.row, result.inUse), 201)
     })
     // Replaces the whole list: currencies left out are removed, which one in use refuses.
     .put('/settings/currencies', validate('json', replaceUserCurrenciesSchema), async (c) => {
@@ -99,10 +106,11 @@ export function currencyRoutes(db: Database) {
         await lockCurrencies(tx, userId)
         const existing = await tx.select({ currency: userCurrencies.currency }).from(userCurrencies).where(eq(userCurrencies.userId, userId))
         const removed = existing.map(row => row.currency).filter(currency => !currencies.some(entry => entry.currency === currency))
-        for (const currency of removed) {
-          if (await currencyInUse(tx, userId, currency))
-            return refuse(409, `${currency} is in use; send it with enabled: false to keep it out of the way`)
-        }
+        // All of them, so the client can name every currency that has to stay.
+        const used = await usedCurrencies(tx, userId)
+        const inUse = removed.filter(currency => used.has(currency))
+        if (inUse.length)
+          return { inUse }
         if (removed.length)
           await tx.delete(userCurrencies).where(and(eq(userCurrencies.userId, userId), inArray(userCurrencies.currency, removed)))
         await demoteMain(tx, userId)
@@ -112,8 +120,10 @@ export function currencyRoutes(db: Database) {
         }
         return { currencies: await listUserCurrencies(tx, userId) }
       })
-      if ('refused' in result)
-        return c.json({ error: result.refused.error }, result.refused.status)
+      if (result.inUse) {
+        const body: CurrenciesInUseError = { error: `In use: ${result.inUse.join(', ')}. Send them with enabled: false instead of leaving them out`, inUse: result.inUse }
+        return c.json(body, 409)
+      }
       return c.json(result.currencies)
     })
     .patch('/settings/currencies/:currency', validate('param', currencyParam), validate('json', updateUserCurrencySchema), async (c) => {

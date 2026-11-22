@@ -6,6 +6,8 @@ const props = defineProps<{
   year: number
   month: number
   summary: MonthSummary
+  /** Whether the month has more than one currency, and so a rate and an equivalent in reais to show. */
+  exchange: boolean
 }>()
 
 const today = new Date()
@@ -44,13 +46,13 @@ const headline = computed(() => phase.value === 'past' ? net.value : allowance.v
 
       <div class="space-y-1 pb-1 text-sm sm:text-right">
         <p v-if="phase === 'past'" class="text-muted">
-          Líquido final em euros
+          {{ exchange ? 'Líquido final em euros' : 'Líquido final' }}
         </p>
         <p v-else-if="allowance.eur === null" class="text-muted">
           Sem cotação do euro, não dá para calcular o valor por dia.
         </p>
         <template v-else>
-          <p class="money text-base text-default">
+          <p v-if="exchange" class="money text-base text-default">
             ≈ {{ formatMoney(allowance.brl, 'BRL') }} por dia
           </p>
           <p class="text-muted">

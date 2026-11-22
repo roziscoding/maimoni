@@ -1,4 +1,4 @@
-import type { Conversion, DailySpend, LiveRate, Month, MonthItem, TemplateItem } from './schemas'
+import type { Conversion, Currency, DailySpend, LiveRate, Month, MonthItem, TemplateItem } from './schemas'
 import type { MonthSummary } from './summary'
 
 /** `GET /api/months` row. Summary uses the month's locked rate or the current live rate. */
@@ -28,6 +28,18 @@ export interface TemplateDetail {
 export interface ApiError {
   error: string
   issues?: unknown
+}
+
+/** The 409 of `PUT /api/settings/currencies` when the list leaves out currencies that items or spends are in. */
+export interface CurrenciesInUseError extends ApiError {
+  /** The currencies left out that are in use. */
+  inUse: Currency[]
+}
+
+/** `GET /api/flags`: what this server has switched on, so the clients know what to offer. */
+export interface Flags {
+  /** Whether `DELETE /api/data` is served (`FLAG_ENABLE_PURGE`). */
+  purge: boolean
 }
 
 /** `GET /api/sessions` row: one sign in to the account that is still valid. */

@@ -1,4 +1,5 @@
 import type { HonoLogLayerVariables } from '@loglayer/hono'
+import type { Flags } from '@maimoni/shared'
 import type { Auth } from './auth'
 import type { Database } from './db'
 import type { AppLinks } from './lib/app-links'
@@ -69,6 +70,10 @@ export function createApp({ db, auth, rates, appReleases = createAppReleaseServi
     .route('/', appReleaseRoutes(appReleases))
     .route('/', wellKnownRoutes(appLinks))
     .use(requireSession(auth))
+    .get('/flags', (c) => {
+      const body: Flags = { purge: enablePurge }
+      return c.json(body)
+    })
     .get('/rates/live', async (c) => {
       const { rate, error } = await rates.get()
       if (!rate)

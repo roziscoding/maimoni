@@ -6,6 +6,10 @@ const props = defineProps<{
   currency: Currency
   items: MonthItem[]
   totals: CurrencyTotals
+  /** Whether new items can be added in this currency. A disabled one only lists what it already has. */
+  offered: boolean
+  /** Whether this is the month's only section, which then needs no currency in its title. */
+  alone: boolean
 }>()
 
 const emit = defineEmits<{
@@ -15,7 +19,7 @@ const emit = defineEmits<{
   add: [item: NewItem]
 }>()
 
-const title = computed(() => props.currency === 'BRL' ? 'Reais' : 'Euros')
+const title = computed(() => props.alone ? 'Entradas e saídas' : currencyPlural(props.currency))
 const incomes = computed(() => props.items.filter(item => item.kind === 'income'))
 const expenses = computed(() => props.items.filter(item => item.kind === 'expense'))
 // Sum of the listed incomes only: for EUR, `totals.income` also includes the converted BRL.
@@ -28,7 +32,7 @@ const paidShare = computed(() => props.totals.expenses > 0 ? Math.min(100, Math.
     <header class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-default px-4 py-3">
       <h2 :id="`section-${currency}`" class="flex items-baseline gap-2 text-base font-semibold text-highlighted">
         {{ title }}
-        <span class="money text-xs font-normal text-muted">{{ currency }}</span>
+        <span v-if="!alone" class="money text-xs font-normal text-muted">{{ currency }}</span>
       </h2>
       <UBadge
         v-if="totals.unresolved"
@@ -72,10 +76,10 @@ const paidShare = computed(() => props.totals.expenses > 0 ? Math.min(100, Math.
         />
       </ul>
       <p v-else class="px-3 py-4 text-sm text-muted">
-        Nenhuma saída em {{ title.toLowerCase() }} ainda.
+        {{ alone ? 'Nenhuma saída ainda.' : `Nenhuma saída em ${title.toLowerCase()} ainda.` }}
       </p>
 
-      <AddItemForm :currency="currency" class="px-1" @add="emit('add', $event)" />
+      <AddItemForm v-if="offered" :currency="currency" class="px-1" @add="emit('add', $event)" />
     </div>
 
     <footer class="space-y-2 border-t border-default px-4 py-3">
