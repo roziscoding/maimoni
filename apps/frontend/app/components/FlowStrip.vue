@@ -27,8 +27,6 @@ const lanes = computed(() => {
         ? [
             { op: '', label: 'Entrada', value: props.summary.brl.income },
             { op: '−', label: 'Despesas', value: props.summary.brl.expenses },
-            { op: '−', label: 'Conversão', value: props.summary.transfer.realized.convertedBrl },
-            { op: '−', label: 'Taxa', value: props.summary.transfer.realized.feeBrl },
             { op: '=', label: 'Em reais', value: props.summary.transfer.remainingBrl, tone: 'result' },
           ]
         : [
@@ -95,16 +93,9 @@ function valueClass(cell: Cell) {
         v-if="exchange && laneIndex === 0"
         class="space-y-1.5 border-y border-dashed border-accented bg-muted px-4 py-2.5 text-sm"
       >
-        <div v-if="transfer.realized.sentBrl > 0" class="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <UIcon name="i-lucide-circle-check" class="size-4 text-success" aria-hidden="true" />
-          <span class="font-medium text-highlighted">Realizado</span>
-          <span class="money text-toned">{{ formatMoney(transfer.realized.sentBrl, 'BRL') }}</span>
-          <span class="text-muted">incluindo {{ formatMoney(transfer.realized.feeBrl, 'BRL') }} de taxa</span>
-          <span class="money ms-auto font-medium text-highlighted">= {{ formatMoney(transfer.realized.receivedEur, 'EUR') }}</span>
-        </div>
         <div v-if="transfer.projected.sentBrl > 0" class="flex flex-wrap items-center gap-x-2 gap-y-1">
           <UIcon name="i-lucide-sparkles" class="size-4 text-muted" aria-hidden="true" />
-          <span class="font-medium text-highlighted">Projetado</span>
+          <span class="font-medium text-highlighted">Conversão</span>
           <span class="money text-toned">{{ formatMoney(transfer.projected.sentBrl, 'BRL') }}</span>
           <span class="money text-toned">
             ÷ {{ formatRate(transfer.rate) }}
@@ -112,7 +103,7 @@ function valueClass(cell: Cell) {
           </span>
           <span class="money ms-auto font-medium text-highlighted">= {{ formatMoney(transfer.projected.eur, 'EUR') }}</span>
         </div>
-        <div v-if="transfer.realized.sentBrl === 0 && transfer.projected.sentBrl === 0" class="flex items-center gap-2 text-muted">
+        <div v-else class="flex items-center gap-2 text-muted">
           <UIcon name="i-lucide-arrow-down" class="size-4" aria-hidden="true" />
           Nada a converter
         </div>

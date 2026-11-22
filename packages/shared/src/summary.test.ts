@@ -1,7 +1,7 @@
 import type { MonthItem } from './schemas'
 import { describe, expect, test } from 'bun:test'
 import { evaluateExpression, isExpression } from './expression'
-import { conversionFee, dayResults, nextActiveDay, openDay, remainingDays, spendInEur, summarizeMonth } from './summary'
+import { dayResults, nextActiveDay, openDay, remainingDays, spendInEur, summarizeMonth } from './summary'
 
 let counter = 0
 function item(partial: Partial<MonthItem> & Pick<MonthItem, 'currency' | 'amount'>): MonthItem {
@@ -144,24 +144,6 @@ describe('dayResults', () => {
     const days = dayResults(month, summary, [])
     expect(days.every(day => day.state === 'closed')).toBe(true)
     expect(days.at(-1)!.budget).toBeCloseTo(net, 1)
-  })
-})
-
-describe('conversions', () => {
-  test('the fee is what was sent beyond what the received EUR are worth at the rate', () => {
-    expect(conversionFee({ sentBrl: 3000, receivedEur: 480 }, 6)).toBe(120)
-    expect(conversionFee({ sentBrl: 1000, receivedEur: 163.31 }, 5.868553)).toBe(41.61)
-    // The rate moved in the sender's favour, or there is none: no fee rather than a negative one.
-    expect(conversionFee({ sentBrl: 3000, receivedEur: 520 }, 6)).toBe(0)
-    expect(conversionFee({ sentBrl: 3000, receivedEur: 480 }, null)).toBe(0)
-  })
-
-  test('completed conversions count as they happened, and the rest is projected without a fee', () => {
-    const { transfer } = summarizeMonth(month, october, { rate: 6, conversions: [{ sentBrl: 3000, feeBrl: 120, receivedEur: 480 }] }, new Date(2026, 9, 3))
-    expect(transfer.realized).toEqual({ sentBrl: 3000, convertedBrl: 2880, feeBrl: 120, receivedEur: 480 })
-    expect(transfer.remainingBrl).toBe(7738.52)
-    expect(transfer.projected).toEqual({ sentBrl: 7738.52, eur: 1289.75 })
-    expect(transfer.eur).toBe(1769.75)
   })
 })
 

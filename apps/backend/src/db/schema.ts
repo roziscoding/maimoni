@@ -50,7 +50,7 @@ export const templateItems = pgTable('template_items', {
   ...timestamps,
 }, table => [index('template_items_user_id').on(table.userId)])
 
-/** A user's month. Its items, spends and conversions belong to whoever owns the month. */
+/** A user's month. Its items and spends belong to whoever owns the month. */
 export const months = pgTable('months', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: owner(),
@@ -84,26 +84,6 @@ export const dailySpends = pgTable('daily_spends', {
   check('daily_spends_day_range', sql`${table.day} between 1 and 31`),
 ])
 
-/** Completed BRL→EUR conversions. The sent amount includes the fee, which is worked out from the exchange rate when the conversion is saved. */
-export const conversions = pgTable('conversions', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  userId: owner(),
-  monthId: uuid('month_id').notNull(),
-  day: smallint('day').notNull(),
-  sentBrl: money('sent_brl').notNull(),
-  feeBrl: money('fee_brl').notNull(),
-  receivedEur: money('received_eur').notNull(),
-  note: text('note'),
-  ...timestamps,
-}, table => [
-  foreignKey({ name: 'conversions_month', columns: [table.monthId, table.userId], foreignColumns: [months.id, months.userId] }).onDelete('cascade'),
-  index('conversions_month_id_day').on(table.monthId, table.day),
-  check('conversions_day_range', sql`${table.day} between 1 and 31`),
-  check('conversions_sent_positive', sql`${table.sentBrl} > 0`),
-  check('conversions_fee_range', sql`${table.feeBrl} >= 0 and ${table.feeBrl} <= ${table.sentBrl}`),
-  check('conversions_received_positive', sql`${table.receivedEur} > 0`),
-])
-
 export const monthItems = pgTable('month_items', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: owner(),
@@ -133,11 +113,8 @@ export const exchangeRates = pgTable('exchange_rates', {
   fetchedAt: timestamp('fetched_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
 }, table => [index('exchange_rates_pair_fetched_at').on(table.base, table.quote, table.fetchedAt)])
 
-export const monthsRelations = relations(months, ({ many }) => ({ items: many(monthItems), conversions: many(conversions) }))
+export const monthsRelations = relations(months, ({ many }) => ({ items: many(monthItems) }))
 export const monthItemsRelations = relations(monthItems, ({ one }) => ({
   month: one(months, { fields: [monthItems.monthId], references: [months.id] }),
   templateItem: one(templateItems, { fields: [monthItems.templateItemId], references: [templateItems.id] }),
-}))
-export const conversionsRelations = relations(conversions, ({ one }) => ({
-  month: one(months, { fields: [conversions.monthId], references: [months.id] }),
 }))

@@ -161,7 +161,7 @@ async function moveItem(item: TemplateItem, offset: -1 | 1) {
               </h2>
               <p class="text-sm text-muted">
                 <template v-if="exchange">
-                  Com a cotação de agora ({{ formatRate(rate?.rate) }}), sem descontar taxa de conversão.
+                  Com a cotação de agora ({{ formatRate(rate?.rate) }}).
                 </template>
                 Itens variáveis em branco contam como zero.
               </p>

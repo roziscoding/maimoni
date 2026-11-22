@@ -205,42 +205,6 @@ export const updateMonthSchema = z.object({
 export type UpdateMonth = z.input<typeof updateMonthSchema>
 
 /* -------------------------------------------------------------------------- */
-/*                                Conversions                                 */
-/* -------------------------------------------------------------------------- */
-
-export const conversionSchema = z.object({
-  id,
-  monthId: id,
-  day: z.number().int(),
-  /** Total BRL sent, including whatever the transfer cost. */
-  sentBrl: z.number(),
-  /**
-   * What the transfer cost: the BRL sent beyond what the EUR received were worth at the exchange
-   * rate when the conversion was recorded. The server works it out.
-   */
-  feeBrl: z.number(),
-  receivedEur: z.number(),
-  note: z.string().nullable(),
-  createdAt: z.string(),
-})
-export type Conversion = z.infer<typeof conversionSchema>
-
-const conversionFields = z.object({
-  day: z.number().int().min(1).max(31),
-  sentBrl: amount.pipe(z.number().positive()),
-  receivedEur: amount.pipe(z.number().positive()),
-  note: z.string().trim().max(200).transform(value => value || null).nullable(),
-})
-
-export const createConversionSchema = conversionFields.extend({
-  note: conversionFields.shape.note.default(null),
-})
-export type CreateConversion = z.input<typeof createConversionSchema>
-
-export const updateConversionSchema = conversionFields.partial()
-export type UpdateConversion = z.input<typeof updateConversionSchema>
-
-/* -------------------------------------------------------------------------- */
 /*                                Daily spends                                */
 /* -------------------------------------------------------------------------- */
 

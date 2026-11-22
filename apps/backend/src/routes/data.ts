@@ -5,7 +5,7 @@ import { Hono } from 'hono'
 import { months, templateItems } from '../db/schema'
 
 /**
- * Wipes the user's data: months (with their items, spends and conversions) and template.
+ * Wipes the user's data: months (with their items and spends) and template.
  * Cached exchange rates are shared and stay.
  */
 export function dataRoutes(db: Database) {

@@ -12,9 +12,9 @@ Choices made while turning `Financeiro.xlsx` into an app. They were made without
 | EUR table (Nome / Valor / Pago) | EUR expense items |
 | `Entrada` in Resultado BRL | BRL **income** item (`kind: income`) — a list, so salary + extras can be separate lines |
 | `Saída` / `Líquido` | Computed: sum of expenses / income − expenses |
-| `Entrada` in Resultado EUR (`Líquido BRL × (1 − Taxa Wise) ÷ Preço Euro`) | Completed **conversions** plus the BRL that remains, converted at the rate with no fee |
+| `Entrada` in Resultado EUR (`Líquido BRL × (1 − Taxa Wise) ÷ Preço Euro`) | The BRL net, converted at the rate with no fee |
 | `Preço Euro` (GOOGLEFINANCE) | **Live rate** from the backend; can be **locked** per month (`exchangeRate`) |
-| `Taxa Wise` | Not projected. Each completed conversion has its own fee, worked out from what was sent, what arrived and the rate |
+| `Taxa Wise` | Not counted. The app doesn't record transfers or what they cost |
 | Allowance (`Líquido EUR ÷ (EOMONTH(TODAY()) − TODAY() + 1)`) + BRL equivalent | **Daily allowance** hero on the month page |
 | Values typed as formulas (`=11.99+2.99`) | Amount inputs accept arithmetic; the expression is stored alongside the value. Numbers can be typed pt-BR style: `1.250,99`, `1250,99` and `2.500` (a dot followed by exactly three digits is a thousands separator, since money never has three decimals), plus `1250.99`. `R$`/`€` are ignored. |
 
@@ -27,18 +27,12 @@ All the arithmetic lives in one place, `packages/shared/src/summary.ts`, used by
 - **Copy from the previous month** is offered as an alternative source. It copies amounts and resets `paid`; items linked to variable template items are flagged again.
 - **"Salvar no template"** on a month item writes its name/value into the template, updating the linked item or creating a new linked one. This replaces editing the Template sheet after noticing a value changed for good.
 
-## Currency, rate and conversions
+## Currency and rate
 
 - **Only BRL and EUR** (Postgres enum), matching the sheet. Rates are always quoted as EUR→BRL (how many reais per euro), as `Preço Euro` was.
-- **Live rate sources, in order:** Frankfurter (the ECB's reference rate, published once per working day), then open.er-api (updated once a day). No API keys needed, and nothing is asked of Wise. The rate is a daily reference, so it differs a little from what a transfer gets at the moment it is made; a conversion's fee absorbs that difference. The providers are asked once a day: the first request of a day (UTC) fetches the rate and stores it in `exchange_rates`, and every other request that day reads that row. If every provider fails, the last stored rate is served with `stale: true`, and the UI shows a badge.
+- **Live rate sources, in order:** Frankfurter (the ECB's reference rate, published once per working day), then open.er-api (updated once a day). No API keys needed, and nothing is asked of Wise. The rate is a daily reference, so it differs a little from what a transfer gets at the moment it is made. The providers are asked once a day: the first request of a day (UTC) fetches the rate and stores it in `exchange_rates`, and every other request that day reads that row. If every provider fails, the last stored rate is served with `stale: true`, and the UI shows a badge.
 - **Lock per month.** While a month's rate is unlocked it follows the live rate, as the spreadsheet did. Locking freezes it, so past months stop moving. Imported months are left unlocked because the workbook only had the GOOGLEFINANCE fallback value, which was the same in every sheet.
-- **Completed conversions are actuals.** Each one records total BRL sent and EUR received. Multiple conversions can happen in the same month; they reduce the BRL remaining, and their received EUR is added directly to EUR income.
-- **The projection has no fee.** The BRL that remains is converted at the rate, in full. What a transfer costs only shows up once it is recorded as a conversion.
-- **A conversion's fee is worked out, not typed in.**
-  - **The sum:** `sentBrl − receivedEur × rate`, never below zero (`conversionFee()` in `packages/shared/src/summary.ts`).
-  - **The rate:** the month's locked rate, or the live rate when the month has none. Without any rate the fee is zero.
-  - **When:** the backend does the sum when the amounts are saved and stores the result in `conversions.fee_brl`, since the rate keeps moving. Changing only the day or the note keeps it.
-  - **No fee quotes:** the app doesn't ask Wise, or anyone, what a transfer would cost.
+- **The conversion is a projection, with no fee.** The BRL net is converted at the rate, in full. Transfers that were actually made, and what they cost, aren't recorded.
 - **Negative BRL net isn't converted.** A transfer below zero makes no sense, so it's clamped to 0; the deficit still shows in the BRL net.
 
 ## Allowance
@@ -108,7 +102,7 @@ All the arithmetic lives in one place, `packages/shared/src/summary.ts`, used by
     - Android assertions carry `android:apk-key-hash:<hash>` as their origin, so the passkey plugin's `origin` lists one per fingerprint in `ANDROID_APP_CERT_SHA256`, next to the web origin.
     - The challenge travels in a cookie. The verify request is the only one where the app sends a cookie, together with an `Origin` header, since Better Auth refuses a cookie without one.
     - The backend builds the association files (`assetlinks.json`, `apple-app-site-association`) and the frontend serves them at `/.well-known/*`.
-  - Data is per user. Every user-owned table has its own `user_id`, so row-level security can check it without joins. Month items, spends and conversions reference their month through `(month_id, user_id)`, so their owner can't differ from the month's. Cached exchange rates stay shared.
+  - Data is per user. Every user-owned table has its own `user_id`, so row-level security can check it without joins. Month items and spends reference their month through `(month_id, user_id)`, so their owner can't differ from the month's. Cached exchange rates stay shared.
   - The `0005_auth` migration assigns data that already exists to a placeholder owner (`owner@maimoni.invalid`). To keep that data, update the placeholder instead of inserting a new user:
 
     ```sql

@@ -1,4 +1,4 @@
-import type { Conversion, Currency, DailySpend, Month, MonthItem } from './schemas'
+import type { Currency, DailySpend, Month, MonthItem } from './schemas'
 
 export interface CurrencyTotals {
   income: number
@@ -17,22 +17,15 @@ export interface MonthSummary {
     /** EUR→BRL rate used for the conversion. */
     rate: number | null
     rateLocked: boolean
-    /** BRL left after completed conversions; negative when they exceeded this month's net. */
+    /** The BRL net: what is left in reais after their expenses. */
     remainingBrl: number
-    realized: {
-      /** Total BRL debited by completed conversions, fees included. */
-      sentBrl: number
-      convertedBrl: number
-      feeBrl: number
-      receivedEur: number
-    }
     projected: {
-      /** Positive BRL balance still expected to be converted. */
+      /** Positive BRL balance expected to be converted. */
       sentBrl: number
-      /** Expected EUR for the remaining BRL at the rate, with no fee taken off; `null` without a rate. */
+      /** Expected EUR for that BRL at the rate, with no fee taken off; `null` without a rate. */
       eur: number | null
     }
-    /** Completed EUR plus the projection for the remaining BRL. */
+    /** EUR the BRL net is expected to become; `null` when there is BRL to convert and no rate. */
     eur: number | null
   }
   allowance: {
@@ -61,8 +54,6 @@ export interface SummaryContext {
   rate: number | null
   /** Day-to-day spending recorded for the month. */
   spends?: Pick<DailySpend, 'day' | 'amount' | 'currency'>[]
-  /** Completed BRL→EUR conversions recorded for the month. */
-  conversions?: Pick<Conversion, 'sentBrl' | 'feeBrl' | 'receivedEur'>[]
 }
 
 const round = (value: number) => Math.round(value * 100) / 100
@@ -151,17 +142,9 @@ export function spendInEur(spend: Pick<DailySpend, 'amount' | 'currency'>, trans
 }
 
 /**
- * The fee of a completed conversion: what was sent beyond the BRL the received EUR are worth at
- * `rate`. Zero when the rate has moved so far that they are worth more than was sent, or without a rate.
- */
-export function conversionFee(conversion: Pick<Conversion, 'sentBrl' | 'receivedEur'>, rate: number | null) {
-  return rate ? Math.max(0, round(conversion.sentBrl - conversion.receivedEur * rate)) : 0
-}
-
-/**
- * Computes the month's result and allowance. Completed conversions use their actual BRL, fee and
- * EUR amounts; the BRL left after them is projected at the rate, with no fee taken off. EUR
- * expenses are then paid from actual plus projected EUR, and the remainder is split across the open days.
+ * Computes the month's result and allowance. The BRL net is projected into EUR at the rate, with
+ * no fee taken off. EUR expenses are then paid from own plus projected EUR, and the remainder is
+ * split across the open days.
  */
 export function summarizeMonth(
   month: Pick<Month, 'year' | 'month' | 'exchangeRate' | 'activeDay'>,
@@ -172,18 +155,12 @@ export function summarizeMonth(
   const brl = totals(items, 'BRL')
   const eurOwn = totals(items, 'EUR')
   const rate = month.exchangeRate ?? context.rate
-  const realized = (context.conversions ?? []).reduce((result, conversion) => ({
-    sentBrl: result.sentBrl + conversion.sentBrl,
-    convertedBrl: result.convertedBrl + conversion.sentBrl - conversion.feeBrl,
-    feeBrl: result.feeBrl + conversion.feeBrl,
-    receivedEur: result.receivedEur + conversion.receivedEur,
-  }), { sentBrl: 0, convertedBrl: 0, feeBrl: 0, receivedEur: 0 })
-  const remainingBrl = round(brl.net - realized.sentBrl)
+  const remainingBrl = brl.net
   const projectedBrl = Math.max(0, remainingBrl)
   const projectedEur = projectedBrl === 0 ? 0 : rate ? round(projectedBrl / rate) : null
-  const transferEur = projectedEur === null ? null : round(realized.receivedEur + projectedEur)
+  const transferEur = projectedEur
 
-  const eurIncome = round(eurOwn.income + realized.receivedEur + (projectedEur ?? 0))
+  const eurIncome = round(eurOwn.income + (projectedEur ?? 0))
   const eur: CurrencyTotals = { ...eurOwn, income: eurIncome, net: round(eurIncome - eurOwn.expenses) }
 
   // Daily spending is kept out of the EUR totals: days before the open day reduce what gets spread
@@ -212,12 +189,6 @@ export function summarizeMonth(
       rate,
       rateLocked: month.exchangeRate !== null,
       remainingBrl,
-      realized: {
-        sentBrl: round(realized.sentBrl),
-        convertedBrl: round(realized.convertedBrl),
-        feeBrl: round(realized.feeBrl),
-        receivedEur: round(realized.receivedEur),
-      },
       projected: {
         sentBrl: round(projectedBrl),
         eur: projectedEur,

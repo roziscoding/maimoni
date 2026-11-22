@@ -6,9 +6,8 @@ import { createMonthItemSchema, createMonthSchema, monthKeySchema, reorderSchema
 import { and, asc, desc, eq, inArray, lt, max, or, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { conversions, dailySpends, monthItems, months, templateItems } from '../db/schema'
+import { dailySpends, monthItems, months, templateItems } from '../db/schema'
 import { validate } from '../lib/validate'
-import { listConversions, toConversion } from './conversions'
 import { CURRENCY_NOT_ADDED, userHasCurrency } from './currencies'
 import { listSpends, toDailySpend } from './spends'
 import { listTemplateItems, toTemplateItem } from './template'
@@ -70,28 +69,26 @@ async function seedItems(db: Database, userId: string, { year, month }: MonthKey
 
 export function monthRoutes(db: Database, rates: RateService) {
   async function detail(row: typeof months.$inferSelect): Promise<MonthDetail> {
-    const [items, spends, monthConversions, rateResult] = await Promise.all([listItems(db, row.id), listSpends(db, row.id), listConversions(db, row.id), rates.get()])
+    const [items, spends, rateResult] = await Promise.all([listItems(db, row.id), listSpends(db, row.id), rates.get()])
     const month = toMonth(row)
-    const summary = summarizeMonth(month, items, { rate: rateResult.rate?.rate ?? null, spends, conversions: monthConversions })
-    return { month, items, spends, conversions: monthConversions, summary, rate: rateResult.rate, rateError: rateResult.error }
+    const summary = summarizeMonth(month, items, { rate: rateResult.rate?.rate ?? null, spends })
+    return { month, items, spends, summary, rate: rateResult.rate, rateError: rateResult.error }
   }
 
   return new Hono<AuthEnv>()
     .get('/months', async (c) => {
       const userId = c.var.user.id
-      const [rows, items, spends, conversionRows, rateResult] = await Promise.all([
+      const [rows, items, spends, rateResult] = await Promise.all([
         db.select().from(months).where(eq(months.userId, userId)).orderBy(desc(months.year), desc(months.month)),
         db.select().from(monthItems).where(eq(monthItems.userId, userId)).orderBy(asc(monthItems.position)),
         db.select().from(dailySpends).where(eq(dailySpends.userId, userId)),
-        db.select().from(conversions).where(eq(conversions.userId, userId)),
         rates.get(),
       ])
       const itemsByMonth = Map.groupBy(items.map(toMonthItem), item => item.monthId)
       const spendsByMonth = Map.groupBy(spends.map(toDailySpend), spend => spend.monthId)
-      const conversionsByMonth = Map.groupBy(conversionRows.map(toConversion), conversion => conversion.monthId)
       const body: MonthListEntry[] = rows.map((row) => {
         const month = toMonth(row)
-        const summary = summarizeMonth(month, itemsByMonth.get(month.id) ?? [], { rate: rateResult.rate?.rate ?? null, spends: spendsByMonth.get(month.id) ?? [], conversions: conversionsByMonth.get(month.id) ?? [] })
+        const summary = summarizeMonth(month, itemsByMonth.get(month.id) ?? [], { rate: rateResult.rate?.rate ?? null, spends: spendsByMonth.get(month.id) ?? [] })
         return { ...month, summary }
       })
       return c.json(body)

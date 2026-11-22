@@ -15,7 +15,6 @@ import { appLinksFromEnv } from './lib/app-links'
 import { log } from './lib/log'
 import { validate } from './lib/validate'
 import { appReleaseRoutes } from './routes/app-releases'
-import { conversionRoutes } from './routes/conversions'
 import { currencyRoutes } from './routes/currencies'
 import { dataRoutes } from './routes/data'
 import { monthRoutes } from './routes/months'
@@ -82,7 +81,6 @@ export function createApp({ db, auth, rates, appReleases = createAppReleaseServi
     })
     .route('/', templateRoutes(db))
     .route('/', monthRoutes(db, rates))
-    .route('/', conversionRoutes(db, rates))
     .route('/', spendRoutes(db))
     .route('/', currencyRoutes(db))
     .route('/', sessionRoutes(auth))
