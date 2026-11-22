@@ -38,7 +38,9 @@ async function clearData() {
 
     <template #body>
       <div class="mx-auto w-full max-w-xl py-4">
-        <SessionList />
+        <CurrencySettings />
+
+        <SessionList class="mt-12" />
 
         <section aria-labelledby="danger-title" class="mt-12 space-y-3 rounded-xl border border-error/40 p-4">
           <div class="space-y-1">

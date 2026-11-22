@@ -13,6 +13,14 @@ export function formatMoney(value: number | null | undefined, currency: Currency
   return value === null || value === undefined ? '—' : money[currency].format(value)
 }
 
+const currencyNames = new Intl.DisplayNames('pt-BR', { type: 'currency' })
+
+/** pt-BR name of a currency: `Real brasileiro`, `Euro`. */
+export function currencyName(currency: Currency) {
+  const name = currencyNames.of(currency) ?? currency
+  return name.charAt(0).toUpperCase() + name.slice(1)
+}
+
 /** EUR→BRL rate with the 4 decimals the spreadsheet showed. */
 export function formatRate(value: number | null | undefined) {
   return value === null || value === undefined ? '—' : `R$ ${rate.format(value)}`
