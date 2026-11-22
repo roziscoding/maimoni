@@ -1,7 +1,11 @@
 <script setup lang="ts">
+import type { Flags } from '@maimoni/shared'
+
 useHead({ title: 'Configurações · maimoni' })
 
 const toast = useToast()
+// The danger zone only shows when the server serves `DELETE /api/data`.
+const { data: flags } = await useFetch<Flags>('/api/flags', { key: 'flags' })
 
 const CONFIRMATION = 'apagar'
 const clearing = ref(false)
@@ -42,7 +46,7 @@ async function clearData() {
 
         <SessionList class="mt-12" />
 
-        <section aria-labelledby="danger-title" class="mt-12 space-y-3 rounded-xl border border-error/40 p-4">
+        <section v-if="flags?.purge" aria-labelledby="danger-title" class="mt-12 space-y-3 rounded-xl border border-error/40 p-4">
           <div class="space-y-1">
             <h2 id="danger-title" class="text-sm font-semibold text-error">
               Zona de perigo
