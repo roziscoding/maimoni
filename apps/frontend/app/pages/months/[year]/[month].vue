@@ -30,7 +30,8 @@ await currencies.ready
 const sections = computed(() => currencies.shownInMonth(data.value).map(currency => ({
   currency,
   items: items.value.filter(item => item.currency === currency),
-  totals: currency === 'BRL' ? summary.value!.brl : summary.value!.eur,
+  // A currency the month only offers, with no item in it yet, has nothing to total.
+  totals: summary.value?.totals[currency] ?? { income: 0, expenses: 0, net: 0, paid: 0, pending: 0, unresolved: 0 },
   offered: currencies.offered.value.includes(currency),
 })))
 /** With a single currency there is nothing to convert, and so no rate. */
@@ -113,7 +114,7 @@ const menu: DropdownMenuItem[] = [
             <RatePanel
               v-if="exchange"
               :month="data.month"
-              :rate="data.rate"
+              :rates="data.rates"
               :error="data.rateError"
               :summary="summary"
               :refreshing="refreshingRate"

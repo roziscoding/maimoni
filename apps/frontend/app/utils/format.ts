@@ -1,8 +1,15 @@
 import type { Currency } from '@maimoni/shared'
 
-const money = {
-  BRL: new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }),
-  EUR: new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'EUR' }),
+/** One formatter per currency and display, made the first time it is asked for. */
+const formatters = new Map<string, Intl.NumberFormat>()
+function money(currency: Currency, currencyDisplay: 'symbol' | 'name' = 'symbol') {
+  const key = `${currency}:${currencyDisplay}`
+  let formatter = formatters.get(key)
+  if (!formatter) {
+    formatter = new Intl.NumberFormat('pt-BR', { style: 'currency', currency, currencyDisplay })
+    formatters.set(key, formatter)
+  }
+  return formatter
 }
 const rate = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 4, maximumFractionDigits: 4 })
 const monthNames = new Intl.DateTimeFormat('pt-BR', { month: 'long', timeZone: 'UTC' })
@@ -10,7 +17,7 @@ const time = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: '
 
 /** `R$ 1.250,99` / `€ 45,00`. Missing values render as an em dash. */
 export function formatMoney(value: number | null | undefined, currency: Currency) {
-  return value === null || value === undefined ? '—' : money[currency].format(value)
+  return value === null || value === undefined ? '—' : money(currency).format(value)
 }
 
 const currencyNames = new Intl.DisplayNames('pt-BR', { type: 'currency' })
@@ -21,25 +28,23 @@ export function currencyName(currency: Currency) {
   return name.charAt(0).toUpperCase() + name.slice(1)
 }
 
-const currencyPlurals = Object.fromEntries(Object.entries(money).map(([currency]) => [
-  currency,
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency, currencyDisplay: 'name' }),
-])) as Record<Currency, Intl.NumberFormat>
-
 /** pt-BR plural name of a currency, for a heading over amounts in it: `Reais brasileiros`, `Euros`. */
 export function currencyPlural(currency: Currency) {
-  const name = currencyPlurals[currency].formatToParts(2).find(part => part.type === 'currency')?.value ?? currency
+  const name = money(currency, 'name').formatToParts(2).find(part => part.type === 'currency')?.value ?? currency
   return name.charAt(0).toUpperCase() + name.slice(1)
 }
 
 /** The sign a currency's amounts are written with: `R$`, `€`. */
 export function currencySymbol(currency: Currency) {
-  return money[currency].formatToParts(0).find(part => part.type === 'currency')?.value ?? currency
+  return money(currency).formatToParts(0).find(part => part.type === 'currency')?.value ?? currency
 }
 
-/** EUR→BRL rate with the 4 decimals the spreadsheet showed. */
-export function formatRate(value: number | null | undefined) {
-  return value === null || value === undefined ? '—' : `R$ ${rate.format(value)}`
+/**
+ * A rate: how much of `currency` one unit of a month's main currency is worth, with the 4 decimals
+ * the spreadsheet showed. `R$ 5,8686`.
+ */
+export function formatRate(value: number | null | undefined, currency: Currency) {
+  return value === null || value === undefined ? '—' : `${currencySymbol(currency)} ${rate.format(value)}`
 }
 
 export function formatDateTime(iso: string) {

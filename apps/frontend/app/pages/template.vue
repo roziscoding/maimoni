@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Currency, EntryKind, LiveRate, MonthItem, TemplateDetail, TemplateItem, UpdateTemplateItem } from '@maimoni/shared'
+import type { Currency, EntryKind, LiveRates, MonthItem, TemplateDetail, TemplateItem, UpdateTemplateItem } from '@maimoni/shared'
 import type { NewItem } from '~/components/AddItemForm.vue'
 import { summarizeMonth } from '@maimoni/shared'
 
@@ -7,7 +7,8 @@ useHead({ title: 'Template · maimoni' })
 
 const toast = useToast()
 const { data, error, refresh } = await useFetch<TemplateDetail>('/api/template', { key: 'template' })
-const { data: rate } = await useFetch<LiveRate>('/api/rates/live', { key: 'live-rate' })
+// Quoted against the user's main currency, which a new month would be worked out in.
+const { data: rates } = await useFetch<LiveRates>('/api/rates/live', { key: 'live-rates' })
 
 const items = computed(() => data.value?.items.toSorted((a, b) => a.position - b.position) ?? [])
 
@@ -29,7 +30,8 @@ const group = (currency: Currency, kind: EntryKind) => items.value.filter(item =
 
 // What a month created today from this template would look like, using next month's calendar.
 const preview = computed(() => {
-  if (!data.value)
+  const mainCurrency = currencies.main.value
+  if (!data.value || !mainCurrency)
     return null
   const now = new Date()
   const next = new Date(now.getFullYear(), now.getMonth() + 1, 1)
@@ -41,9 +43,10 @@ const preview = computed(() => {
     needsReview: item.variable,
   }))
   return summarizeMonth(
-    { year: next.getFullYear(), month: next.getMonth() + 1, exchangeRate: null, activeDay: null },
+    { year: next.getFullYear(), month: next.getMonth() + 1, mainCurrency, lockedRates: {}, activeDay: null },
     monthItems,
-    { rate: rate.value?.rate ?? null },
+    // Rates quoted against another currency (the main one changed since they were loaded) don't apply.
+    { rates: rates.value?.base === mainCurrency ? rates.value.rates : null },
     now,
   )
 })
@@ -160,8 +163,8 @@ async function moveItem(item: TemplateItem, offset: -1 | 1) {
                 Prévia de um mês novo
               </h2>
               <p class="text-sm text-muted">
-                <template v-if="exchange">
-                  Com a cotação de agora ({{ formatRate(rate?.rate) }}).
+                <template v-if="preview.conversions.length">
+                  Com a cotação de agora ({{ preview.conversions.map(conversion => formatRate(conversion.rate, conversion.currency)).join(', ') }}).
                 </template>
                 Itens variáveis em branco contam como zero.
               </p>
@@ -169,7 +172,7 @@ async function moveItem(item: TemplateItem, offset: -1 | 1) {
             <FlowStrip :summary="preview" :currencies="sections.map(section => section.currency)" compact />
             <p class="flex items-baseline justify-between rounded-xl border border-default px-4 py-3">
               <span class="text-sm text-muted">Por dia, em {{ preview.allowance.days }} dias</span>
-              <span class="money text-xl font-semibold text-highlighted">{{ formatMoney(preview.allowance.eur, 'EUR') }}</span>
+              <span class="money text-xl font-semibold text-highlighted">{{ formatMoney(preview.allowance.amount, preview.main) }}</span>
             </p>
           </aside>
         </div>

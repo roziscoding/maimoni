@@ -1,4 +1,4 @@
-import type { CreateDailySpend, CreateMonthItem, DailySpend, LiveRate, MonthDetail, MonthItem, MonthListEntry, TemplateItem, UpdateDailySpend, UpdateMonth, UpdateMonthItem } from '@maimoni/shared'
+import type { CreateDailySpend, CreateMonthItem, DailySpend, LiveRates, MonthDetail, MonthItem, MonthListEntry, TemplateItem, UpdateDailySpend, UpdateMonth, UpdateMonthItem } from '@maimoni/shared'
 import { nextActiveDay, summarizeMonth } from '@maimoni/shared'
 
 const RATE_REFRESH_MS = 5 * 60 * 1000
@@ -18,7 +18,7 @@ export async function useMonth(year: number, month: number) {
 
   const summary = computed(() => data.value
     ? summarizeMonth(data.value.month, data.value.items, {
-        rate: data.value.rate?.rate ?? null,
+        rates: data.value.rates?.rates ?? null,
         spends: data.value.spends,
       })
     : null)
@@ -113,13 +113,18 @@ export async function useMonth(year: number, month: number) {
   const refreshingRate = ref(false)
   async function refreshRate(refreshMonths = true) {
     refreshingRate.value = true
+    // Nothing to ask before the month is loaded: the rates are quoted against its main currency.
+    if (!data.value) {
+      refreshingRate.value = false
+      return null
+    }
     try {
-      const rate = await $fetch<LiveRate>('/api/rates/live')
+      const rates = await $fetch<LiveRates>('/api/rates/live', { query: { base: data.value.month.mainCurrency } })
       if (data.value)
-        data.value = { ...data.value, rate, rateError: null }
+        data.value = { ...data.value, rates, rateError: null }
       if (refreshMonths)
         await refreshNuxtData('months')
-      return rate
+      return rates
     }
     catch (error) {
       if (data.value)

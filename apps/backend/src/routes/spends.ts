@@ -36,9 +36,11 @@ export function spendRoutes(db: Database) {
       const input = c.req.valid('json')
       if (input.day > daysInMonth(key.year, key.month))
         return c.json({ error: 'Day is outside the month' }, 400)
-      if (!await userHasCurrency(db, row.userId, input.currency))
+      // A spend sent without a currency is in the one the month is worked out in.
+      const currency = input.currency ?? row.mainCurrency
+      if (!await userHasCurrency(db, row.userId, currency))
         return c.json(CURRENCY_NOT_ADDED, 400)
-      const [spend] = await db.insert(dailySpends).values({ ...input, monthId: row.id, userId: row.userId }).returning()
+      const [spend] = await db.insert(dailySpends).values({ ...input, currency, monthId: row.id, userId: row.userId }).returning()
       return c.json(toDailySpend(spend!), 201)
     })
     .patch('/months/:year/:month/spends/:id', validate('param', spendParam), validate('json', updateDailySpendSchema), async (c) => {

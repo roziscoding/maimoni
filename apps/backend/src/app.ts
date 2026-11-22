@@ -7,15 +7,16 @@ import type { AppReleaseService } from './services/app-releases'
 import type { RateService } from './services/rates'
 import process from 'node:process'
 import { honoLogLayer } from '@loglayer/hono'
-import { passwordResetRequestSchema } from '@maimoni/shared'
+import { currencySchema, passwordResetRequestSchema } from '@maimoni/shared'
 import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
+import { z } from 'zod'
 import { requireSession, RESET_PASSWORD_PATH } from './auth'
 import { appLinksFromEnv } from './lib/app-links'
 import { log } from './lib/log'
 import { validate } from './lib/validate'
 import { appReleaseRoutes } from './routes/app-releases'
-import { currencyRoutes } from './routes/currencies'
+import { currencyRoutes, mainCurrencyOf } from './routes/currencies'
 import { dataRoutes } from './routes/data'
 import { monthRoutes } from './routes/months'
 import { sessionRoutes } from './routes/sessions'
@@ -73,11 +74,15 @@ export function createApp({ db, auth, rates, appReleases = createAppReleaseServi
       const body: Flags = { purge: enablePurge }
       return c.json(body)
     })
-    .get('/rates/live', async (c) => {
-      const { rate, error } = await rates.get()
-      if (!rate)
-        return c.json({ error: error || 'Nenhuma cotação disponível' }, 503)
-      return c.json(rate)
+    // Rates against `base`, or against the user's main currency when it is left out.
+    .get('/rates/live', validate('query', z.object({ base: currencySchema.optional() })), async (c) => {
+      const base = c.req.valid('query').base ?? await mainCurrencyOf(db, c.var.user.id)
+      if (!base)
+        return c.json({ error: 'The user has no main currency' }, 409)
+      const result = await rates.get(base)
+      if (!result.rates)
+        return c.json({ error: result.error || 'Nenhuma cotação disponível' }, 503)
+      return c.json(result.rates)
     })
     .route('/', templateRoutes(db))
     .route('/', monthRoutes(db, rates))

@@ -1,5 +1,6 @@
+import type { Rates } from '@maimoni/shared'
 import { relations, sql } from 'drizzle-orm'
-import { boolean, check, foreignKey, index, integer, numeric, pgEnum, pgTable, primaryKey, smallint, text, timestamp, unique, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
+import { boolean, check, foreignKey, index, integer, jsonb, numeric, pgEnum, pgTable, primaryKey, smallint, text, timestamp, unique, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
 import { user } from './auth-schema'
 
 export * from './auth-schema'
@@ -56,7 +57,10 @@ export const months = pgTable('months', {
   userId: owner(),
   year: smallint('year').notNull(),
   month: smallint('month').notNull(),
-  exchangeRate: numeric('exchange_rate', { precision: 12, scale: 6, mode: 'number' }),
+  /** The user's main currency when the month was created; the month is worked out in it from then on. */
+  mainCurrency: currency('main_currency').notNull(),
+  /** Rates the month froze, by currency: how many units of it one unit of the main currency is worth. */
+  lockedRates: jsonb('locked_rates').$type<Rates>().notNull().default({}),
   activeDay: smallint('active_day'),
   note: text('note'),
   ...timestamps,

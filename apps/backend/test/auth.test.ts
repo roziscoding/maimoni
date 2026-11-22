@@ -82,6 +82,9 @@ describe('auth', () => {
     expect(template.items).toEqual([])
 
     // Same month key is free for another user, and clearing their data leaves the first user's alone.
+    // A month needs a main currency to be worked out in, and they have none yet.
+    expect((await other('POST', '/months', { year: 2026, month: 10 })).status).toBe(409)
+    await other('POST', '/settings/currencies', { currency: 'EUR' })
     expect((await other('POST', '/months', { year: 2026, month: 10 })).status).toBe(201)
     expect((await other('DELETE', '/data')).status).toBe(204)
     expect((await request<MonthListEntry[]>('GET', '/months')).body).toHaveLength(1)

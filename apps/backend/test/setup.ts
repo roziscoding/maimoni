@@ -3,6 +3,7 @@ import type { Database } from '../src/db'
 import type { Mail, MailService } from '../src/services/mail'
 import type { RateService } from '../src/services/rates'
 import { PGlite } from '@electric-sql/pglite'
+import { currencies as knownCurrencies } from '@maimoni/shared'
 import { drizzle } from 'drizzle-orm/pglite'
 import { migrate } from 'drizzle-orm/pglite/migrator'
 import { createApp } from '../src/app'
@@ -45,7 +46,7 @@ export async function signIn(app: ReturnType<typeof createApp>, auth: Auth, emai
 
 /**
  * Fresh in-memory Postgres (PGlite) with migrations applied, plus the app wired to it. `rate` is the
- * live EUR→BRL rate (`null` for none), and `authEnv` sets auth environment variables.
+ * live rate of every currency against any other (`null` for none), and `authEnv` sets auth environment variables.
  *
  * - `enablePurge` serves `DELETE /data`.
  * - `currencies` gives the signed in user EUR as the main currency and BRL; `false` leaves them with none.
@@ -53,9 +54,12 @@ export async function signIn(app: ReturnType<typeof createApp>, auth: Auth, emai
 export async function setup(rate: number | null = 6, authEnv: Record<string, string> = {}, { enablePurge = false, currencies = true }: { enablePurge?: boolean, currencies?: boolean } = {}) {
   const db = drizzle({ client: new PGlite(), schema })
   await migrate(db, { migrationsFolder })
+  // Every other currency is quoted at `rate` against whichever base is asked for.
   const rates: RateService = {
-    get: async () => ({
-      rate: rate === null ? null : { base: 'EUR', quote: 'BRL', rate, source: 'frankfurter', fetchedAt: new Date().toISOString(), stale: false },
+    get: async base => ({
+      rates: rate === null
+        ? null
+        : { base, rates: Object.fromEntries(knownCurrencies.filter(currency => currency !== base).map(currency => [currency, rate])), source: 'frankfurter', fetchedAt: new Date().toISOString(), stale: false },
       error: rate === null ? 'Cotação indisponível no teste' : null,
     }),
   }

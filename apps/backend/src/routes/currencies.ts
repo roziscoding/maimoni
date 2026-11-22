@@ -5,7 +5,7 @@ import { addUserCurrencySchema, currencySchema, replaceUserCurrenciesSchema, upd
 import { and, asc, desc, eq, inArray } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { dailySpends, monthItems, templateItems, user, userCurrencies } from '../db/schema'
+import { dailySpends, monthItems, months, templateItems, user, userCurrencies } from '../db/schema'
 import { validate } from '../lib/validate'
 
 const currencyParam = z.object({ currency: currencySchema })
@@ -39,7 +39,7 @@ function refuse<Status extends 404 | 409>(status: Status, error: string) {
 }
 const MAIN_DISABLED = 'A disabled currency can\'t be the main one'
 
-/** The currencies any of the user's template items, month items or daily spends is in. */
+/** The currencies any of the user's template items, month items or daily spends is in, and the ones their months are worked out in. */
 async function usedCurrencies(db: Database, userId: string) {
   const used = new Set<Currency>()
   for (const table of [templateItems, monthItems, dailySpends]) {
@@ -47,7 +47,16 @@ async function usedCurrencies(db: Database, userId: string) {
     for (const row of rows)
       used.add(row.currency)
   }
+  const mains = await db.selectDistinct({ currency: months.mainCurrency }).from(months).where(eq(months.userId, userId))
+  for (const row of mains)
+    used.add(row.currency)
   return used
+}
+
+/** The user's main currency: what a new month is worked out in. `null` for a user with no currencies. */
+export async function mainCurrencyOf(db: Database, userId: string) {
+  const [row] = await db.select({ currency: userCurrencies.currency }).from(userCurrencies).where(and(eq(userCurrencies.userId, userId), eq(userCurrencies.isMainCurrency, true)))
+  return row?.currency ?? null
 }
 
 /** Whether any of the user's template items, month items or daily spends is in that currency. */

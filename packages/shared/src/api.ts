@@ -1,7 +1,7 @@
-import type { Currency, DailySpend, LiveRate, Month, MonthItem, TemplateItem } from './schemas'
+import type { Currency, DailySpend, LiveRates, Month, MonthItem, TemplateItem } from './schemas'
 import type { MonthSummary } from './summary'
 
-/** `GET /api/months` row. Summary uses the month's locked rate or the current live rate. */
+/** `GET /api/months` row. Summary uses the month's locked rates, and the current live ones for the rest. */
 export type MonthListEntry = Month & {
   summary: MonthSummary
 }
@@ -13,8 +13,9 @@ export interface MonthDetail {
   /** Day-to-day spending, oldest first. */
   spends: DailySpend[]
   summary: MonthSummary
-  rate: LiveRate | null
-  /** Why the live providers failed; present with a missing or stale rate. */
+  /** Live rates quoted against the month's main currency. */
+  rates: LiveRates | null
+  /** Why the live providers failed; present with missing or stale rates. */
   rateError: string | null
 }
 
