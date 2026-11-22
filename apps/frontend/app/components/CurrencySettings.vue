@@ -1,101 +1,95 @@
 <script setup lang="ts">
-import type { CurrenciesInUseError, Currency, ReplaceUserCurrencies, UserCurrency } from '@maimoni/shared'
+import type { AddUserCurrency, Currency, UpdateUserCurrency, UserCurrency } from '@maimoni/shared'
 import { currencies as knownCurrencies } from '@maimoni/shared'
 
 const toast = useToast()
-const { data: saved, error } = await useFetch<UserCurrency[]>('/api/settings/currencies', { key: 'currencies' })
+// Nuxt doesn't fetch again for a key another screen already loaded, and that list goes out of date
+// here: whether a currency is in use changes as items and spends are added and removed elsewhere.
+const loadedElsewhere = useNuxtData('currencies').data.value != null
+const { data: saved, error, refresh } = await useFetch<UserCurrency[]>('/api/settings/currencies', { key: 'currencies' })
+if (loadedElsewhere)
+  await refresh()
 
-/** The list being edited. Nothing reaches the server until it is saved, all at once. */
-const draft = ref<ReplaceUserCurrencies['currencies']>([])
-const main = ref<Currency | null>(null)
-
-function reset() {
-  draft.value = (saved.value ?? []).map(({ currency, enabled }) => ({ currency, enabled }))
-  main.value = saved.value?.find(entry => entry.main)?.currency ?? null
-}
-watch(saved, reset, { immediate: true })
-
-/** The main currency first, then the rest of the user's list, then the currencies not in it. */
-const order = computed(() => {
-  const rank = (currency: Currency) => currency === main.value ? 0 : draft.value.some(entry => entry.currency === currency) ? 1 : 2
+/** Every currency the app knows: the main one first, then the rest of the user's list, then the ones not in it. */
+const rows = computed(() => {
+  const entries = new Map((saved.value ?? []).map(entry => [entry.currency, entry]))
+  const rank = (currency: Currency) => entries.get(currency)?.main ? 0 : entries.has(currency) ? 1 : 2
   // The sort is stable, so each group keeps the app's order.
-  return knownCurrencies.toSorted((a, b) => rank(a) - rank(b))
+  return knownCurrencies.toSorted((a, b) => rank(a) - rank(b)).map((currency) => {
+    const name = currencyName(currency)
+    const entry = entries.get(currency)
+    return {
+      currency,
+      name,
+      symbol: currencySymbol(currency),
+      entry,
+      removeBlocked: Boolean(entry?.main || entry?.inUse),
+      // What the icon does, or why it is blocked; shown on hover and focus.
+      removeHint: entry?.main
+        ? 'A moeda principal não pode ser removida.'
+        : entry?.inUse
+          ? `${name} possui itens ou gastos registrados.`
+          : `Remover ${name}`,
+      // Why the switch is blocked.
+      enabledHint: entry?.main ? 'A moeda principal não pode ser desativada.' : undefined,
+    }
+  })
 })
 
-/** Every currency the app knows, with the user's entry for the ones in their list. */
-const rows = computed(() => order.value.map((currency) => {
-  const name = currencyName(currency)
-  const isMain = main.value === currency
-  return {
-    currency,
-    name,
-    symbol: currencySymbol(currency),
-    entry: draft.value.find(entry => entry.currency === currency),
-    main: isMain,
-    // Why a control is blocked, shown on hover and focus.
-    removeHint: isMain ? 'Para remover esta moeda, defina outra como principal.' : `Remover ${name}`,
-    enabledHint: isMain ? 'Para desativar esta moeda, defina outra como principal.' : undefined,
-  }
-}))
+/** The currency a request is running for. Every action applies at once, one at a time. */
+const busy = ref<Currency | null>(null)
 
-/** Order doesn't count as a change: the server sorts the list. */
-function snapshot(entries: ReplaceUserCurrencies['currencies'], mainCurrency: Currency | null) {
-  return JSON.stringify([entries.map(({ currency, enabled }) => [currency, enabled]).sort(), mainCurrency])
-}
-const dirty = computed(() => snapshot(draft.value, main.value) !== snapshot(saved.value ?? [], saved.value?.find(entry => entry.main)?.currency ?? null))
-
-function add(currency: Currency) {
-  draft.value.push({ currency, enabled: true })
-  // The first one is the main one, as on the server.
-  main.value ??= currency
-}
-
-function remove(currency: Currency) {
-  draft.value = draft.value.filter(entry => entry.currency !== currency)
-}
-
-const SAVE_FAILED = 'Não foi possível salvar as moedas'
-const saving = ref(false)
-/** Removed currencies the server refused to remove, which an error dialog names. Kept after it closes so its text doesn't change on the way out. */
-const blocked = ref<Currency[]>([])
-const showingBlocked = ref(false)
-
-async function save() {
-  if (!main.value)
-    return
-  saving.value = true
+/** Runs one change and takes the list it answers with, or loads the list again when it answers with something else. */
+async function change(currency: Currency, failure: string, request: () => Promise<UserCurrency[] | unknown>) {
+  busy.value = currency
   try {
-    saved.value = await $fetch<UserCurrency[]>('/api/settings/currencies', { method: 'PUT', body: { currencies: draft.value, main: main.value } satisfies ReplaceUserCurrencies })
-    toast.add({ title: 'Moedas salvas', color: 'success', icon: 'i-lucide-check' })
+    const result = await request()
+    if (Array.isArray(result))
+      saved.value = result
+    else
+      await refresh()
+    return true
   }
   catch (err) {
-    // The server refuses to remove a currency that items or spends are in, and says which.
-    const inUse = (err as { data?: Partial<CurrenciesInUseError> } | null)?.data?.inUse
-    if (inUse?.length) {
-      blocked.value = inUse
-      showingBlocked.value = true
-    }
-    else {
-      toast.add({ title: SAVE_FAILED, description: errorMessage(err), color: 'error', icon: 'i-lucide-circle-alert' })
-    }
+    toast.add({ title: failure, description: errorMessage(err), color: 'error', icon: 'i-lucide-circle-alert' })
+    // What the server refused may mean the list on screen is out of date.
+    await refresh()
+    return false
   }
   finally {
-    saving.value = false
+    busy.value = null
   }
 }
 
-const names = new Intl.ListFormat('pt-BR', { type: 'conjunction' })
-/** What the error dialog says happened. The draft is left as it was, for the user to change and save again. */
-const blockedMessage = computed(() => {
-  const list = names.format(blocked.value.map(currencyName))
-  return blocked.value.length === 1
-    ? `${list} possui itens ou gastos registrados e não pode ser removida. Para que deixe de ser oferecida, desative a moeda.`
-    : `${list} possuem itens ou gastos registrados e não podem ser removidas. Para que deixem de ser oferecidas, desative as moedas.`
-})
+const base = '/api/settings/currencies'
+
+function add(currency: Currency) {
+  return change(currency, 'Não foi possível adicionar a moeda', () => $fetch(base, { method: 'POST', body: { currency } satisfies AddUserCurrency }))
+}
+
+function update(currency: Currency, patch: UpdateUserCurrency, failure: string) {
+  return change(currency, failure, () => $fetch<UserCurrency[]>(`${base}/${currency}`, { method: 'PATCH', body: patch }))
+}
+
+/** The currency the user asked to remove and hasn't confirmed yet. Kept while the dialog closes so its text doesn't change. */
+const removing = ref<Currency | null>(null)
+const confirmingRemove = ref(false)
+
+function askToRemove(currency: Currency) {
+  removing.value = currency
+  confirmingRemove.value = true
+}
+
+async function remove() {
+  if (!removing.value)
+    return
+  await change(removing.value, 'Não foi possível remover a moeda', () => $fetch(`${base}/${removing.value}`, { method: 'DELETE' }))
+  confirmingRemove.value = false
+}
 </script>
 
 <template>
-  <SettingsSection title="Moedas" description="Moedas usadas nos itens e gastos. Uma moeda desativada deixa de ser exibida e mantém o histórico.">
+  <SettingsSection title="Moedas" description="Moedas usadas nos itens e gastos. Uma moeda desativada deixa de ser oferecida e mantém o histórico.">
     <ul v-if="saved" class="divide-y divide-default">
       <li v-for="row in rows" :key="row.currency" class="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
         <!-- The sign its amounts are written with. It dims with the name when the currency isn't offered. -->
@@ -114,45 +108,46 @@ const blockedMessage = computed(() => {
         </div>
 
         <div v-if="row.entry" class="flex items-center gap-1">
-          <UBadge v-if="row.main" label="Principal" icon="i-lucide-star" color="neutral" variant="subtle" class="mr-2" />
-          <!-- A disabled button gets no hover or focus of its own, so the hint sits on a wrapper. -->
-          <UTooltip v-else :text="row.entry.enabled ? undefined : 'Ative esta moeda para defini-la como principal.'">
-            <span class="mr-2 inline-flex rounded-md" :tabindex="row.entry.enabled ? undefined : 0">
-              <UButton
-                label="Definir como principal"
-                color="neutral"
-                variant="ghost"
-                size="sm"
-                :disabled="!row.entry.enabled || saving"
-                @click="main = row.currency"
-              />
-            </span>
-          </UTooltip>
+          <UBadge v-if="row.entry.main" label="Principal" icon="i-lucide-star" color="neutral" variant="subtle" class="mr-2" />
+          <!-- A disabled currency can't be the main one, so it isn't offered the button. -->
+          <UButton
+            v-else-if="row.entry.enabled"
+            label="Definir como principal"
+            color="neutral"
+            variant="ghost"
+            size="sm"
+            class="mr-2"
+            :disabled="busy !== null"
+            @click="update(row.currency, { main: true }, 'Não foi possível definir a moeda principal')"
+          />
 
+          <!-- Takes effect when flipped, as a switch says it does. A disabled control gets no hover or focus of its own, so the hint sits on a wrapper. -->
           <UTooltip :text="row.enabledHint">
-            <span class="inline-flex rounded-md" :tabindex="row.main ? 0 : undefined">
+            <span class="inline-flex rounded-md" :tabindex="row.entry.main ? 0 : undefined">
               <USwitch
-                v-model="row.entry.enabled"
+                :model-value="row.entry.enabled"
                 size="sm"
                 label="Ativa"
                 :aria-label="`${row.name} ativa`"
-                :disabled="row.main || saving"
+                :loading="busy === row.currency"
+                :disabled="row.entry.main || busy !== null"
                 class="px-2"
                 :ui="{ label: 'text-xs text-muted font-normal' }"
+                @update:model-value="update(row.currency, { enabled: $event }, $event ? 'Não foi possível ativar a moeda' : 'Não foi possível desativar a moeda')"
               />
             </span>
           </UTooltip>
 
           <UTooltip :text="row.removeHint">
-            <span class="inline-flex rounded-md" :tabindex="row.main ? 0 : undefined">
+            <span class="inline-flex rounded-md" :tabindex="row.removeBlocked ? 0 : undefined">
               <UButton
                 icon="i-lucide-trash-2"
-                color="neutral"
+                color="error"
                 variant="ghost"
                 size="sm"
                 :aria-label="row.removeHint"
-                :disabled="row.main || saving"
-                @click="remove(row.currency)"
+                :disabled="row.removeBlocked || busy !== null"
+                @click="askToRemove(row.currency)"
               />
             </span>
           </UTooltip>
@@ -164,7 +159,8 @@ const blockedMessage = computed(() => {
           color="neutral"
           variant="outline"
           size="sm"
-          :disabled="saving"
+          :loading="busy === row.currency"
+          :disabled="busy !== null"
           @click="add(row.currency)"
         />
       </li>
@@ -173,24 +169,17 @@ const blockedMessage = computed(() => {
       Não foi possível carregar as moedas: {{ errorMessage(error) }}
     </p>
 
-    <template v-if="dirty" #footer>
-      <p class="mr-auto text-sm text-muted">
-        Alterações não salvas
-      </p>
-      <UButton label="Descartar alterações" color="neutral" variant="outline" :disabled="saving" @click="reset" />
-      <UButton label="Salvar moedas" icon="i-lucide-check" :loading="saving" :disabled="!main" @click="save" />
-    </template>
-
-    <!-- An error, not a question: it reports what happened and only closes. -->
-    <UModal v-model:open="showingBlocked" :description="blockedMessage" :ui="{ footer: 'justify-end' }">
-      <template #title>
-        <span class="flex items-center gap-2 text-error">
-          <UIcon name="i-lucide-circle-alert" class="size-5 shrink-0" aria-hidden="true" />
-          {{ SAVE_FAILED }}
-        </span>
-      </template>
+    <!-- Only exists once there is a currency to ask about, which then stays set for the dialog to close with its title. -->
+    <UModal
+      v-if="removing"
+      v-model:open="confirmingRemove"
+      :title="`Remover ${currencyName(removing)}?`"
+      description="A moeda deixará de ser oferecida para novos itens e gastos. É possível adicioná-la novamente depois."
+      :ui="{ footer: 'justify-end' }"
+    >
       <template #footer="{ close }">
-        <UButton label="Fechar" color="neutral" variant="outline" @click="close" />
+        <UButton label="Cancelar" color="neutral" variant="outline" :disabled="busy !== null" @click="close" />
+        <UButton label="Remover moeda" color="error" icon="i-lucide-trash-2" :loading="busy !== null" @click="remove" />
       </template>
     </UModal>
   </SettingsSection>
