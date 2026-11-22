@@ -1,4 +1,4 @@
-import type { Conversion, DailySpend, MonthDetail, MonthItem, MonthListEntry, TemplateDetail, TemplateItem } from '@maimoni/shared'
+import type { Conversion, DailySpend, MonthDetail, MonthItem, MonthListEntry, TemplateDetail, TemplateItem, UserCurrency } from '@maimoni/shared'
 import { daysInMonth } from '@maimoni/shared'
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { setup } from './setup'
@@ -227,7 +227,7 @@ test('clearing data answers 404 unless purging is enabled', async () => {
 })
 
 test('clearing data wipes months and template', async () => {
-  ({ request } = await setup(6, {}, true))
+  ({ request } = await setup(6, {}, { enablePurge: true }))
   await seedTemplate()
   await request('POST', '/months', { year: 2026, month: 10 })
 
@@ -236,6 +236,91 @@ test('clearing data wipes months and template', async () => {
   expect((await request<MonthListEntry[]>('GET', '/months')).body).toEqual([])
   const { body: template } = await request<TemplateDetail>('GET', '/template')
   expect(template.items).toEqual([])
+})
+
+describe('currencies', () => {
+  const base = '/settings/currencies'
+
+  // These start from a user with no currencies.
+  beforeEach(async () => {
+    ({ request } = await setup(6, {}, { currencies: false }))
+  })
+
+  test('the first currency added is the main one', async () => {
+    expect((await request<UserCurrency[]>('GET', base)).body).toEqual([])
+
+    const first = await request<UserCurrency>('POST', base, { currency: 'BRL', isMain: false })
+    expect(first.status).toBe(201)
+    expect(first.body).toEqual({ currency: 'BRL', isMain: true })
+    expect((await request<UserCurrency>('POST', base, { currency: 'EUR' })).body).toEqual({ currency: 'EUR', isMain: false })
+
+    expect((await request('POST', base, { currency: 'EUR' })).status).toBe(409)
+    expect((await request('POST', base, { currency: 'USD' })).status).toBe(400)
+    expect((await request<UserCurrency[]>('GET', base)).body).toEqual([{ currency: 'BRL', isMain: true }, { currency: 'EUR', isMain: false }])
+  })
+
+  test('a currency added as the main one demotes the previous one', async () => {
+    await request('POST', base, { currency: 'BRL' })
+
+    const added = await request<UserCurrency>('POST', base, { currency: 'EUR', isMain: true })
+    expect(added.status).toBe(201)
+    expect(added.body).toEqual({ currency: 'EUR', isMain: true })
+    expect((await request<UserCurrency[]>('GET', base)).body).toEqual([{ currency: 'EUR', isMain: true }, { currency: 'BRL', isMain: false }])
+
+    // One that is already there is refused without changing which one is main.
+    expect((await request('POST', base, { currency: 'BRL', isMain: true })).status).toBe(409)
+    expect((await request<UserCurrency[]>('GET', base)).body).toEqual([{ currency: 'EUR', isMain: true }, { currency: 'BRL', isMain: false }])
+  })
+
+  test('items and spends are refused in a currency the user doesn\'t have', async () => {
+    await request('POST', base, { currency: 'EUR' })
+    await request('POST', '/months', { year: 2026, month: 10 })
+    const { body: template } = await request<TemplateItem>('POST', '/template/items', { name: 'Aluguel', currency: 'EUR', amount: 1000 })
+    const { body: item } = await request<MonthItem>('POST', '/months/2026/10/items', { name: 'Aluguel', currency: 'EUR', amount: 1000 })
+    const { body: spend } = await request<DailySpend>('POST', '/months/2026/10/spends', { day: 1, amount: 10, currency: 'EUR' })
+
+    const refused = [
+      await request('POST', '/template/items', { name: 'Carro', currency: 'BRL', amount: 1000 }),
+      await request('PATCH', `/template/items/${template.id}`, { currency: 'BRL' }),
+      await request('POST', '/months/2026/10/items', { name: 'Carro', currency: 'BRL', amount: 1000 }),
+      await request('PATCH', `/months/2026/10/items/${item.id}`, { currency: 'BRL' }),
+      await request('POST', '/months/2026/10/spends', { day: 1, amount: 10, currency: 'BRL' }),
+      await request('PATCH', `/months/2026/10/spends/${spend.id}`, { currency: 'BRL' }),
+    ]
+    expect(refused.map(response => response.status)).toEqual([400, 400, 400, 400, 400, 400])
+    expect(refused[0]!.body).toEqual({ error: 'Currency is not one of the user\'s currencies' })
+
+    await request('POST', base, { currency: 'BRL' })
+    expect((await request('PATCH', `/template/items/${template.id}`, { currency: 'BRL' })).status).toBe(200)
+    expect((await request('PATCH', `/months/2026/10/items/${item.id}`, { currency: 'BRL' })).status).toBe(200)
+    expect((await request('PATCH', `/months/2026/10/spends/${spend.id}`, { currency: 'BRL' })).status).toBe(200)
+  })
+
+  test('making a currency the main one demotes the previous one', async () => {
+    await request('POST', base, { currency: 'BRL' })
+    expect((await request('PATCH', `${base}/EUR`, { isMain: true })).status).toBe(404)
+    await request('POST', base, { currency: 'EUR' })
+
+    const { body } = await request<UserCurrency[]>('PATCH', `${base}/EUR`, { isMain: true })
+    expect(body).toEqual([{ currency: 'EUR', isMain: true }, { currency: 'BRL', isMain: false }])
+    // Idempotent on the one that is already main.
+    expect((await request<UserCurrency[]>('PATCH', `${base}/EUR`, { isMain: true })).body).toEqual(body)
+    expect((await request('PATCH', `${base}/BRL`, { isMain: false })).status).toBe(400)
+  })
+
+  test('removes a currency unless it is the main one or in use', async () => {
+    await request('POST', base, { currency: 'EUR' })
+    await request('POST', base, { currency: 'BRL' })
+    expect((await request('DELETE', `${base}/EUR`)).status).toBe(409)
+
+    const { body: item } = await request<TemplateItem>('POST', '/template/items', { name: 'Carro', currency: 'BRL', amount: 1000 })
+    expect((await request('DELETE', `${base}/BRL`)).status).toBe(409)
+    await request('DELETE', `/template/items/${item.id}`)
+
+    expect((await request('DELETE', `${base}/BRL`)).status).toBe(204)
+    expect((await request('DELETE', `${base}/BRL`)).status).toBe(404)
+    expect((await request<UserCurrency[]>('GET', base)).body).toEqual([{ currency: 'EUR', isMain: true }])
+  })
 })
 
 describe('daily spends', () => {

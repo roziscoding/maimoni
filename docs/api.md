@@ -2,6 +2,7 @@
 
 Base path: `/api`. JSON in, JSON out. All types live in `@maimoni/shared` (`packages/shared/src`).
 Validation errors return `400 { error, issues }`; missing resources `404 { error }`; conflicts `409 { error }`.
+Template items, month items and daily spends are only written in one of the user's currencies (`/api/settings/currencies`); any other answers `400 { error }`.
 
 The frontend never calls the backend directly: Nuxt proxies `/api/**` to `NUXT_API_BASE` (see `apps/frontend/server/api/[...path].ts`).
 
@@ -48,6 +49,10 @@ Every route below except `/api/health`, `/api/sign-in-providers`, `/api/password
 | PATCH | `/api/months/:year/:month/spends/:id` | `UpdateDailySpend` | `DailySpend` |
 | DELETE | `/api/months/:year/:month/spends/:id` | | 204 |
 | DELETE | `/api/data` | | 204 — deletes the user's months (with their items, spends and conversions), and template items; 404 unless `FLAG_ENABLE_PURGE` is `true` |
+| GET | `/api/settings/currencies` | | `UserCurrency[]` (`{ currency, isMain }`), the main one first |
+| POST | `/api/settings/currencies` | `AddUserCurrency` (`{ currency, isMain? }`) | `UserCurrency` (201, 409 if already added). `isMain: true` makes it the main one, in place of the previous one. The user's first currency is the main one whatever `isMain` says |
+| PATCH | `/api/settings/currencies/:currency` | `UpdateUserCurrency` (`{ isMain: true }`) | `UserCurrency[]` — makes that currency the main one, in place of the previous one |
+| DELETE | `/api/settings/currencies/:currency` | | 204; 409 for the main currency, or for one that a template item, month item or daily spend is in |
 | GET | `/api/sessions` | | `SessionEntry[]` — the user's valid sessions, the current one first |
 | DELETE | `/api/sessions/:id` | | 204 — ends that session; 400 for the current one, which ends by signing out |
 | DELETE | `/api/sessions` | | 204 — ends every session but the current one |

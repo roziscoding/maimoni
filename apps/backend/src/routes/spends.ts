@@ -7,6 +7,7 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import { dailySpends } from '../db/schema'
 import { validate } from '../lib/validate'
+import { CURRENCY_NOT_ADDED, userHasCurrency } from './currencies'
 import { findMonth } from './months'
 
 const spendParam = monthKeySchema.extend({ id: z.uuid() })
@@ -35,6 +36,8 @@ export function spendRoutes(db: Database) {
       const input = c.req.valid('json')
       if (input.day > daysInMonth(key.year, key.month))
         return c.json({ error: 'Day is outside the month' }, 400)
+      if (!await userHasCurrency(db, row.userId, input.currency))
+        return c.json(CURRENCY_NOT_ADDED, 400)
       const [spend] = await db.insert(dailySpends).values({ ...input, monthId: row.id, userId: row.userId }).returning()
       return c.json(toDailySpend(spend!), 201)
     })
@@ -46,6 +49,8 @@ export function spendRoutes(db: Database) {
       const input = c.req.valid('json')
       if (input.day !== undefined && input.day > daysInMonth(key.year, key.month))
         return c.json({ error: 'Day is outside the month' }, 400)
+      if (input.currency && !await userHasCurrency(db, row.userId, input.currency))
+        return c.json(CURRENCY_NOT_ADDED, 400)
       // A plain amount replaces whatever expression produced the previous one.
       const expression = input.amount !== undefined && input.expression === undefined ? null : input.expression
       const [spend] = await db.update(dailySpends)

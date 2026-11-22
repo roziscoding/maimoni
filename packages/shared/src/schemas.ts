@@ -26,6 +26,28 @@ export const passwordResetRequestSchema = z.object({
 export type PasswordResetRequest = z.infer<typeof passwordResetRequestSchema>
 
 /* -------------------------------------------------------------------------- */
+/*                                  Settings                                  */
+/* -------------------------------------------------------------------------- */
+
+/** A currency the user works with. Exactly one of a user's currencies is the main one. */
+export const userCurrencySchema = z.object({
+  currency: currencySchema,
+  isMain: z.boolean(),
+})
+export type UserCurrency = z.infer<typeof userCurrencySchema>
+
+/** `isMain: true` makes the new currency the main one, in place of the current one. */
+export const addUserCurrencySchema = z.object({
+  currency: currencySchema,
+  isMain: z.boolean().default(false),
+})
+export type AddUserCurrency = z.input<typeof addUserCurrencySchema>
+
+/** The only change a user currency takes is becoming the main one; another becomes main by the same request on it. */
+export const updateUserCurrencySchema = z.object({ isMain: z.literal(true) })
+export type UpdateUserCurrency = z.input<typeof updateUserCurrencySchema>
+
+/* -------------------------------------------------------------------------- */
 /*                                  Template                                  */
 /* -------------------------------------------------------------------------- */
 
