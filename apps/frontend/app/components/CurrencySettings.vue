@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Currency, ReplaceUserCurrencies, UserCurrency } from '@maimoni/shared'
+import type { CurrenciesInUseError, Currency, ReplaceUserCurrencies, UserCurrency } from '@maimoni/shared'
 import { currencies as knownCurrencies } from '@maimoni/shared'
 
 const toast = useToast()
@@ -55,6 +55,8 @@ function remove(currency: Currency) {
 }
 
 const saving = ref(false)
+/** Removed currencies the server refused to remove. While there are any, a dialog offers to disable them instead. */
+const blocked = ref<Currency[]>([])
 
 async function save() {
   if (!main.value)
@@ -65,18 +67,45 @@ async function save() {
     toast.add({ title: 'Moedas salvas', color: 'success', icon: 'i-lucide-check' })
   }
   catch (err) {
-    // The server refuses to remove a currency that items or spends are in.
-    const inUse = (err as { statusCode?: number } | null)?.statusCode === 409
-    toast.add({
-      title: 'Não foi possível salvar as moedas',
-      description: inUse ? 'Uma das moedas removidas possui itens ou gastos. Desative a moeda em vez de removê-la.' : errorMessage(err),
-      color: 'error',
-      icon: 'i-lucide-circle-alert',
-    })
+    // The server refuses to remove a currency that items or spends are in, and says which.
+    const inUse = (err as { data?: Partial<CurrenciesInUseError> } | null)?.data?.inUse
+    if (inUse?.length)
+      blocked.value = inUse
+    else
+      toast.add({ title: 'Não foi possível salvar as moedas', description: errorMessage(err), color: 'error', icon: 'i-lucide-circle-alert' })
   }
   finally {
     saving.value = false
   }
+}
+
+const showingBlocked = computed({
+  get: () => blocked.value.length > 0,
+  set: (open) => {
+    if (!open)
+      blocked.value = []
+  },
+})
+
+const names = new Intl.ListFormat('pt-BR', { type: 'conjunction' })
+const blockedDialog = computed(() => {
+  const list = names.format(blocked.value.map(currencyName))
+  return blocked.value.length === 1
+    ? {
+        title: `Não é possível remover ${list}`,
+        description: `${list} possui itens ou gastos registrados. Para que deixe de ser oferecida, desative a moeda em vez de removê-la.`,
+      }
+    : {
+        title: `Não é possível remover ${list}`,
+        description: `${list} possuem itens ou gastos registrados. Para que deixem de ser oferecidas, desative as moedas em vez de removê-las.`,
+      }
+})
+
+/** Puts the refused currencies back in the list, disabled, and saves. */
+async function disableBlocked() {
+  draft.value = [...draft.value, ...blocked.value.map(currency => ({ currency, enabled: false }))]
+  blocked.value = []
+  await save()
 }
 </script>
 
@@ -166,5 +195,12 @@ async function save() {
       <UButton label="Descartar alterações" color="neutral" variant="outline" :disabled="saving" @click="reset" />
       <UButton label="Salvar moedas" icon="i-lucide-check" :loading="saving" :disabled="!main" @click="save" />
     </template>
+
+    <UModal v-model:open="showingBlocked" :title="blockedDialog.title" :description="blockedDialog.description" :ui="{ footer: 'justify-end' }">
+      <template #footer="{ close }">
+        <UButton label="Cancelar" color="neutral" variant="outline" @click="close" />
+        <UButton label="Desativar e salvar" icon="i-lucide-check" @click="disableBlocked" />
+      </template>
+    </UModal>
   </SettingsSection>
 </template>
