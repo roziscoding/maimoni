@@ -1,5 +1,5 @@
 import { relations, sql } from 'drizzle-orm'
-import { boolean, check, foreignKey, index, integer, numeric, pgEnum, pgTable, smallint, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core'
+import { boolean, check, foreignKey, index, integer, numeric, pgEnum, pgTable, primaryKey, smallint, text, timestamp, unique, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
 import { user } from './auth-schema'
 
 export * from './auth-schema'
@@ -18,6 +18,17 @@ const owner = () => uuid('user_id').notNull().references(() => user.id, { onDele
  * Every user-owned table has its own `user_id`, so row-level security can check it directly. Tables
  * under a month reference it through `(month_id, user_id)`, which keeps their owner equal to the month's.
  */
+
+/** The currencies a user works with. Exactly one of them can be the main one. */
+export const userCurrencies = pgTable('user_currencies', {
+  userId: owner(),
+  currency: currency('currency').notNull(),
+  isMainCurrency: boolean('is_main_currency').notNull().default(false),
+  ...timestamps,
+}, table => [
+  primaryKey({ name: 'user_currencies_pkey', columns: [table.userId, table.currency] }),
+  uniqueIndex('user_currencies_main').on(table.userId).where(sql`${table.isMainCurrency}`),
+])
 
 export const templateItems = pgTable('template_items', {
   id: uuid('id').primaryKey().defaultRandom(),
