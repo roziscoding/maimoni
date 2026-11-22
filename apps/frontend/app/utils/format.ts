@@ -21,6 +21,11 @@ export function currencyName(currency: Currency) {
   return name.charAt(0).toUpperCase() + name.slice(1)
 }
 
+/** The sign a currency's amounts are written with: `R$`, `€`. */
+export function currencySymbol(currency: Currency) {
+  return money[currency].formatToParts(0).find(part => part.type === 'currency')?.value ?? currency
+}
+
 /** EUR→BRL rate with the 4 decimals the spreadsheet showed. */
 export function formatRate(value: number | null | undefined) {
   return value === null || value === undefined ? '—' : `R$ ${rate.format(value)}`

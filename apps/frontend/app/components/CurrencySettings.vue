@@ -16,11 +16,20 @@ function reset() {
 watch(saved, reset, { immediate: true })
 
 /** Every currency the app knows, with the user's entry for the ones in their list. */
-const rows = computed(() => knownCurrencies.map(currency => ({
-  currency,
-  entry: draft.value.find(entry => entry.currency === currency),
-  main: main.value === currency,
-})))
+const rows = computed(() => knownCurrencies.map((currency) => {
+  const name = currencyName(currency)
+  const isMain = main.value === currency
+  return {
+    currency,
+    name,
+    symbol: currencySymbol(currency),
+    entry: draft.value.find(entry => entry.currency === currency),
+    main: isMain,
+    // Why a control is blocked, shown on hover and focus.
+    removeHint: isMain ? 'A moeda principal não pode ser removida. Torne outra a principal antes.' : `Remover ${name}`,
+    enabledHint: isMain ? 'A moeda principal fica sempre ativa. Torne outra a principal antes.' : undefined,
+  }
+}))
 
 /** Order doesn't count as a change: the server sorts the list. */
 function snapshot(entries: ReplaceUserCurrencies['currencies'], mainCurrency: Currency | null) {
@@ -65,78 +74,90 @@ async function save() {
 </script>
 
 <template>
-  <section aria-labelledby="currencies-title" class="space-y-3">
-    <div class="space-y-1">
-      <h2 id="currencies-title" class="text-sm font-semibold text-highlighted">
-        Moedas
-      </h2>
-      <p class="text-sm text-muted">
-        As moedas que você usa. Uma moeda desativada mantém o histórico e deixa de ser oferecida.
-      </p>
-    </div>
-
-    <template v-if="saved">
-      <ul class="divide-y divide-default rounded-xl border border-default">
-        <li v-for="row in rows" :key="row.currency" class="flex flex-wrap items-center gap-x-3 gap-y-2 p-3">
-          <div class="min-w-0 flex-1">
+  <SettingsSection title="Moedas" description="As moedas que você usa. Uma moeda desativada mantém o histórico e deixa de ser oferecida.">
+    <ul v-if="saved" class="divide-y divide-default">
+      <li v-for="row in rows" :key="row.currency" class="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
+        <!-- The sign its amounts are written with. It dims with the name when the currency isn't offered. -->
+        <div class="flex min-w-0 flex-1 items-center gap-3" :class="{ 'opacity-50': !row.entry?.enabled }">
+          <span class="money grid size-9 shrink-0 place-items-center rounded-lg bg-elevated text-sm font-medium text-highlighted" aria-hidden="true">
+            {{ row.symbol }}
+          </span>
+          <div class="min-w-0">
             <p class="truncate text-sm font-medium text-highlighted">
-              {{ currencyName(row.currency) }}
-              <UBadge v-if="row.main" label="Principal" color="neutral" variant="subtle" size="sm" class="ml-1" />
+              {{ row.name }}
             </p>
-            <p class="money text-sm text-muted">
+            <p class="money text-xs text-muted">
               {{ row.currency }}
             </p>
           </div>
+        </div>
 
-          <template v-if="row.entry">
-            <UButton
-              v-if="!row.main"
-              label="Tornar principal"
-              color="neutral"
-              variant="subtle"
-              size="sm"
-              :disabled="!row.entry.enabled || saving"
-              @click="main = row.currency"
-            />
-            <!-- The main currency is always active: another one has to take its place first. -->
-            <USwitch
-              v-model="row.entry.enabled"
-              size="sm"
-              label="ativa"
-              :aria-label="`${currencyName(row.currency)} ativa`"
-              :disabled="row.main || saving"
-              :ui="{ label: 'text-xs text-muted font-normal' }"
-            />
-            <UButton
-              icon="i-lucide-trash-2"
-              color="neutral"
-              variant="ghost"
-              size="sm"
-              :aria-label="`Remover ${currencyName(row.currency)}`"
-              :disabled="row.main || saving"
-              @click="remove(row.currency)"
-            />
-          </template>
-          <UButton
-            v-else
-            label="Adicionar"
-            icon="i-lucide-plus"
-            color="neutral"
-            variant="outline"
-            size="sm"
-            :disabled="saving"
-            @click="add(row.currency)"
-          />
-        </li>
-      </ul>
+        <div v-if="row.entry" class="flex items-center gap-1">
+          <UBadge v-if="row.main" label="Principal" icon="i-lucide-star" color="neutral" variant="subtle" class="mr-2" />
+          <!-- A disabled button gets no hover or focus of its own, so the hint sits on a wrapper. -->
+          <UTooltip v-else :text="row.entry.enabled ? undefined : 'Ative a moeda para torná-la a principal.'">
+            <span class="mr-2 inline-flex rounded-md" :tabindex="row.entry.enabled ? undefined : 0">
+              <UButton
+                label="Tornar principal"
+                color="neutral"
+                variant="ghost"
+                size="sm"
+                :disabled="!row.entry.enabled || saving"
+                @click="main = row.currency"
+              />
+            </span>
+          </UTooltip>
 
-      <div v-if="dirty" class="flex justify-end gap-2">
-        <UButton label="Descartar" color="neutral" variant="outline" :disabled="saving" @click="reset" />
-        <UButton label="Salvar moedas" icon="i-lucide-check" :loading="saving" :disabled="!main" @click="save" />
-      </div>
-    </template>
-    <p v-else-if="error" class="text-sm text-error">
+          <UTooltip :text="row.enabledHint">
+            <span class="inline-flex rounded-md" :tabindex="row.main ? 0 : undefined">
+              <USwitch
+                v-model="row.entry.enabled"
+                size="sm"
+                label="ativa"
+                :aria-label="`${row.name} ativa`"
+                :disabled="row.main || saving"
+                class="px-2"
+                :ui="{ label: 'text-xs text-muted font-normal' }"
+              />
+            </span>
+          </UTooltip>
+
+          <UTooltip :text="row.removeHint">
+            <span class="inline-flex rounded-md" :tabindex="row.main ? 0 : undefined">
+              <UButton
+                icon="i-lucide-trash-2"
+                color="neutral"
+                variant="ghost"
+                size="sm"
+                :aria-label="row.removeHint"
+                :disabled="row.main || saving"
+                @click="remove(row.currency)"
+              />
+            </span>
+          </UTooltip>
+        </div>
+        <UButton
+          v-else
+          label="Adicionar"
+          icon="i-lucide-plus"
+          color="neutral"
+          variant="outline"
+          size="sm"
+          :disabled="saving"
+          @click="add(row.currency)"
+        />
+      </li>
+    </ul>
+    <p v-else-if="error" class="px-4 py-3 text-sm text-error">
       Não foi possível carregar as moedas: {{ errorMessage(error) }}
     </p>
-  </section>
+
+    <template v-if="dirty" #footer>
+      <p class="mr-auto text-sm text-muted">
+        Alterações não salvas
+      </p>
+      <UButton label="Descartar alterações" color="neutral" variant="outline" :disabled="saving" @click="reset" />
+      <UButton label="Salvar moedas" icon="i-lucide-check" :loading="saving" :disabled="!main" @click="save" />
+    </template>
+  </SettingsSection>
 </template>

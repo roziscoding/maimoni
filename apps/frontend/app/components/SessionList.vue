@@ -24,18 +24,9 @@ async function end(id?: string) {
 </script>
 
 <template>
-  <section aria-labelledby="sessions-title" class="space-y-3">
-    <div class="space-y-1">
-      <h2 id="sessions-title" class="text-sm font-semibold text-highlighted">
-        Sessões
-      </h2>
-      <p class="text-sm text-muted">
-        Onde sua conta está conectada. Encerre as que você não reconhece ou não usa mais.
-      </p>
-    </div>
-
-    <ul v-if="sessions" class="divide-y divide-default rounded-xl border border-default">
-      <li v-for="session in sessions" :key="session.id" class="flex items-center gap-3 p-3">
+  <SettingsSection title="Sessões" description="Onde sua conta está conectada. Encerre as que você não reconhece ou não usa mais.">
+    <ul v-if="sessions" class="divide-y divide-default">
+      <li v-for="session in sessions" :key="session.id" class="flex items-center gap-3 px-4 py-3">
         <div class="min-w-0 flex-1">
           <p class="truncate text-sm font-medium text-highlighted">
             {{ deviceLabel(session.userAgent) }}
@@ -59,19 +50,20 @@ async function end(id?: string) {
         />
       </li>
     </ul>
-    <p v-else-if="error" class="text-sm text-error">
+    <p v-else-if="error" class="px-4 py-3 text-sm text-error">
       Não foi possível carregar as sessões: {{ errorMessage(error) }}
     </p>
 
-    <UButton
-      v-if="sessions && sessions.length > 1"
-      label="Encerrar todas as outras"
-      icon="i-lucide-log-out"
-      color="neutral"
-      variant="outline"
-      :loading="ending === 'others'"
-      :disabled="ending !== null"
-      @click="end()"
-    />
-  </section>
+    <template v-if="sessions && sessions.length > 1" #footer>
+      <UButton
+        label="Encerrar todas as outras"
+        icon="i-lucide-log-out"
+        color="neutral"
+        variant="outline"
+        :loading="ending === 'others'"
+        :disabled="ending !== null"
+        @click="end()"
+      />
+    </template>
+  </SettingsSection>
 </template>

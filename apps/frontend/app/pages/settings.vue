@@ -41,22 +41,24 @@ async function clearData() {
     </template>
 
     <template #body>
-      <div class="mx-auto w-full max-w-xl py-4">
+      <div class="mx-auto w-full max-w-2xl space-y-6 py-4">
         <CurrencySettings />
 
-        <SessionList class="mt-12" />
+        <SessionList />
 
-        <section v-if="flags?.purge" aria-labelledby="danger-title" class="mt-12 space-y-3 rounded-xl border border-error/40 p-4">
-          <div class="space-y-1">
-            <h2 id="danger-title" class="text-sm font-semibold text-error">
-              Zona de perigo
-            </h2>
-            <p class="text-sm text-muted">
-              Apaga todos os meses e o template. Não dá para desfazer.
-            </p>
+        <SettingsSection v-if="flags?.purge" title="Zona de perigo" description="O que é apagado aqui não volta." danger>
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium text-highlighted">
+                Apagar todos os dados
+              </p>
+              <p class="text-sm text-muted">
+                Todos os meses e o template. Moedas e sessões ficam.
+              </p>
+            </div>
+            <UButton label="Apagar todos os dados" icon="i-lucide-trash-2" color="error" variant="subtle" size="sm" @click="confirmingClear = true" />
           </div>
-          <UButton label="Apagar todos os dados" icon="i-lucide-trash-2" color="error" variant="subtle" @click="confirmingClear = true" />
-        </section>
+        </SettingsSection>
 
         <UModal
           v-model:open="confirmingClear"
