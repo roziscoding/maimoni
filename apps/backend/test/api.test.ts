@@ -248,7 +248,7 @@ describe('currencies', () => {
     ({ request } = await setup(6, {}, { currencies: false }))
   })
 
-  const entry = (currency: UserCurrency['currency'], main: boolean, enabled = true): UserCurrency => ({ currency, enabled, main })
+  const entry = (currency: UserCurrency['currency'], main: boolean, enabled = true, inUse = false): UserCurrency => ({ currency, enabled, main, inUse })
   const list = async () => (await request<UserCurrency[]>('GET', base)).body
 
   test('the first currency added is the main one', async () => {
@@ -373,8 +373,8 @@ describe('currencies', () => {
     const refused = await request('PUT', base, { currencies: [{ currency: 'EUR', enabled: true }], main: 'EUR' })
     expect(refused.status).toBe(409)
     expect(refused.body.inUse).toEqual(['BRL'])
-    expect(await list()).toEqual([entry('EUR', true), entry('BRL', false)])
-    expect((await request<UserCurrency[]>('PUT', base, { currencies: [{ currency: 'BRL', enabled: false }, { currency: 'EUR', enabled: true }], main: 'EUR' })).body).toEqual([entry('EUR', true), entry('BRL', false, false)])
+    expect(await list()).toEqual([entry('EUR', true), entry('BRL', false, true, true)])
+    expect((await request<UserCurrency[]>('PUT', base, { currencies: [{ currency: 'BRL', enabled: false }, { currency: 'EUR', enabled: true }], main: 'EUR' })).body).toEqual([entry('EUR', true), entry('BRL', false, false, true)])
   })
 
   test('removes a currency unless it is the main one or in use', async () => {

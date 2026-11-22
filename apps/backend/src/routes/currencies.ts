@@ -10,8 +10,8 @@ import { validate } from '../lib/validate'
 
 const currencyParam = z.object({ currency: currencySchema })
 
-function toUserCurrency(row: Pick<typeof userCurrencies.$inferSelect, 'currency' | 'enabled' | 'isMainCurrency'>): UserCurrency {
-  return { currency: row.currency, enabled: row.enabled, main: row.isMainCurrency }
+function toUserCurrency(row: Pick<typeof userCurrencies.$inferSelect, 'currency' | 'enabled' | 'isMainCurrency'>, inUse: boolean): UserCurrency {
+  return { currency: row.currency, enabled: row.enabled, main: row.isMainCurrency, inUse }
 }
 
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0]
@@ -39,20 +39,27 @@ function refuse<Status extends 404 | 409>(status: Status, error: string) {
 }
 const MAIN_DISABLED = 'A disabled currency can\'t be the main one'
 
-/** The user's currencies, the main one first. */
-async function listUserCurrencies(db: Database, userId: string) {
-  const rows = await db.select().from(userCurrencies).where(eq(userCurrencies.userId, userId)).orderBy(desc(userCurrencies.isMainCurrency), asc(userCurrencies.currency))
-  return rows.map(toUserCurrency)
+/** The currencies any of the user's template items, month items or daily spends is in. */
+async function usedCurrencies(db: Database, userId: string) {
+  const used = new Set<Currency>()
+  for (const table of [templateItems, monthItems, dailySpends]) {
+    const rows = await db.selectDistinct({ currency: table.currency }).from(table).where(eq(table.userId, userId))
+    for (const row of rows)
+      used.add(row.currency)
+  }
+  return used
 }
 
 /** Whether any of the user's template items, month items or daily spends is in that currency. */
 async function currencyInUse(db: Database, userId: string, currency: Currency) {
-  for (const table of [templateItems, monthItems, dailySpends]) {
-    const [row] = await db.select({ userId: table.userId }).from(table).where(and(eq(table.userId, userId), eq(table.currency, currency))).limit(1)
-    if (row)
-      return true
-  }
-  return false
+  return (await usedCurrencies(db, userId)).has(currency)
+}
+
+/** The user's currencies, the main one first. */
+async function listUserCurrencies(db: Database, userId: string) {
+  const rows = await db.select().from(userCurrencies).where(eq(userCurrencies.userId, userId)).orderBy(desc(userCurrencies.isMainCurrency), asc(userCurrencies.currency))
+  const used = await usedCurrencies(db, userId)
+  return rows.map(row => toUserCurrency(row, used.has(row.currency)))
 }
 
 /**
@@ -85,11 +92,11 @@ export function currencyRoutes(db: Database) {
         if (isMainCurrency)
           await demoteMain(tx, userId)
         const [row] = await tx.insert(userCurrencies).values({ userId, currency, enabled, isMainCurrency }).returning()
-        return { row: row! }
+        return { row: row!, inUse: await currencyInUse(tx, userId, currency) }
       })
       if ('refused' in result)
         return c.json({ error: result.refused.error }, result.refused.status)
-      return c.json(toUserCurrency(result.row), 201)
+      return c.json(toUserCurrency(result.row, result.inUse), 201)
     })
     // Replaces the whole list: currencies left out are removed, which one in use refuses.
     .put('/settings/currencies', validate('json', replaceUserCurrenciesSchema), async (c) => {
@@ -100,11 +107,8 @@ export function currencyRoutes(db: Database) {
         const existing = await tx.select({ currency: userCurrencies.currency }).from(userCurrencies).where(eq(userCurrencies.userId, userId))
         const removed = existing.map(row => row.currency).filter(currency => !currencies.some(entry => entry.currency === currency))
         // All of them, so the client can name every currency that has to stay.
-        const inUse: Currency[] = []
-        for (const currency of removed) {
-          if (await currencyInUse(tx, userId, currency))
-            inUse.push(currency)
-        }
+        const used = await usedCurrencies(tx, userId)
+        const inUse = removed.filter(currency => used.has(currency))
         if (inUse.length)
           return { inUse }
         if (removed.length)
