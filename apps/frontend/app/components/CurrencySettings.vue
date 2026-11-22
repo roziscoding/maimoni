@@ -15,8 +15,15 @@ function reset() {
 }
 watch(saved, reset, { immediate: true })
 
+/** The main currency first, then the rest of the user's list, then the currencies not in it. */
+const order = computed(() => {
+  const rank = (currency: Currency) => currency === main.value ? 0 : draft.value.some(entry => entry.currency === currency) ? 1 : 2
+  // The sort is stable, so each group keeps the app's order.
+  return knownCurrencies.toSorted((a, b) => rank(a) - rank(b))
+})
+
 /** Every currency the app knows, with the user's entry for the ones in their list. */
-const rows = computed(() => knownCurrencies.map((currency) => {
+const rows = computed(() => order.value.map((currency) => {
   const name = currencyName(currency)
   const isMain = main.value === currency
   return {
