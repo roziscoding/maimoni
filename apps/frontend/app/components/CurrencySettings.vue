@@ -26,8 +26,8 @@ const rows = computed(() => knownCurrencies.map((currency) => {
     entry: draft.value.find(entry => entry.currency === currency),
     main: isMain,
     // Why a control is blocked, shown on hover and focus.
-    removeHint: isMain ? 'A moeda principal não pode ser removida. Torne outra a principal antes.' : `Remover ${name}`,
-    enabledHint: isMain ? 'A moeda principal fica sempre ativa. Torne outra a principal antes.' : undefined,
+    removeHint: isMain ? 'Para remover esta moeda, defina outra como principal.' : `Remover ${name}`,
+    enabledHint: isMain ? 'Para desativar esta moeda, defina outra como principal.' : undefined,
   }
 }))
 
@@ -62,7 +62,7 @@ async function save() {
     const inUse = (err as { statusCode?: number } | null)?.statusCode === 409
     toast.add({
       title: 'Não foi possível salvar as moedas',
-      description: inUse ? 'Uma moeda removida ainda tem itens ou gastos. Desative-a em vez de remover.' : errorMessage(err),
+      description: inUse ? 'Uma das moedas removidas possui itens ou gastos. Desative a moeda em vez de removê-la.' : errorMessage(err),
       color: 'error',
       icon: 'i-lucide-circle-alert',
     })
@@ -74,7 +74,7 @@ async function save() {
 </script>
 
 <template>
-  <SettingsSection title="Moedas" description="As moedas que você usa. Uma moeda desativada mantém o histórico e deixa de ser oferecida.">
+  <SettingsSection title="Moedas" description="Moedas usadas nos itens e gastos. Uma moeda desativada deixa de ser exibida e mantém o histórico.">
     <ul v-if="saved" class="divide-y divide-default">
       <li v-for="row in rows" :key="row.currency" class="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
         <!-- The sign its amounts are written with. It dims with the name when the currency isn't offered. -->
@@ -95,10 +95,10 @@ async function save() {
         <div v-if="row.entry" class="flex items-center gap-1">
           <UBadge v-if="row.main" label="Principal" icon="i-lucide-star" color="neutral" variant="subtle" class="mr-2" />
           <!-- A disabled button gets no hover or focus of its own, so the hint sits on a wrapper. -->
-          <UTooltip v-else :text="row.entry.enabled ? undefined : 'Ative a moeda para torná-la a principal.'">
+          <UTooltip v-else :text="row.entry.enabled ? undefined : 'Ative esta moeda para defini-la como principal.'">
             <span class="mr-2 inline-flex rounded-md" :tabindex="row.entry.enabled ? undefined : 0">
               <UButton
-                label="Tornar principal"
+                label="Definir como principal"
                 color="neutral"
                 variant="ghost"
                 size="sm"
@@ -113,7 +113,7 @@ async function save() {
               <USwitch
                 v-model="row.entry.enabled"
                 size="sm"
-                label="ativa"
+                label="Ativa"
                 :aria-label="`${row.name} ativa`"
                 :disabled="row.main || saving"
                 class="px-2"

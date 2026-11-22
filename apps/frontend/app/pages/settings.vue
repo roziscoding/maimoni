@@ -22,7 +22,7 @@ async function clearData() {
     confirmingClear.value = false
     clearNuxtData()
     await refreshNuxtData()
-    toast.add({ title: 'Dados apagados', description: 'Meses e template voltaram ao zero.', color: 'neutral', icon: 'i-lucide-trash-2' })
+    toast.add({ title: 'Dados apagados', description: 'Todos os meses e o template foram apagados.', color: 'neutral', icon: 'i-lucide-trash-2' })
     await navigateTo('/')
   }
   catch (err) {
@@ -46,14 +46,14 @@ async function clearData() {
 
         <SessionList />
 
-        <SettingsSection v-if="flags?.purge" title="Zona de perigo" description="O que é apagado aqui não volta." danger>
+        <SettingsSection v-if="flags?.purge" title="Zona de perigo" description="Ações que não podem ser desfeitas." danger>
           <div class="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
             <div class="min-w-0 flex-1">
               <p class="text-sm font-medium text-highlighted">
                 Apagar todos os dados
               </p>
               <p class="text-sm text-muted">
-                Todos os meses e o template. Moedas e sessões ficam.
+                Apaga todos os meses e o template. Moedas e sessões são mantidas.
               </p>
             </div>
             <UButton label="Apagar todos os dados" icon="i-lucide-trash-2" color="error" variant="subtle" size="sm" @click="confirmingClear = true" />
@@ -63,7 +63,7 @@ async function clearData() {
         <UModal
           v-model:open="confirmingClear"
           title="Apagar todos os dados?"
-          description="Meses, itens e template serão apagados de vez."
+          description="Todos os meses e o template serão apagados. Esta ação não pode ser desfeita."
           :ui="{ footer: 'justify-end' }"
         >
           <template #body>
@@ -73,7 +73,7 @@ async function clearData() {
           </template>
           <template #footer="{ close }">
             <UButton label="Cancelar" color="neutral" variant="outline" @click="close" />
-            <UButton label="Apagar tudo" color="error" icon="i-lucide-trash-2" :disabled="confirmation !== CONFIRMATION" :loading="clearing" @click="clearData" />
+            <UButton label="Apagar todos os dados" color="error" icon="i-lucide-trash-2" :disabled="confirmation !== CONFIRMATION" :loading="clearing" @click="clearData" />
           </template>
         </UModal>
       </div>

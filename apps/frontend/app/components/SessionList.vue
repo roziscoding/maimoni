@@ -14,7 +14,7 @@ async function end(id?: string) {
     toast.add({ title: id ? 'Sessão encerrada' : 'Outras sessões encerradas', color: 'success', icon: 'i-lucide-check' })
   }
   catch (err) {
-    toast.add({ title: 'Não foi possível encerrar', description: errorMessage(err), color: 'error', icon: 'i-lucide-circle-alert' })
+    toast.add({ title: id ? 'Não foi possível encerrar a sessão' : 'Não foi possível encerrar as outras sessões', description: errorMessage(err), color: 'error', icon: 'i-lucide-circle-alert' })
   }
   finally {
     await refresh()
@@ -24,7 +24,7 @@ async function end(id?: string) {
 </script>
 
 <template>
-  <SettingsSection title="Sessões" description="Onde sua conta está conectada. Encerre as que você não reconhece ou não usa mais.">
+  <SettingsSection title="Sessões" description="Dispositivos conectados à conta. Encerrar uma sessão desconecta o dispositivo correspondente.">
     <ul v-if="sessions" class="divide-y divide-default">
       <li v-for="session in sessions" :key="session.id" class="flex items-center gap-3 px-4 py-3">
         <div class="min-w-0 flex-1">
@@ -56,7 +56,7 @@ async function end(id?: string) {
 
     <template v-if="sessions && sessions.length > 1" #footer>
       <UButton
-        label="Encerrar todas as outras"
+        label="Encerrar as outras sessões"
         icon="i-lucide-log-out"
         color="neutral"
         variant="outline"
