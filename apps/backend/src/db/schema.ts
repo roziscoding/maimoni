@@ -19,15 +19,22 @@ const owner = () => uuid('user_id').notNull().references(() => user.id, { onDele
  * under a month reference it through `(month_id, user_id)`, which keeps their owner equal to the month's.
  */
 
-/** The currencies a user works with. Exactly one of them can be the main one. */
+/**
+ * The currencies a user works with. Exactly one of them can be the main one.
+ *
+ * `enabled` only tells the clients what to offer: a currency with history can be disabled instead of
+ * removed, and nothing on the server treats a disabled one differently, except that it can't be the main one.
+ */
 export const userCurrencies = pgTable('user_currencies', {
   userId: owner(),
   currency: currency('currency').notNull(),
   isMainCurrency: boolean('is_main_currency').notNull().default(false),
+  enabled: boolean('enabled').notNull().default(true),
   ...timestamps,
 }, table => [
   primaryKey({ name: 'user_currencies_pkey', columns: [table.userId, table.currency] }),
   uniqueIndex('user_currencies_main').on(table.userId).where(sql`${table.isMainCurrency}`),
+  check('user_currencies_main_enabled', sql`${table.enabled} or not ${table.isMainCurrency}`),
 ])
 
 export const templateItems = pgTable('template_items', {

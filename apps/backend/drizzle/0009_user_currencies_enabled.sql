@@ -1,0 +1,2 @@
+ALTER TABLE "user_currencies" ADD COLUMN "enabled" boolean DEFAULT true NOT NULL;--> statement-breakpoint
+ALTER TABLE "user_currencies" ADD CONSTRAINT "user_currencies_main_enabled" CHECK ("user_currencies"."enabled" or not "user_currencies"."is_main_currency");

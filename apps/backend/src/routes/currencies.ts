@@ -10,9 +10,22 @@ import { validate } from '../lib/validate'
 
 const currencyParam = z.object({ currency: currencySchema })
 
-function toUserCurrency(row: Pick<typeof userCurrencies.$inferSelect, 'currency' | 'isMainCurrency'>): UserCurrency {
-  return { currency: row.currency, isMain: row.isMainCurrency }
+function toUserCurrency(row: Pick<typeof userCurrencies.$inferSelect, 'currency' | 'enabled' | 'isMainCurrency'>): UserCurrency {
+  return { currency: row.currency, enabled: row.enabled, main: row.isMainCurrency }
 }
+
+type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0]
+
+/** Takes the main mark off the user's main currency. It goes before another gets it: the unique index allows one main currency per user at any moment. */
+async function demoteMain(tx: Transaction, userId: string) {
+  await tx.update(userCurrencies).set({ isMainCurrency: false }).where(and(eq(userCurrencies.userId, userId), eq(userCurrencies.isMainCurrency, true)))
+}
+
+/** What a transaction returns in place of its result when the request can't go through. */
+function refuse<Status extends 404 | 409>(status: Status, error: string) {
+  return { refused: { status, error } }
+}
+const MAIN_DISABLED = 'A disabled currency can\'t be the main one'
 
 /** The user's currencies, the main one first. */
 async function listUserCurrencies(db: Database, userId: string) {
@@ -47,54 +60,65 @@ export function currencyRoutes(db: Database) {
     .get('/settings/currencies', async c => c.json(await listUserCurrencies(db, c.var.user.id)))
     .post('/settings/currencies', validate('json', addUserCurrencySchema), async (c) => {
       const userId = c.var.user.id
-      const { currency, isMain } = c.req.valid('json')
-      const row = await db.transaction(async (tx) => {
+      const { currency, enabled, main } = c.req.valid('json')
+      const result = await db.transaction(async (tx) => {
         const existing = await tx.select({ currency: userCurrencies.currency }).from(userCurrencies).where(eq(userCurrencies.userId, userId))
         if (existing.some(row => row.currency === currency))
-          return null
-        // The previous main one goes first: the unique index allows one main currency per user at any moment.
-        if (isMain)
-          await tx.update(userCurrencies).set({ isMainCurrency: false }).where(and(eq(userCurrencies.userId, userId), eq(userCurrencies.isMainCurrency, true)))
+          return refuse(409, 'Currency already added')
         // A user's first currency is their main one, whatever was asked.
-        const [inserted] = await tx.insert(userCurrencies).values({ userId, currency, isMainCurrency: isMain || existing.length === 0 }).returning()
-        return inserted!
+        const isMainCurrency = main || existing.length === 0
+        if (isMainCurrency && !enabled)
+          return refuse(409, MAIN_DISABLED)
+        if (isMainCurrency)
+          await demoteMain(tx, userId)
+        const [row] = await tx.insert(userCurrencies).values({ userId, currency, enabled, isMainCurrency }).returning()
+        return { row: row! }
       })
-      if (!row)
-        return c.json({ error: 'Currency already added' }, 409)
-      return c.json(toUserCurrency(row), 201)
+      if ('refused' in result)
+        return c.json({ error: result.refused.error }, result.refused.status)
+      return c.json(toUserCurrency(result.row), 201)
     })
     .patch('/settings/currencies/:currency', validate('param', currencyParam), validate('json', updateUserCurrencySchema), async (c) => {
       const userId = c.var.user.id
       const { currency } = c.req.valid('param')
-      const found = await db.transaction(async (tx) => {
-        const [row] = await tx.select({ currency: userCurrencies.currency }).from(userCurrencies).where(and(eq(userCurrencies.userId, userId), eq(userCurrencies.currency, currency)))
+      const input = c.req.valid('json')
+      const mine = and(eq(userCurrencies.userId, userId), eq(userCurrencies.currency, currency))
+      const result = await db.transaction(async (tx) => {
+        const [row] = await tx.select().from(userCurrencies).where(mine)
         if (!row)
-          return false
-        await tx.update(userCurrencies).set({ isMainCurrency: false }).where(and(eq(userCurrencies.userId, userId), eq(userCurrencies.isMainCurrency, true)))
-        await tx.update(userCurrencies).set({ isMainCurrency: true }).where(and(eq(userCurrencies.userId, userId), eq(userCurrencies.currency, currency)))
-        return true
+          return refuse(404, 'Currency not found')
+        const enabled = input.enabled ?? row.enabled
+        const isMainCurrency = input.main ?? row.isMainCurrency
+        if (row.isMainCurrency && !isMainCurrency)
+          return refuse(409, 'Make another currency the main one instead')
+        if (isMainCurrency && !enabled)
+          return refuse(409, MAIN_DISABLED)
+        if (isMainCurrency && !row.isMainCurrency)
+          await demoteMain(tx, userId)
+        await tx.update(userCurrencies).set({ enabled, isMainCurrency }).where(mine)
+        return { currencies: await listUserCurrencies(tx, userId) }
       })
-      if (!found)
-        return c.json({ error: 'Currency not found' }, 404)
-      return c.json(await listUserCurrencies(db, userId))
+      if ('refused' in result)
+        return c.json({ error: result.refused.error }, result.refused.status)
+      return c.json(result.currencies)
     })
     .delete('/settings/currencies/:currency', validate('param', currencyParam), async (c) => {
       const userId = c.var.user.id
       const { currency } = c.req.valid('param')
       const mine = and(eq(userCurrencies.userId, userId), eq(userCurrencies.currency, currency))
-      const refusal = await db.transaction(async (tx) => {
+      const result = await db.transaction(async (tx) => {
         const [row] = await tx.select().from(userCurrencies).where(mine)
         if (!row)
-          return { error: 'Currency not found', status: 404 } as const
+          return refuse(404, 'Currency not found')
         if (row.isMainCurrency)
-          return { error: 'The main currency can\'t be removed', status: 409 } as const
+          return refuse(409, 'The main currency can\'t be removed')
         if (await currencyInUse(tx, userId, currency))
-          return { error: 'Currency is in use', status: 409 } as const
+          return refuse(409, 'Currency is in use')
         await tx.delete(userCurrencies).where(mine)
-        return null
+        return { removed: true }
       })
-      if (refusal)
-        return c.json({ error: refusal.error }, refusal.status)
+      if ('refused' in result)
+        return c.json({ error: result.refused.error }, result.refused.status)
       return c.body(null, 204)
     })
 }

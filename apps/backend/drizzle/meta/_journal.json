@@ -64,6 +64,13 @@
       "when": 1795340274940,
       "tag": "0008_user_currencies",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1795343734968,
+      "tag": "0009_user_currencies_enabled",
+      "breakpoints": true
     }
   ]
 }

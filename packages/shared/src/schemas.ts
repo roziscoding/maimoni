@@ -32,19 +32,33 @@ export type PasswordResetRequest = z.infer<typeof passwordResetRequestSchema>
 /** A currency the user works with. Exactly one of a user's currencies is the main one. */
 export const userCurrencySchema = z.object({
   currency: currencySchema,
-  isMain: z.boolean(),
+  /**
+   * Whether the clients offer it. A currency with history can be disabled instead of removed; the
+   * server accepts items and spends in a disabled one all the same.
+   */
+  enabled: z.boolean(),
+  main: z.boolean(),
 })
 export type UserCurrency = z.infer<typeof userCurrencySchema>
 
-/** `isMain: true` makes the new currency the main one, in place of the current one. */
+const mainIsEnabled = {
+  check: (value: { enabled?: boolean, main?: boolean }) => !(value.enabled === false && value.main === true),
+  params: { error: 'A disabled currency can\'t be the main one', path: ['main'] },
+}
+
+/** `main: true` makes the new currency the main one, in place of the current one. */
 export const addUserCurrencySchema = z.object({
   currency: currencySchema,
-  isMain: z.boolean().default(false),
-})
+  enabled: z.boolean().default(true),
+  main: z.boolean().default(false),
+}).refine(mainIsEnabled.check, mainIsEnabled.params)
 export type AddUserCurrency = z.input<typeof addUserCurrencySchema>
 
-/** The only change a user currency takes is becoming the main one; another becomes main by the same request on it. */
-export const updateUserCurrencySchema = z.object({ isMain: z.literal(true) })
+/** `main: true` takes the place of the current main currency. The main one stops being it when another becomes it, not through `main: false`. */
+export const updateUserCurrencySchema = z.object({
+  enabled: z.boolean().optional(),
+  main: z.boolean().optional(),
+}).refine(mainIsEnabled.check, mainIsEnabled.params)
 export type UpdateUserCurrency = z.input<typeof updateUserCurrencySchema>
 
 /* -------------------------------------------------------------------------- */

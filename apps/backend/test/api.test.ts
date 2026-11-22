@@ -246,30 +246,57 @@ describe('currencies', () => {
     ({ request } = await setup(6, {}, { currencies: false }))
   })
 
-  test('the first currency added is the main one', async () => {
-    expect((await request<UserCurrency[]>('GET', base)).body).toEqual([])
+  const entry = (currency: UserCurrency['currency'], main: boolean, enabled = true): UserCurrency => ({ currency, enabled, main })
+  const list = async () => (await request<UserCurrency[]>('GET', base)).body
 
-    const first = await request<UserCurrency>('POST', base, { currency: 'BRL', isMain: false })
+  test('the first currency added is the main one', async () => {
+    expect(await list()).toEqual([])
+
+    // It has to be enabled, since it is the main one.
+    expect((await request('POST', base, { currency: 'BRL', enabled: false })).status).toBe(409)
+    const first = await request<UserCurrency>('POST', base, { currency: 'BRL', main: false })
     expect(first.status).toBe(201)
-    expect(first.body).toEqual({ currency: 'BRL', isMain: true })
-    expect((await request<UserCurrency>('POST', base, { currency: 'EUR' })).body).toEqual({ currency: 'EUR', isMain: false })
+    expect(first.body).toEqual(entry('BRL', true))
+    expect((await request<UserCurrency>('POST', base, { currency: 'EUR' })).body).toEqual(entry('EUR', false))
 
     expect((await request('POST', base, { currency: 'EUR' })).status).toBe(409)
     expect((await request('POST', base, { currency: 'USD' })).status).toBe(400)
-    expect((await request<UserCurrency[]>('GET', base)).body).toEqual([{ currency: 'BRL', isMain: true }, { currency: 'EUR', isMain: false }])
+    expect(await list()).toEqual([entry('BRL', true), entry('EUR', false)])
   })
 
   test('a currency added as the main one demotes the previous one', async () => {
     await request('POST', base, { currency: 'BRL' })
 
-    const added = await request<UserCurrency>('POST', base, { currency: 'EUR', isMain: true })
+    const added = await request<UserCurrency>('POST', base, { currency: 'EUR', main: true })
     expect(added.status).toBe(201)
-    expect(added.body).toEqual({ currency: 'EUR', isMain: true })
-    expect((await request<UserCurrency[]>('GET', base)).body).toEqual([{ currency: 'EUR', isMain: true }, { currency: 'BRL', isMain: false }])
+    expect(added.body).toEqual(entry('EUR', true))
+    expect(await list()).toEqual([entry('EUR', true), entry('BRL', false)])
 
     // One that is already there is refused without changing which one is main.
-    expect((await request('POST', base, { currency: 'BRL', isMain: true })).status).toBe(409)
-    expect((await request<UserCurrency[]>('GET', base)).body).toEqual([{ currency: 'EUR', isMain: true }, { currency: 'BRL', isMain: false }])
+    expect((await request('POST', base, { currency: 'BRL', main: true })).status).toBe(409)
+    expect(await list()).toEqual([entry('EUR', true), entry('BRL', false)])
+  })
+
+  test('a disabled currency can\'t be the main one', async () => {
+    await request('POST', base, { currency: 'EUR' })
+    expect((await request('POST', base, { currency: 'BRL', enabled: false, main: true })).status).toBe(400)
+    expect((await request<UserCurrency>('POST', base, { currency: 'BRL', enabled: false })).body).toEqual(entry('BRL', false, false))
+
+    expect((await request('PATCH', `${base}/BRL`, { enabled: false, main: true })).status).toBe(400)
+    // Neither making the disabled one main nor disabling the main one goes through.
+    expect((await request('PATCH', `${base}/BRL`, { main: true })).status).toBe(409)
+    expect((await request('PATCH', `${base}/EUR`, { enabled: false })).status).toBe(409)
+    expect(await list()).toEqual([entry('EUR', true), entry('BRL', false, false)])
+
+    const { body } = await request<UserCurrency[]>('PATCH', `${base}/BRL`, { enabled: true, main: true })
+    expect(body).toEqual([entry('BRL', true), entry('EUR', false)])
+    expect((await request<UserCurrency[]>('PATCH', `${base}/EUR`, { enabled: false })).body).toEqual([entry('BRL', true), entry('EUR', false, false)])
+  })
+
+  test('a disabled currency still takes items and spends', async () => {
+    await request('POST', base, { currency: 'EUR' })
+    await request('POST', base, { currency: 'BRL', enabled: false })
+    expect((await request('POST', '/template/items', { name: 'Carro', currency: 'BRL', amount: 1000 })).status).toBe(201)
   })
 
   test('items and spends are refused in a currency the user doesn\'t have', async () => {
@@ -298,14 +325,17 @@ describe('currencies', () => {
 
   test('making a currency the main one demotes the previous one', async () => {
     await request('POST', base, { currency: 'BRL' })
-    expect((await request('PATCH', `${base}/EUR`, { isMain: true })).status).toBe(404)
+    expect((await request('PATCH', `${base}/EUR`, { main: true })).status).toBe(404)
     await request('POST', base, { currency: 'EUR' })
 
-    const { body } = await request<UserCurrency[]>('PATCH', `${base}/EUR`, { isMain: true })
-    expect(body).toEqual([{ currency: 'EUR', isMain: true }, { currency: 'BRL', isMain: false }])
+    const { body } = await request<UserCurrency[]>('PATCH', `${base}/EUR`, { main: true })
+    expect(body).toEqual([entry('EUR', true), entry('BRL', false)])
     // Idempotent on the one that is already main.
-    expect((await request<UserCurrency[]>('PATCH', `${base}/EUR`, { isMain: true })).body).toEqual(body)
-    expect((await request('PATCH', `${base}/BRL`, { isMain: false })).status).toBe(400)
+    expect((await request<UserCurrency[]>('PATCH', `${base}/EUR`, { main: true })).body).toEqual(body)
+    // `main: false` changes nothing on one that isn't main, and is refused on the main one: another has to take its place.
+    expect((await request<UserCurrency[]>('PATCH', `${base}/BRL`, { main: false })).body).toEqual(body)
+    expect((await request('PATCH', `${base}/EUR`, { main: false })).status).toBe(409)
+    expect(await list()).toEqual(body)
   })
 
   test('removes a currency unless it is the main one or in use', async () => {
@@ -319,7 +349,7 @@ describe('currencies', () => {
 
     expect((await request('DELETE', `${base}/BRL`)).status).toBe(204)
     expect((await request('DELETE', `${base}/BRL`)).status).toBe(404)
-    expect((await request<UserCurrency[]>('GET', base)).body).toEqual([{ currency: 'EUR', isMain: true }])
+    expect(await list()).toEqual([entry('EUR', true)])
   })
 })
 
