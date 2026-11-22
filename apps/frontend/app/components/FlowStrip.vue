@@ -3,6 +3,8 @@ import type { Currency, MonthSummary } from '@maimoni/shared'
 
 const props = defineProps<{
   summary: MonthSummary
+  /** The currencies to show a lane for. */
+  currencies: Currency[]
   /** Always stack the lanes like a receipt, even on wide screens (for narrow columns). */
   compact?: boolean
 }>()
@@ -14,26 +16,38 @@ interface Cell {
   tone?: 'result' | 'final'
 }
 
-const lanes = computed<{ currency: Currency, cells: Cell[] }[]>(() => [
-  {
-    currency: 'BRL',
-    cells: [
-      { op: '', label: 'Entrada', value: props.summary.brl.income },
-      { op: '−', label: 'Despesas', value: props.summary.brl.expenses },
-      { op: '−', label: 'Conversão', value: props.summary.transfer.realized.convertedBrl },
-      { op: '−', label: 'Taxa', value: props.summary.transfer.realized.feeBrl },
-      { op: '=', label: 'Em reais', value: props.summary.transfer.remainingBrl, tone: 'result' },
-    ],
-  },
-  {
-    currency: 'EUR',
-    cells: [
-      { op: '', label: 'Entrada', value: props.summary.transfer.eur === null ? null : props.summary.eur.income },
-      { op: '−', label: 'Saída', value: props.summary.eur.expenses },
-      { op: '=', label: 'Líquido', value: props.summary.transfer.eur === null ? null : props.summary.eur.net, tone: 'final' },
-    ],
-  },
-])
+/** With both currencies the reais are converted into euros; with one there is nothing to convert. */
+const exchange = computed(() => props.currencies.includes('BRL') && props.currencies.includes('EUR'))
+
+const lanes = computed(() => {
+  const all: { currency: Currency, cells: Cell[] }[] = [
+    {
+      currency: 'BRL',
+      cells: exchange.value
+        ? [
+            { op: '', label: 'Entrada', value: props.summary.brl.income },
+            { op: '−', label: 'Despesas', value: props.summary.brl.expenses },
+            { op: '−', label: 'Conversão', value: props.summary.transfer.realized.convertedBrl },
+            { op: '−', label: 'Taxa', value: props.summary.transfer.realized.feeBrl },
+            { op: '=', label: 'Em reais', value: props.summary.transfer.remainingBrl, tone: 'result' },
+          ]
+        : [
+            { op: '', label: 'Entrada', value: props.summary.brl.income },
+            { op: '−', label: 'Saída', value: props.summary.brl.expenses },
+            { op: '=', label: 'Líquido', value: props.summary.brl.net, tone: 'final' },
+          ],
+    },
+    {
+      currency: 'EUR',
+      cells: [
+        { op: '', label: 'Entrada', value: props.summary.transfer.eur === null ? null : props.summary.eur.income },
+        { op: '−', label: 'Saída', value: props.summary.eur.expenses },
+        { op: '=', label: 'Líquido', value: props.summary.transfer.eur === null ? null : props.summary.eur.net, tone: 'final' },
+      ],
+    },
+  ]
+  return all.filter(lane => props.currencies.includes(lane.currency))
+})
 
 const transfer = computed(() => props.summary.transfer)
 
@@ -47,7 +61,7 @@ function valueClass(cell: Cell) {
 </script>
 
 <template>
-  <section aria-label="Fluxo do mês: reais, conversão e euros" class="overflow-hidden rounded-xl border border-default">
+  <section v-if="lanes.length" :aria-label="exchange ? 'Fluxo do mês: reais, conversão e euros' : 'Fluxo do mês: entrada, saída e líquido'" class="overflow-hidden rounded-xl border border-default">
     <template v-for="(lane, laneIndex) in lanes" :key="lane.currency">
       <div class="flex flex-col px-4 py-3" :class="{ 'sm:flex-row sm:items-stretch sm:py-4': !compact }">
         <template v-for="(cell, index) in lane.cells" :key="cell.label">
@@ -78,7 +92,7 @@ function valueClass(cell: Cell) {
       </div>
 
       <div
-        v-if="laneIndex === 0"
+        v-if="exchange && laneIndex === 0"
         class="space-y-1.5 border-y border-dashed border-accented bg-muted px-4 py-2.5 text-sm"
       >
         <div v-if="transfer.realized.sentBrl > 0" class="flex flex-wrap items-center gap-x-2 gap-y-1">

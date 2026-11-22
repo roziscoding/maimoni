@@ -23,8 +23,18 @@ const phaseLabel = { past: 'encerrado', current: 'mês atual', future: 'futuro' 
 const hasPrevious = computed(() => months.value?.some(entry => entry.year * 12 + entry.month < year * 12 + month) ?? false)
 
 const items = computed(() => data.value?.items.toSorted((a, b) => a.position - b.position) ?? [])
-const brlItems = computed(() => items.value.filter(item => item.currency === 'BRL'))
-const eurItems = computed(() => items.value.filter(item => item.currency === 'EUR'))
+
+const currencies = useCurrencies()
+await currencies.ready
+/** A section per currency the month shows: the offered ones, and any other it already has items, spends or conversions in. */
+const sections = computed(() => currencies.shownInMonth(data.value).map(currency => ({
+  currency,
+  items: items.value.filter(item => item.currency === currency),
+  totals: currency === 'BRL' ? summary.value!.brl : summary.value!.eur,
+  offered: currencies.offered.value.includes(currency),
+})))
+/** With a single currency there is nothing to convert: no rate, no conversions. */
+const exchange = computed(() => sections.value.length > 1)
 
 const note = ref(data.value?.month.note ?? '')
 watch(() => data.value?.month.note, (value) => {
@@ -76,13 +86,16 @@ const menu: DropdownMenuItem[] = [
 
     <template #body>
       <div v-if="data && summary" class="mx-auto w-full max-w-6xl space-y-8 pb-10">
-        <AllowanceHero :year="year" :month="month" :summary="summary" />
+        <AllowanceHero :year="year" :month="month" :summary="summary" :exchange="exchange" />
 
-        <FlowStrip :summary="summary" />
+        <FlowStrip :summary="summary" :currencies="sections.map(section => section.currency)" />
+
+        <NoCurrenciesAlert v-if="currencies.none.value" />
 
         <div class="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_19rem]">
           <div class="space-y-6">
             <ConversionSection
+              v-if="exchange"
               :year="year"
               :month="month"
               :conversions="data.conversions"
@@ -93,11 +106,13 @@ const menu: DropdownMenuItem[] = [
             />
 
             <ItemSection
-              v-for="section in [{ currency: 'BRL' as const, items: brlItems }, { currency: 'EUR' as const, items: eurItems }]"
+              v-for="section in sections"
               :key="section.currency"
               :currency="section.currency"
               :items="section.items"
-              :totals="section.currency === 'BRL' ? summary.brl : summary.eur"
+              :totals="section.totals"
+              :offered="section.offered"
+              :alone="!exchange"
               @update="updateItem"
               @remove="removeItem"
               @promote="promoteItem"
@@ -107,6 +122,7 @@ const menu: DropdownMenuItem[] = [
 
           <aside class="space-y-6 lg:sticky lg:top-0">
             <RatePanel
+              v-if="exchange"
               :month="data.month"
               :rate="data.rate"
               :error="data.rateError"

@@ -21,6 +21,17 @@ export function currencyName(currency: Currency) {
   return name.charAt(0).toUpperCase() + name.slice(1)
 }
 
+const currencyPlurals = Object.fromEntries(Object.entries(money).map(([currency]) => [
+  currency,
+  new Intl.NumberFormat('pt-BR', { style: 'currency', currency, currencyDisplay: 'name' }),
+])) as Record<Currency, Intl.NumberFormat>
+
+/** pt-BR plural name of a currency, for a heading over amounts in it: `Reais brasileiros`, `Euros`. */
+export function currencyPlural(currency: Currency) {
+  const name = currencyPlurals[currency].formatToParts(2).find(part => part.type === 'currency')?.value ?? currency
+  return name.charAt(0).toUpperCase() + name.slice(1)
+}
+
 /** The sign a currency's amounts are written with: `R$`, `€`. */
 export function currencySymbol(currency: Currency) {
   return money[currency].formatToParts(0).find(part => part.type === 'currency')?.value ?? currency

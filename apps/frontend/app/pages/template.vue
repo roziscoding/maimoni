@@ -11,10 +11,16 @@ const { data: rate } = await useFetch<LiveRate>('/api/rates/live', { key: 'live-
 
 const items = computed(() => data.value?.items.toSorted((a, b) => a.position - b.position) ?? [])
 
-const sections: { currency: Currency, title: string }[] = [
-  { currency: 'BRL', title: 'Reais' },
-  { currency: 'EUR', title: 'Euros' },
-]
+const currencies = useCurrencies()
+await currencies.ready
+/** A section per offered currency, and per any other the template still has items in. */
+const sections = computed(() => currencies.shown(items.value.map(item => item.currency)).map(currency => ({
+  currency,
+  title: currencyPlural(currency),
+  offered: currencies.offered.value.includes(currency),
+})))
+/** With a single currency the items need no heading saying which, and the preview has no rate. */
+const exchange = computed(() => sections.value.length > 1)
 const kinds: { kind: EntryKind, title: string }[] = [
   { kind: 'income', title: 'Entradas' },
   { kind: 'expense', title: 'Saídas' },
@@ -108,6 +114,8 @@ async function moveItem(item: TemplateItem, offset: -1 | 1) {
           </p>
         </div>
 
+        <NoCurrenciesAlert v-if="currencies.none.value" />
+
         <div class="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
           <div class="space-y-6">
             <section
@@ -116,9 +124,9 @@ async function moveItem(item: TemplateItem, offset: -1 | 1) {
               :aria-labelledby="`template-${section.currency}`"
               class="rounded-xl border border-default"
             >
-              <h2 :id="`template-${section.currency}`" class="flex items-baseline gap-2 border-b border-default px-4 py-3 text-base font-semibold text-highlighted">
-                {{ section.title }}
-                <span class="money text-xs font-normal text-muted">{{ section.currency }}</span>
+              <h2 :id="`template-${section.currency}`" class="flex items-baseline gap-2 border-b border-default px-4 py-3 text-base font-semibold text-highlighted" :class="{ 'sr-only': !exchange }">
+                {{ exchange ? section.title : 'Itens do template' }}
+                <span v-if="exchange" class="money text-xs font-normal text-muted">{{ section.currency }}</span>
               </h2>
               <div class="space-y-3 px-2 py-2 sm:px-3">
                 <div v-for="entry in kinds" :key="entry.kind">
@@ -141,7 +149,7 @@ async function moveItem(item: TemplateItem, offset: -1 | 1) {
                     Nada aqui.
                   </p>
                 </div>
-                <AddItemForm :currency="section.currency" class="px-1" @add="addItem" />
+                <AddItemForm v-if="section.offered" :currency="section.currency" class="px-1" @add="addItem" />
               </div>
             </section>
           </div>
@@ -152,11 +160,13 @@ async function moveItem(item: TemplateItem, offset: -1 | 1) {
                 Prévia de um mês novo
               </h2>
               <p class="text-sm text-muted">
-                Com a cotação de agora ({{ formatRate(rate?.rate) }}), sem descontar taxa de conversão.
+                <template v-if="exchange">
+                  Com a cotação de agora ({{ formatRate(rate?.rate) }}), sem descontar taxa de conversão.
+                </template>
                 Itens variáveis em branco contam como zero.
               </p>
             </div>
-            <FlowStrip :summary="preview" compact />
+            <FlowStrip :summary="preview" :currencies="sections.map(section => section.currency)" compact />
             <p class="flex items-baseline justify-between rounded-xl border border-default px-4 py-3">
               <span class="text-sm text-muted">Por dia, em {{ preview.allowance.days }} dias</span>
               <span class="money text-xl font-semibold text-highlighted">{{ formatMoney(preview.allowance.eur, 'EUR') }}</span>
