@@ -12,6 +12,7 @@ PORT = "3001"
 NUXT_API_BASE = "http://localhost:3001"
 BETTER_AUTH_SECRET = "maimoni-dev-secret-not-for-production"
 BETTER_AUTH_URL = "http://localhost:3000"
+FLAG_ENABLE_PURGE = "true"
 
 _.file = ".env"
 # android-sdk only puts cmdline-tools on PATH; the emulator and adb live in packages installed by mobile:setup:android.
