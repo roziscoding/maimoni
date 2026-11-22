@@ -1,6 +1,42 @@
 import { z } from 'zod'
 
-export const currencies = ['BRL', 'EUR'] as const
+/**
+ * The currencies a user can pick from, in the order the app lists them: the ones Frankfurter
+ * publishes the ECB's reference rates for, so each has a rate against any other. The Postgres
+ * `currency` enum is made from this list; adding one here takes a migration.
+ */
+export const currencies = [
+  'AUD',
+  'BRL',
+  'CAD',
+  'CHF',
+  'CNY',
+  'CZK',
+  'DKK',
+  'EUR',
+  'GBP',
+  'HKD',
+  'HUF',
+  'IDR',
+  'ILS',
+  'INR',
+  'ISK',
+  'JPY',
+  'KRW',
+  'MXN',
+  'MYR',
+  'NOK',
+  'NZD',
+  'PHP',
+  'PLN',
+  'RON',
+  'SEK',
+  'SGD',
+  'THB',
+  'TRY',
+  'USD',
+  'ZAR',
+] as const
 export const currencySchema = z.enum(currencies)
 export type Currency = z.infer<typeof currencySchema>
 

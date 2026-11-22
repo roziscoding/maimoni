@@ -29,7 +29,8 @@ All the arithmetic lives in one place, `packages/shared/src/summary.ts`, used by
 
 ## Currency and rate
 
-- **Only BRL and EUR** (Postgres enum), matching the sheet.
+- **A fixed list of currencies** (Postgres enum, made from `currencies` in `packages/shared/src/schemas.ts`): the 30 that Frankfurter publishes the ECB's reference rates for, so each one has a rate against any other. A user picks which of them they use. Adding one to the list takes a migration.
+  - Amounts are stored with two decimals in every currency, including those normally written without any, such as the yen.
 - **A month is worked out in one currency, its main one.** It is the user's main currency when the month is created, stored on the month, so changing the main currency later leaves the months that exist as they were. The months that existed before this are in EUR.
 - **Rates are quoted against the month's main currency:** how many units of each other currency one unit of it is worth. With EUR as the main one that is reais per euro, as `Preço Euro` was.
 - **Live rate sources, in order:** Frankfurter (the ECB's reference rate, published once per working day), then open.er-api (updated once a day). No API keys needed, and nothing is asked of Wise. The rate is a daily reference, so it differs a little from what a transfer gets at the moment it is made. The providers are asked once a day for each base currency in use: the first request of a day (UTC) fetches the rates and stores them in `exchange_rates`, one row per quoted currency, and every other request that day reads those rows. If every provider fails, the last stored rates are served with `stale: true`, and the UI shows a badge.

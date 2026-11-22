@@ -38,7 +38,7 @@ describe('template', () => {
   })
 
   test('validates input', async () => {
-    const { status, body } = await request('POST', '/template/items', { name: '', currency: 'USD' })
+    const { status, body } = await request('POST', '/template/items', { name: '', currency: 'XXX' })
     expect(status).toBe(400)
     expect(body.issues).toBeArray()
   })
@@ -102,7 +102,7 @@ describe('months', () => {
     const { body: unlocked } = await request<MonthDetail>('PATCH', '/months/2026/10', { lockedRates: {} })
     expect(unlocked.summary.conversions[0]).toMatchObject({ rate: 6, rateLocked: false })
     expect((await request('PATCH', '/months/2026/10', { lockedRates: { BRL: 0 } })).status).toBe(400)
-    expect((await request('PATCH', '/months/2026/10', { lockedRates: { USD: 5 } })).status).toBe(400)
+    expect((await request('PATCH', '/months/2026/10', { lockedRates: { XXX: 5 } })).status).toBe(400)
   })
 
   test('a month keeps the main currency it was created with', async () => {
@@ -131,7 +131,7 @@ describe('months', () => {
   test('live rates are quoted against the main currency unless another base is asked for', async () => {
     expect((await request('GET', '/rates/live')).body).toMatchObject({ base: 'EUR', rates: { BRL: 6 } })
     expect((await request('GET', '/rates/live?base=BRL')).body).toMatchObject({ base: 'BRL', rates: { EUR: 6 } })
-    expect((await request('GET', '/rates/live?base=USD')).status).toBe(400)
+    expect((await request('GET', '/rates/live?base=XXX')).status).toBe(400)
   })
 
   test('copies from the previous month', async () => {
@@ -240,7 +240,7 @@ describe('currencies', () => {
     expect((await request<UserCurrency>('POST', base, { currency: 'EUR' })).body).toEqual(entry('EUR', false))
 
     expect((await request('POST', base, { currency: 'EUR' })).status).toBe(409)
-    expect((await request('POST', base, { currency: 'USD' })).status).toBe(400)
+    expect((await request('POST', base, { currency: 'XXX' })).status).toBe(400)
     expect(await list()).toEqual([entry('BRL', true), entry('EUR', false)])
   })
 
@@ -342,7 +342,7 @@ describe('currencies', () => {
       { currencies: [{ currency: 'BRL', enabled: false }, { currency: 'EUR', enabled: true }], main: 'BRL' },
       { currencies: [...both, { currency: 'EUR', enabled: false }], main: 'EUR' },
       { currencies: [], main: 'EUR' },
-      { currencies: [{ currency: 'USD', enabled: true }], main: 'USD' },
+      { currencies: [{ currency: 'XXX', enabled: true }], main: 'XXX' },
     ]
     for (const body of invalid)
       expect((await request('PUT', base, body)).status).toBe(400)

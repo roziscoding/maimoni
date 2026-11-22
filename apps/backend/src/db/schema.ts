@@ -1,11 +1,12 @@
 import type { Rates } from '@maimoni/shared'
+import { currencies } from '@maimoni/shared'
 import { relations, sql } from 'drizzle-orm'
 import { boolean, check, foreignKey, index, integer, jsonb, numeric, pgEnum, pgTable, primaryKey, smallint, text, timestamp, unique, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
 import { user } from './auth-schema'
 
 export * from './auth-schema'
 
-export const currency = pgEnum('currency', ['BRL', 'EUR'])
+export const currency = pgEnum('currency', currencies)
 export const entryKind = pgEnum('entry_kind', ['income', 'expense'])
 
 const money = (name: string) => numeric(name, { precision: 14, scale: 2, mode: 'number' })
@@ -112,7 +113,8 @@ export const exchangeRates = pgTable('exchange_rates', {
   id: uuid('id').primaryKey().defaultRandom(),
   base: currency('base').notNull(),
   quote: currency('quote').notNull(),
-  rate: numeric('rate', { precision: 12, scale: 6, mode: 'number' }).notNull(),
+  // Ten decimals: one unit of a currency such as the rupiah is worth a few hundred-thousandths of a euro.
+  rate: numeric('rate', { precision: 20, scale: 10, mode: 'number' }).notNull(),
   source: text('source').notNull(),
   fetchedAt: timestamp('fetched_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
 }, table => [index('exchange_rates_pair_fetched_at').on(table.base, table.quote, table.fetchedAt)])

@@ -10,31 +10,43 @@ const { data: saved, error, refresh } = await useFetch<UserCurrency[]>('/api/set
 if (loadedElsewhere)
   await refresh()
 
-/** Every currency the app knows: the main one first, then the rest of the user's list, then the ones not in it. */
+/** The user's currencies: the main one first, then the rest in the app's order. */
 const rows = computed(() => {
-  const entries = new Map((saved.value ?? []).map(entry => [entry.currency, entry]))
-  const rank = (currency: Currency) => entries.get(currency)?.main ? 0 : entries.has(currency) ? 1 : 2
-  // The sort is stable, so each group keeps the app's order.
-  return knownCurrencies.toSorted((a, b) => rank(a) - rank(b)).map((currency) => {
-    const name = currencyName(currency)
-    const entry = entries.get(currency)
+  const entries = saved.value ?? []
+  const position = (currency: Currency) => knownCurrencies.indexOf(currency)
+  return entries.toSorted((a, b) => Number(b.main) - Number(a.main) || position(a.currency) - position(b.currency)).map((entry) => {
+    const name = currencyName(entry.currency)
     return {
-      currency,
+      currency: entry.currency,
       name,
-      symbol: currencySymbol(currency),
+      symbol: currencySymbol(entry.currency),
       entry,
-      removeBlocked: Boolean(entry?.main || entry?.inUse),
+      removeBlocked: entry.main || entry.inUse,
       // What the icon does, or why it is blocked; shown on hover and focus.
-      removeHint: entry?.main
+      removeHint: entry.main
         ? 'A moeda principal não pode ser removida.'
-        : entry?.inUse
+        : entry.inUse
           ? `${name} possui itens ou gastos registrados.`
           : `Remover ${name}`,
       // Why the switch is blocked.
-      enabledHint: entry?.main ? 'A moeda principal não pode ser desativada.' : undefined,
+      enabledHint: entry.main ? 'A moeda principal não pode ser desativada.' : undefined,
     }
   })
 })
+
+/** The currencies still to add, for the picker: found by name or by code. */
+const available = computed(() => knownCurrencies
+  .filter(currency => !saved.value?.some(entry => entry.currency === currency))
+  .map(currency => ({ label: currencyName(currency), value: currency, code: currency }))
+  .toSorted((a, b) => a.label.localeCompare(b.label, 'pt-BR')))
+/** The picker only chooses what to add; it goes back to empty once it did. */
+const picked = ref<Currency>()
+async function pick(currency: Currency | undefined) {
+  if (!currency)
+    return
+  await add(currency)
+  picked.value = undefined
+}
 
 /** The currency a request is running for. Every action applies at once, one at a time. */
 const busy = ref<Currency | null>(null)
@@ -93,7 +105,7 @@ async function remove() {
     <ul v-if="saved" class="divide-y divide-default">
       <li v-for="row in rows" :key="row.currency" class="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
         <!-- The sign its amounts are written with. It dims with the name when the currency isn't offered. -->
-        <div class="flex min-w-0 flex-1 items-center gap-3" :class="{ 'opacity-50': !row.entry?.enabled }">
+        <div class="flex min-w-0 flex-1 items-center gap-3" :class="{ 'opacity-50': !row.entry.enabled }">
           <span class="money grid size-9 shrink-0 place-items-center rounded-lg bg-elevated text-sm font-medium text-highlighted" aria-hidden="true">
             {{ row.symbol }}
           </span>
@@ -107,7 +119,7 @@ async function remove() {
           </div>
         </div>
 
-        <div v-if="row.entry" class="flex items-center gap-1">
+        <div class="flex items-center gap-1">
           <UBadge v-if="row.entry.main" label="Principal" icon="i-lucide-star" color="neutral" variant="subtle" class="mr-2" />
           <!-- A disabled currency can't be the main one, so it isn't offered the button. -->
           <UButton
@@ -152,22 +164,35 @@ async function remove() {
             </span>
           </UTooltip>
         </div>
-        <UButton
-          v-else
-          label="Adicionar"
-          icon="i-lucide-plus"
-          color="neutral"
-          variant="outline"
-          size="sm"
-          :loading="busy === row.currency"
-          :disabled="busy !== null"
-          @click="add(row.currency)"
-        />
+      </li>
+      <li v-if="!rows.length" class="px-4 py-3 text-sm text-muted">
+        Nenhuma moeda adicionada. A primeira será a principal.
       </li>
     </ul>
     <p v-else-if="error" class="px-4 py-3 text-sm text-error">
       Não foi possível carregar as moedas: {{ errorMessage(error) }}
     </p>
+
+    <template v-if="saved && available.length" #footer>
+      <USelectMenu
+        v-model="picked"
+        :items="available"
+        value-key="value"
+        :filter-fields="['label', 'code']"
+        placeholder="Adicionar moeda"
+        icon="i-lucide-plus"
+        :search-input="{ placeholder: 'Buscar por nome ou código' }"
+        :loading="busy !== null && !rows.some(row => row.currency === busy)"
+        :disabled="busy !== null"
+        aria-label="Adicionar moeda"
+        class="w-full sm:w-72"
+        @update:model-value="pick"
+      >
+        <template #item-trailing="{ item }">
+          <span class="money text-xs text-muted">{{ item.code }}</span>
+        </template>
+      </USelectMenu>
+    </template>
 
     <!-- Only exists once there is a currency to ask about, which then stays set for the dialog to close with its title. -->
     <UModal

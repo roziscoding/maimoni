@@ -12,6 +12,7 @@ function money(currency: Currency, currencyDisplay: 'symbol' | 'name' = 'symbol'
   return formatter
 }
 const rate = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 4, maximumFractionDigits: 4 })
+const smallRate = new Intl.NumberFormat('pt-BR', { minimumSignificantDigits: 4, maximumSignificantDigits: 4 })
 const monthNames = new Intl.DateTimeFormat('pt-BR', { month: 'long', timeZone: 'UTC' })
 const time = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
 
@@ -41,10 +42,13 @@ export function currencySymbol(currency: Currency) {
 
 /**
  * A rate: how much of `currency` one unit of a month's main currency is worth, with the 4 decimals
- * the spreadsheet showed. `R$ 5,8686`.
+ * the spreadsheet showed. `R$ 5,8686`. Below one, 4 decimals can be all zeros (a rupiah in euros),
+ * so it shows 4 significant digits instead: `€ 0,00005512`.
  */
 export function formatRate(value: number | null | undefined, currency: Currency) {
-  return value === null || value === undefined ? '—' : `${currencySymbol(currency)} ${rate.format(value)}`
+  if (value === null || value === undefined)
+    return '—'
+  return `${currencySymbol(currency)} ${(Math.abs(value) < 1 ? smallRate : rate).format(value)}`
 }
 
 export function formatDateTime(iso: string) {
