@@ -25,6 +25,7 @@ Every route below except `/api/health`, `/api/sign-in-providers`, `/api/password
 | POST | `/api/password-reset` | `PasswordResetRequest` (`{ email }`) | 204, whether or not the email belongs to a user. A user with that email is sent a link, valid for 1 hour, to `/reset-password?token=...`; the page sets the new password with Better Auth's `POST /api/auth/reset-password` (`{ newPassword, token }`) |
 | GET | `/api/well-known/assetlinks.json` | | Digital Asset Links statement for the Android app (404 unless `ANDROID_APP_PACKAGE` and `ANDROID_APP_CERT_SHA256` are set) |
 | GET | `/api/well-known/apple-app-site-association` | | `{ webcredentials: { apps } }` (404 unless `APPLE_TEAM_ID` and `APPLE_APP_BUNDLE_IDENTIFIER` are set) |
+| GET | `/api/flags` | | `Flags` (`{ purge }`): whether `DELETE /api/data` is served, so the clients know to offer it |
 | GET | `/api/rates/live` | | `LiveRate` (503 when no provider answered and nothing is cached) |
 | GET | `/api/template` | | `TemplateDetail` (`{ items }`) |
 | POST | `/api/template/items` | `CreateTemplateItem` | `TemplateItem` (201) |

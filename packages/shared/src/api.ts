@@ -30,6 +30,12 @@ export interface ApiError {
   issues?: unknown
 }
 
+/** `GET /api/flags`: what this server has switched on, so the clients know what to offer. */
+export interface Flags {
+  /** Whether `DELETE /api/data` is served (`FLAG_ENABLE_PURGE`). */
+  purge: boolean
+}
+
 /** `GET /api/sessions` row: one sign in to the account that is still valid. */
 export interface SessionEntry {
   id: string
