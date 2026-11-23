@@ -116,6 +116,16 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver, 
     super.dispose();
   }
 
+  void _openSpendSheet(int day) {
+    showSpendSheet(
+      context,
+      day: day,
+      create: _today.addSpend,
+      currency: _spendCurrency,
+      onCurrencyPicked: (currency) => _spendCurrency = currency,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -126,6 +136,13 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver, 
         final activeDay = allowance?.activeDay;
         // A spend goes into the open day, in a currency, against a budget that could be worked out.
         final canSpend = activeDay != null && allowance?.amount != null && !CurrenciesStore.instance.none;
+        // Asked for before Hoje was on screen. Taken once there is a day to spend on, after this frame.
+        if (canSpend && spendRequested.value) {
+          spendRequested.value = false;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _openSpendSheet(activeDay);
+          });
+        }
 
         return Scaffold(
           appBar: AppBar(
@@ -145,13 +162,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver, 
               ? AppFab(
                   label: 'Lançar gasto',
                   icon: LucideIcons.plus,
-                  onPressed: () => showSpendSheet(
-                    context,
-                    day: activeDay,
-                    create: _today.addSpend,
-                    currency: _spendCurrency,
-                    onCurrencyPicked: (currency) => _spendCurrency = currency,
-                  ),
+                  onPressed: () => _openSpendSheet(activeDay),
                 )
               : null,
           body: RefreshIndicator(

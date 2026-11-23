@@ -9,6 +9,10 @@ enum AppTab { today, months, template, settings }
 /// reload when they come back to the front.
 final shellTab = ValueNotifier<AppTab>(AppTab.today);
 
+/// Set by whoever wants Hoje to open the sheet that enters a spend, which Hoje does once it has a
+/// day to enter it on. The first-run setup ends on it.
+final spendRequested = ValueNotifier<bool>(false);
+
 /// Tells Hoje when the page above the shell closes. Pages only: dialogs and sheets closing over it
 /// don't count.
 final routeObserver = RouteObserver<PageRoute<void>>();
