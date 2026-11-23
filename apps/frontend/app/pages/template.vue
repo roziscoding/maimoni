@@ -1,101 +1,23 @@
 <script setup lang="ts">
-import type { Currency, EntryKind, LiveRates, MonthItem, TemplateDetail, TemplateItem, UpdateTemplateItem } from '@maimoni/shared'
-import type { NewItem } from '~/components/AddItemForm.vue'
-import { summarizeMonth } from '@maimoni/shared'
+import type { EntryKind } from '@maimoni/shared'
 
 useHead({ title: 'Template · maimoni' })
 
-const toast = useToast()
-const { data, error, refresh } = await useFetch<TemplateDetail>('/api/template', { key: 'template' })
-// Quoted against the user's main currency, which a new month would be worked out in.
-const { data: rates } = await useFetch<LiveRates>('/api/rates/live', { key: 'live-rates' })
+const template = useTemplate()
+const { data, error, refresh, currencies, sections, exchange, group, updateItem, addItem, removeItem, moveItem } = template
+await template.ready
 
-const items = computed(() => data.value?.items.toSorted((a, b) => a.position - b.position) ?? [])
-
-const currencies = useCurrencies()
-await currencies.ready
-/** A section per offered currency, and per any other the template still has items in. */
-const sections = computed(() => currencies.shown(items.value.map(item => item.currency)).map(currency => ({
-  currency,
-  title: currencyPlural(currency),
-  offered: currencies.offered.value.includes(currency),
-})))
-/** With a single currency the items need no heading saying which, and the preview has no rate. */
-const exchange = computed(() => sections.value.length > 1)
 const kinds: { kind: EntryKind, title: string }[] = [
   { kind: 'income', title: 'Entradas' },
   { kind: 'expense', title: 'Saídas' },
 ]
-const group = (currency: Currency, kind: EntryKind) => items.value.filter(item => item.currency === currency && item.kind === kind)
 
 // What a month created today from this template would look like, using next month's calendar.
 const preview = computed(() => {
-  const mainCurrency = currencies.main.value
-  if (!data.value || !mainCurrency)
-    return null
   const now = new Date()
   const next = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-  const monthItems: MonthItem[] = items.value.map(item => ({
-    ...item,
-    monthId: '',
-    templateItemId: item.id,
-    paid: false,
-    needsReview: item.variable,
-  }))
-  return summarizeMonth(
-    { year: next.getFullYear(), month: next.getMonth() + 1, mainCurrency, lockedRates: {}, activeDay: null },
-    monthItems,
-    // Rates quoted against another currency (the main one changed since they were loaded) don't apply.
-    { rates: rates.value?.base === mainCurrency ? rates.value.rates : null },
-    now,
-  )
+  return template.summaryFor(next.getFullYear(), next.getMonth() + 1)
 })
-
-function setItems(update: (items: TemplateItem[]) => TemplateItem[]) {
-  if (data.value)
-    data.value = { ...data.value, items: update(data.value.items) }
-}
-
-async function persist<T>(request: () => Promise<T>): Promise<T | undefined> {
-  try {
-    return await request()
-  }
-  catch (err) {
-    toast.add({ title: 'Não foi possível salvar', description: errorMessage(err), color: 'error', icon: 'i-lucide-circle-alert' })
-    await refresh()
-  }
-}
-
-async function updateItem(id: string, patch: UpdateTemplateItem) {
-  setItems(list => list.map(item => item.id === id ? { ...item, ...patch } as TemplateItem : item))
-  const saved = await persist(() => $fetch<TemplateItem>(`/api/template/items/${id}`, { method: 'PATCH', body: patch }))
-  if (saved)
-    setItems(list => list.map(item => item.id === id ? saved : item))
-}
-
-async function addItem(body: NewItem) {
-  const created = await persist(() => $fetch<TemplateItem>('/api/template/items', { method: 'POST', body }))
-  if (created)
-    setItems(list => [...list, created])
-}
-
-async function removeItem(id: string) {
-  setItems(list => list.filter(item => item.id !== id))
-  await persist(() => $fetch(`/api/template/items/${id}`, { method: 'DELETE' }))
-}
-
-/** Swaps an item with its neighbour inside the same currency/kind group, then saves the full order. */
-async function moveItem(item: TemplateItem, offset: -1 | 1) {
-  const siblings = group(item.currency, item.kind)
-  const neighbour = siblings[siblings.indexOf(item) + offset]
-  if (!neighbour)
-    return
-  const ids = items.value.map(entry => entry.id === item.id ? neighbour.id : entry.id === neighbour.id ? item.id : entry.id)
-  setItems(list => list.map(entry => ({ ...entry, position: ids.indexOf(entry.id) })))
-  const saved = await persist(() => $fetch<TemplateItem[]>('/api/template/items/order', { method: 'PUT', body: { ids } }))
-  if (saved)
-    setItems(() => saved)
-}
 </script>
 
 <template>

@@ -1,7 +1,11 @@
+import { inferAdditionalFields } from 'better-auth/client/plugins'
 import { createAuthClient } from 'better-auth/vue'
 
 /** Talks to Better Auth at `/api/auth` on the page's own origin, which the Nuxt server proxies to the backend. */
-export const authClient = createAuthClient()
+export const authClient = createAuthClient({
+  // The fields the backend adds to the user, which the client can't read off the backend's types.
+  plugins: [inferAdditionalFields({ user: { onboarded: { type: 'boolean' } } })],
+})
 
 export type AuthSession = typeof authClient.$Infer.Session
 

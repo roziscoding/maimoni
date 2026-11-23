@@ -68,6 +68,15 @@ export function useAuth() {
     return RESET_ERRORS[error.code ?? ''] ?? error.message ?? 'Não foi possível alterar a senha.'
   }
 
+  /** Records that the first-run setup was finished or skipped, so it isn't shown again. Throws when the backend refuses. */
+  async function finishOnboarding() {
+    const { error } = await authClient.updateUser({ onboarded: true })
+    if (error)
+      throw new Error(error.message ?? 'Não foi possível concluir a configuração.')
+    if (session.value)
+      session.value = { ...session.value, user: { ...session.value.user, onboarded: true } }
+  }
+
   /** Ends the session and drops every cached response, so the next user starts clean. */
   async function signOut() {
     const { error } = await authClient.signOut()
@@ -78,5 +87,5 @@ export function useAuth() {
     await navigateTo('/login')
   }
 
-  return { session, user, load, signIn, signInWith, socialError, resetPassword, signOut }
+  return { session, user, load, signIn, signInWith, socialError, resetPassword, finishOnboarding, signOut }
 }

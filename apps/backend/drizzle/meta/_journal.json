@@ -99,6 +99,13 @@
       "when": 1795350085057,
       "tag": "0013_more_currencies",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1795448316850,
+      "tag": "0014_user_onboarded",
+      "breakpoints": true
     }
   ]
 }
