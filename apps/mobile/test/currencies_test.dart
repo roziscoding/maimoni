@@ -160,10 +160,15 @@ void main() {
       final fresh = store.reload();
       await Future<void>.delayed(Duration.zero);
       expect(answers, hasLength(2));
-      answers.last.complete(json([_currency('EUR', main: true), _currency('JPY')]));
-      await fresh;
+      // The dropped read ending first leaves the new one as the read to share.
       answers.first.complete(json([_currency('EUR', main: true)]));
       await stale;
+      final shared = store.refresh();
+      await Future<void>.delayed(Duration.zero);
+      expect(answers, hasLength(2));
+      answers.last.complete(json([_currency('EUR', main: true), _currency('JPY')]));
+      await fresh;
+      await shared;
       expect(store.offered, [Currency.eur, const Currency('JPY')]);
     });
 
@@ -236,26 +241,21 @@ void main() {
   });
 
   group('rate locks', () {
-    testWidgets('overlapping locks are saved one after another, each keeping the other', (tester) async {
-      Session.instance.setToken('t');
-      var locked = <String, Object?>{};
-      Map<String, Object?> detail() => {
-            'month': {
-              'id': 'm1',
-              'year': 2026,
-              'month': 10,
-              'mainCurrency': 'EUR',
-              'lockedRates': locked,
-              'activeDay': null,
-              'note': null,
-              'createdAt': '2026-10-01T00:00:00.000Z',
-            },
-            'items': [],
-            'spends': [],
-            'summary': {},
-            'rates': null,
-            'rateError': null,
-          };
+    /// Serves one month. A PATCH applies at once and answers with the month as it was then, but only
+    /// when the test completes its entry in the returned list.
+    ({List<Map<String, dynamic>> patches, List<Completer<void>> answers}) serve() {
+      final month = <String, Object?>{
+        'id': 'm1',
+        'year': 2026,
+        'month': 10,
+        'mainCurrency': 'EUR',
+        'lockedRates': <String, Object?>{},
+        'activeDay': null,
+        'note': null,
+        'createdAt': '2026-10-01T00:00:00.000Z',
+      };
+      Map<String, Object?> detail() =>
+          {'month': Map.of(month), 'items': [], 'spends': [], 'summary': {}, 'rates': null, 'rateError': null};
       final patches = <Map<String, dynamic>>[];
       final answers = <Completer<void>>[];
       Api.instance.httpClient = MockClient((request) async {
@@ -265,19 +265,30 @@ void main() {
         if (path == '/api/months/2026/10' && request.method == 'PATCH') {
           final patch = jsonDecode(request.body) as Map<String, dynamic>;
           patches.add(patch);
-          final answer = Completer<void>();
-          answers.add(answer);
-          await answer.future;
-          locked = Map.of(patch['lockedRates'] as Map<String, dynamic>);
-          return json(detail());
+          month.addAll(patch);
+          final answer = detail();
+          final gate = Completer<void>();
+          answers.add(gate);
+          await gate.future;
+          return json(answer);
         }
         return json({'error': 'Not found'}, status: 404);
       });
+      return (patches: patches, answers: answers);
+    }
 
+    Future<MonthController> open(WidgetTester tester) async {
+      Session.instance.setToken('t');
       final controller = MonthController(2026, 10);
       await tester.pump();
       await tester.pump();
       expect(controller.data, isNotNull);
+      return controller;
+    }
+
+    testWidgets('overlapping locks are saved one after another, each keeping the other', (tester) async {
+      final (:patches, :answers) = serve();
+      final controller = await open(tester);
 
       final first = controller.lockRate(Currency.brl, 6);
       final second = controller.lockRate(const Currency('USD'), 1.1);
@@ -297,6 +308,25 @@ void main() {
       expect(await second, isTrue);
       expect(controller.data!.month.lockedRates, {Currency.brl: 6, const Currency('USD'): 1.1});
       // Before the test ends, which fails on the controller's pending rate timer.
+      controller.dispose();
+    });
+
+    testWidgets('a note answered after a lock does not put back the old locked rates', (tester) async {
+      final (:patches, :answers) = serve();
+      final controller = await open(tester);
+
+      final note = controller.updateMonth({'note': 'trip'});
+      await tester.pump();
+      final lock = controller.lockRate(Currency.brl, 6);
+      await tester.pump();
+      expect(patches, hasLength(2));
+      answers.last.complete();
+      expect(await lock, isTrue);
+      // The note's answer was made before the lock, so its locked rates are empty.
+      answers.first.complete();
+      expect(await note, isTrue);
+      expect(controller.data!.month.note, 'trip');
+      expect(controller.data!.month.lockedRates, {Currency.brl: 6});
       controller.dispose();
     });
   });

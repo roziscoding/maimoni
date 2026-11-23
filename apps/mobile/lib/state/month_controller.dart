@@ -129,7 +129,10 @@ class MonthController extends ChangeNotifier {
     }
     final saved = await _persist(() => _api.updateMonth(year, month, patch));
     if (saved != null && data != null) {
-      data!.month = saved.month;
+      // Only the fields this write changed: the rest of the answer may predate a write that saved
+      // after it (a note answered after a rate lock would otherwise put back the old locked rates).
+      final answered = saved.month.toJson();
+      data!.month = data!.month.patch({for (final key in patch.keys) key: answered[key]});
       _changed();
     }
     return saved != null;

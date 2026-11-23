@@ -25,7 +25,16 @@ class CurrenciesStore extends ChangeNotifier {
   int _revision = 0;
   Future<void>? _loading;
 
-  Future<void> refresh() => _loading ??= _fetch().whenComplete(() => _loading = null);
+  Future<void> refresh() {
+    final pending = _loading;
+    if (pending != null) return pending;
+    late final Future<void> request;
+    // A read dropped by a change can finish while a newer one is pending; only its own end clears it.
+    request = _fetch().whenComplete(() {
+      if (identical(_loading, request)) _loading = null;
+    });
+    return _loading = request;
+  }
 
   /// Loads the list again after a change the server didn't answer with the list: a read already in
   /// flight started before the change, so it is dropped and a new one starts.
