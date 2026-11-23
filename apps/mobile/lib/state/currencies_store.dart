@@ -16,17 +16,29 @@ class CurrenciesStore extends ChangeNotifier {
   bool loaded = false;
   Object? error;
 
-  /// Goes up on every [reset], so a refresh can tell that the session it asked for is over.
+  /// Goes up on every [reset]. A caller compares it before and after a request to tell whether the
+  /// session it started in is over.
+  int get generation => _generation;
   int _generation = 0;
+
+  /// Goes up on every [reset] and every change, so a read that started before either is dropped.
+  int _revision = 0;
   Future<void>? _loading;
 
   Future<void> refresh() => _loading ??= _fetch().whenComplete(() => _loading = null);
+
+  /// Loads the list again after a change the server didn't answer with the list: a read already in
+  /// flight started before the change, so it is dropped and a new one starts.
+  Future<void> reload() {
+    _invalidate();
+    return refresh();
+  }
 
   /// Loads the list unless it already is: a screen awaits it so it doesn't first render for every currency.
   Future<void> ensureLoaded() => loaded ? Future.value() : refresh();
 
   Future<void> _fetch() async {
-    final generation = _generation;
+    final revision = _revision;
     List<UserCurrency>? result;
     Object? failure;
     try {
@@ -34,16 +46,22 @@ class CurrenciesStore extends ChangeNotifier {
     } catch (err) {
       failure = err;
     }
-    // The session ended while the request was in flight: the answer belongs to someone else.
-    if (generation != _generation) return;
+    // The session ended, or the list changed, while the request was in flight: its answer is out of date.
+    if (revision != _revision) return;
     if (result != null) list = result;
     error = failure;
     loaded = true;
     notifyListeners();
   }
 
+  void _invalidate() {
+    _revision++;
+    _loading = null;
+  }
+
   /// Takes the list a change answered with.
   void replace(List<UserCurrency> currencies) {
+    _invalidate();
     list = currencies;
     error = null;
     loaded = true;
@@ -53,7 +71,7 @@ class CurrenciesStore extends ChangeNotifier {
   /// Drops everything, so the next person to sign in doesn't see the previous one's currencies.
   void reset() {
     _generation++;
-    _loading = null;
+    _invalidate();
     list = null;
     loaded = false;
     error = null;

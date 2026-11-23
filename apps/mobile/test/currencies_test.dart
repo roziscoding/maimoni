@@ -138,6 +138,35 @@ void main() {
       expect(store.offered, Currency.all);
     });
 
+    test('a read that started before a change does not overwrite it', () async {
+      final answer = Completer<http.Response>();
+      Api.instance.httpClient = MockClient((request) => answer.future);
+      final store = CurrenciesStore.instance;
+      final stale = store.refresh();
+      store.replace([UserCurrency.fromJson(_currency('BRL', main: true))]);
+      answer.complete(json([_currency('EUR', main: true)]));
+      await stale;
+      expect(store.main, Currency.brl);
+    });
+
+    test('a reload after a change does not reuse a read from before it', () async {
+      final answers = <Completer<http.Response>>[];
+      Api.instance.httpClient = MockClient((request) {
+        answers.add(Completer());
+        return answers.last.future;
+      });
+      final store = CurrenciesStore.instance;
+      final stale = store.refresh();
+      final fresh = store.reload();
+      await Future<void>.delayed(Duration.zero);
+      expect(answers, hasLength(2));
+      answers.last.complete(json([_currency('EUR', main: true), _currency('JPY')]));
+      await fresh;
+      answers.first.complete(json([_currency('EUR', main: true)]));
+      await stale;
+      expect(store.offered, [Currency.eur, const Currency('JPY')]);
+    });
+
     test('a user without currencies has nothing to offer', () async {
       Api.instance.httpClient = MockClient((request) async => json([]));
       final store = CurrenciesStore.instance;

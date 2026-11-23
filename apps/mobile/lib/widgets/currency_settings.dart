@@ -43,15 +43,19 @@ class _CurrencySettingsState extends State<CurrencySettings> {
   Future<bool> _change(Currency currency, String failure, Future<List<UserCurrency>?> Function() request) async {
     if (_busy.value != null) return false;
     _busy.value = currency;
+    final generation = _store.generation;
     try {
       final result = await request();
+      // The session ended while the change was in flight: its answer belongs to the previous one.
+      if (generation != _store.generation) return false;
       if (result != null) {
         _store.replace(result);
       } else {
-        await _store.refresh();
+        await _store.reload();
       }
       return true;
     } catch (err) {
+      if (generation != _store.generation) return false;
       toast(failure, description: errorMessage(err), tone: ToastTone.error);
       // What the server refused may mean the list on screen is out of date.
       await _store.refresh();
