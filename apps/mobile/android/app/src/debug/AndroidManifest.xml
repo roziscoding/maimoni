@@ -4,4 +4,6 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Local development uses the host's HTTP backend through the emulator's 10.0.2.2 bridge. -->
+    <application android:usesCleartextTraffic="true"/>
 </manifest>

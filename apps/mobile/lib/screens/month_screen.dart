@@ -6,12 +6,12 @@ import '../api/models.dart';
 import '../domain/summary.dart';
 import '../format.dart';
 import '../routes.dart';
+import '../state/currencies_store.dart';
 import '../state/month_controller.dart';
 import '../state/toast.dart';
 import '../theme.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/common.dart';
-import '../widgets/conversions.dart';
 import '../widgets/items.dart';
 import '../widgets/month_create.dart';
 import '../widgets/month_overview.dart';
@@ -77,7 +77,7 @@ class _MonthScreenState extends State<MonthScreen> {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: _controller,
+      listenable: Listenable.merge([_controller, CurrenciesStore.instance]),
       builder: (context, _) {
         final palette = context.palette;
         final data = _controller.data;
@@ -138,36 +138,45 @@ class _MonthScreenState extends State<MonthScreen> {
     }
 
     final items = [...data.items]..sort((a, b) => a.position.compareTo(b.position));
+    final currencies = CurrenciesStore.instance;
+    // A section per currency the month shows: the offered ones, and any other it already has items or spends in.
+    final sections = currencies.shownInMonth(data);
+    // With a single currency there is nothing to convert, and so no rate.
+    final exchange = sections.length > 1;
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 48),
       children: [
-        AllowanceHero(year: widget.year, month: widget.month, summary: summary),
+        AllowanceHero(year: widget.year, month: widget.month, summary: summary, exchange: exchange),
         const SizedBox(height: 32),
-        FlowStrip(summary: summary),
-        const SizedBox(height: 24),
-        ConversionSection(controller: _controller, conversions: data.conversions),
-        for (final currency in Currency.values) ...[
+        FlowStrip(summary: summary, currencies: sections),
+        if (currencies.none) ...[const SizedBox(height: 24), const NoCurrenciesCallout()],
+        for (final currency in sections) ...[
           const SizedBox(height: 24),
           ItemSection(
             currency: currency,
             items: items.where((item) => item.currency == currency).toList(),
-            totals: currency == Currency.brl ? summary.brl : summary.eur,
+            // A currency the month only offers, with no item in it yet, has nothing to total.
+            totals: summary.totals[currency] ?? CurrencyTotals.empty,
+            offered: currencies.offered.contains(currency),
+            alone: !exchange,
             onUpdate: _controller.updateItem,
             onRemove: _controller.removeItem,
             onPromote: _controller.promoteItem,
             onAdd: (body) => _controller.addItem(body),
           ),
         ],
-        const SizedBox(height: 24),
-        RatePanel(
-          month: data.month,
-          rate: data.rate,
-          error: data.rateError,
-          summary: summary,
-          refreshing: _controller.refreshingRate,
-          onUpdate: _controller.updateMonth,
-          onRetry: _controller.refreshRate,
-        ),
+        if (exchange) ...[
+          const SizedBox(height: 24),
+          RatePanel(
+            rates: data.rates,
+            error: data.rateError,
+            summary: summary,
+            refreshing: _controller.refreshingRate,
+            onLock: _controller.lockRate,
+            onUnlock: _controller.unlockRate,
+            onRetry: _controller.refreshRate,
+          ),
+        ],
         const SizedBox(height: 24),
         Text('Anotações', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: palette.muted)),
         const SizedBox(height: 6),

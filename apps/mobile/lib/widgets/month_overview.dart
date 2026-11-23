@@ -10,11 +10,14 @@ import 'common.dart';
 /// Port of `AllowanceHero.vue`: the daily budget (or the final result of a past month) and one
 /// tick per day of the month.
 class AllowanceHero extends StatelessWidget {
-  const AllowanceHero({super.key, required this.year, required this.month, required this.summary});
+  const AllowanceHero({super.key, required this.year, required this.month, required this.summary, required this.exchange});
 
   final int year;
   final int month;
   final MonthSummary summary;
+
+  /// Whether the month has more than one currency, and so equivalents in the others to show.
+  final bool exchange;
 
   @override
   Widget build(BuildContext context) {
@@ -24,18 +27,27 @@ class AllowanceHero extends StatelessWidget {
     final total = daysInMonth(year, month);
     final todayNumber = phase == MonthPhase.current ? today.day : null;
     final allowance = summary.allowance;
-    final net = summary.transfer.eur == null ? null : summary.eur.net;
+    final amount = allowance.amount;
     // Past months show what was left over; open months show the daily budget.
-    final headline = phase == MonthPhase.past ? net : allowance.eur;
+    final headline = phase == MonthPhase.past ? summary.net : amount;
 
     final List<Widget> details;
     if (phase == MonthPhase.past) {
-      details = [Text('Líquido final em euros', style: TextStyle(fontSize: 14, color: palette.muted))];
-    } else if (allowance.eur == null) {
-      details = [Text('Sem cotação do euro, não dá para calcular o valor por dia.', style: TextStyle(fontSize: 14, color: palette.muted))];
+      details = [
+        Text(
+          exchange ? 'Líquido final em ${currencyPlural(summary.main).toLowerCase()}' : 'Líquido final',
+          style: TextStyle(fontSize: 14, color: palette.muted),
+        ),
+      ];
+    } else if (amount == null) {
+      details = [Text('Sem cotação, não dá para calcular o valor por dia.', style: TextStyle(fontSize: 14, color: palette.muted))];
     } else {
       details = [
-        Text('≈ ${formatMoney(allowance.brl, Currency.brl)} por dia', style: money(fontSize: 16, color: palette.text)),
+        // The daily budget in each other currency of the month that has a rate.
+        if (exchange)
+          for (final conversion in summary.conversions)
+            if (conversion.rate != null)
+              Text('≈ ${formatMoney(amount * conversion.rate!, conversion.currency)} por dia', style: money(fontSize: 16, color: palette.text)),
         Text(
           phase == MonthPhase.current
               ? (allowance.days == 1 ? 'Último dia do mês' : '${allowance.days} dias restantes, contando hoje')
@@ -57,7 +69,7 @@ class AllowanceHero extends StatelessWidget {
           fit: BoxFit.scaleDown,
           alignment: Alignment.centerLeft,
           child: Text(
-            formatMoney(headline, Currency.eur),
+            formatMoney(headline, summary.main),
             style: money(fontSize: 48, fontWeight: FontWeight.w600, height: 1.1, color: (headline ?? 0) < 0 ? palette.error : palette.highlighted),
           ),
         ),
@@ -128,36 +140,22 @@ class _Cell {
   final String? tone;
 }
 
-/// Port of `FlowStrip.vue`, stacked like a receipt: reais, the conversion, then euros.
+/// The month as a receipt: one block per other currency, each ending in what is left in it and
+/// how that becomes main currency, then the main currency's block, which takes those in.
 class FlowStrip extends StatelessWidget {
-  const FlowStrip({super.key, required this.summary});
+  const FlowStrip({super.key, required this.summary, required this.currencies});
 
   final MonthSummary summary;
+
+  /// The currencies to show a block for. The month's main one is always shown, last.
+  final List<Currency> currencies;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final transfer = summary.transfer;
-    final lanes = [
-      (
-        currency: Currency.brl,
-        cells: [
-          _Cell('', 'Entrada', summary.brl.income),
-          _Cell('−', 'Despesas', summary.brl.expenses),
-          _Cell('−', 'Conversão', transfer.realized.convertedBrl),
-          _Cell('−', 'Taxa', transfer.realized.feeBrl),
-          _Cell('=', 'Em reais', transfer.remainingBrl, tone: 'result'),
-        ],
-      ),
-      (
-        currency: Currency.eur,
-        cells: [
-          _Cell('', 'Entrada', transfer.eur == null ? null : summary.eur.income),
-          _Cell('−', 'Saída', summary.eur.expenses),
-          _Cell('=', 'Líquido', transfer.eur == null ? null : summary.eur.net, tone: 'final'),
-        ],
-      ),
-    ];
+    final main = summary.main;
+    final others = currencies.where((currency) => currency != main).toList();
+    final own = summary.totals[main] ?? CurrencyTotals.empty;
 
     Color valueColor(_Cell cell) {
       final value = cell.value;
@@ -194,122 +192,169 @@ class FlowStrip extends StatelessWidget {
 
     final secondary = money(fontSize: 13, color: palette.toned);
     final strong = money(fontSize: 13, fontWeight: FontWeight.w500, color: palette.highlighted);
-    final label = TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: palette.highlighted);
+
+    /// What is left in [currency], on its way to the main one.
+    Widget conversion(CurrencyConversion entry) {
+      final currency = entry.currency;
+      final Widget content;
+      if (entry.net == 0) {
+        content = Row(children: [
+          Icon(LucideIcons.arrowDown, size: 16, color: palette.muted),
+          const SizedBox(width: 8),
+          Text('Nada a converter', style: TextStyle(fontSize: 13, color: palette.muted)),
+        ]);
+      } else {
+        content = Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(padding: const EdgeInsets.only(top: 1, right: 8), child: Icon(LucideIcons.arrowDown, size: 16, color: palette.muted)),
+            Expanded(
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 2,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text(formatMoney(entry.net, currency), style: secondary),
+                  Row(mainAxisSize: MainAxisSize.min, children: [
+                    Text('÷ ${formatRate(entry.rate, currency)}', style: secondary),
+                    if (entry.rateLocked)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 3),
+                        child: Icon(LucideIcons.lock, size: 12, color: palette.muted, semanticLabel: 'cotação travada'),
+                      ),
+                  ]),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text('= ${formatMoney(entry.converted, main)}', style: strong),
+          ],
+        );
+      }
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: palette.bgMuted,
+          border: Border.symmetric(horizontal: BorderSide(color: palette.borderAccented)),
+        ),
+        child: content,
+      );
+    }
 
     return Panel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          lane(lanes[0].currency, lanes[0].cells),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            decoration: BoxDecoration(
-              color: palette.bgMuted,
-              border: Border.symmetric(horizontal: BorderSide(color: palette.borderAccented)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (transfer.realized.sentBrl > 0)
-                  _TransferRow(
-                    icon: Icon(LucideIcons.circleCheck, size: 16, color: palette.success),
-                    parts: [
-                      Text('Realizado', style: label),
-                      Text(formatMoney(transfer.realized.sentBrl, Currency.brl), style: secondary),
-                      Text('incluindo ${formatMoney(transfer.realized.feeBrl, Currency.brl)} de taxa', style: TextStyle(fontSize: 13, color: palette.muted)),
-                    ],
-                    result: Text('= ${formatMoney(transfer.realized.receivedEur, Currency.eur)}', style: strong),
-                  ),
-                if (transfer.realized.sentBrl > 0 && transfer.projected.sentBrl > 0) const SizedBox(height: 6),
-                if (transfer.projected.sentBrl > 0)
-                  _TransferRow(
-                    icon: Icon(LucideIcons.sparkles, size: 16, color: palette.muted),
-                    parts: [
-                      Text('Projetado', style: label),
-                      Text(formatMoney(transfer.projected.sentBrl, Currency.brl), style: secondary),
-                      Row(mainAxisSize: MainAxisSize.min, children: [
-                        Text('÷ ${formatRate(transfer.rate)}', style: secondary),
-                        if (transfer.rateLocked)
-                          Padding(padding: const EdgeInsets.only(left: 3), child: Icon(LucideIcons.lock, size: 12, color: palette.muted)),
-                      ]),
-                    ],
-                    result: Text('= ${formatMoney(transfer.projected.eur, Currency.eur)}', style: strong),
-                  ),
-                if (transfer.realized.sentBrl == 0 && transfer.projected.sentBrl == 0)
-                  Row(children: [
-                    Icon(LucideIcons.arrowDown, size: 16, color: palette.muted),
-                    const SizedBox(width: 8),
-                    Text('Nada a converter', style: TextStyle(fontSize: 13, color: palette.muted)),
-                  ]),
-              ],
-            ),
-          ),
-          lane(lanes[1].currency, lanes[1].cells),
+          for (final currency in others) ...[
+            lane(currency, [
+              _Cell('', 'Entrada', (summary.totals[currency] ?? CurrencyTotals.empty).income),
+              _Cell('−', 'Saída', (summary.totals[currency] ?? CurrencyTotals.empty).expenses),
+              _Cell('=', 'Em ${currencyPlural(currency).toLowerCase()}', (summary.totals[currency] ?? CurrencyTotals.empty).net, tone: 'result'),
+            ]),
+            if (summary.conversions.where((entry) => entry.currency == currency).firstOrNull case final entry?) conversion(entry),
+          ],
+          lane(main, [
+            _Cell('', 'Entrada', own.income),
+            // Only where there is another currency to convert from.
+            if (others.isNotEmpty) _Cell('+', 'Convertido', summary.converted),
+            _Cell('−', 'Saída', own.expenses),
+            _Cell('=', 'Líquido', summary.net, tone: 'final'),
+          ]),
         ],
       ),
     );
   }
 }
 
-class _TransferRow extends StatelessWidget {
-  const _TransferRow({required this.icon, required this.parts, required this.result});
-
-  final Widget icon;
-  final List<Widget> parts;
-  final Widget result;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(padding: const EdgeInsets.only(top: 1, right: 8), child: icon),
-        Expanded(child: Wrap(spacing: 8, runSpacing: 2, children: parts)),
-        const SizedBox(width: 8),
-        result,
-      ],
-    );
-  }
-}
-
-/// Port of `RatePanel.vue`: the euro rate (live or locked) and the fee used by the projection.
+/// The rate of each currency the month converts from: one row per currency, with a button that
+/// freezes it at the live value or sends it back to live.
 class RatePanel extends StatelessWidget {
   const RatePanel({
     super.key,
-    required this.month,
-    required this.rate,
+    required this.rates,
     required this.error,
     required this.summary,
     required this.refreshing,
-    required this.onUpdate,
+    required this.onLock,
+    required this.onUnlock,
     required this.onRetry,
   });
 
-  final Month month;
-  final LiveRate? rate;
+  /// Live rates quoted against the month's main currency.
+  final LiveRates? rates;
   final String? error;
   final MonthSummary summary;
   final bool refreshing;
-  final ValueChanged<Json> onUpdate;
+  final void Function(Currency currency, double rate) onLock;
+  final ValueChanged<Currency> onUnlock;
   final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final locked = month.exchangeRate != null;
-    final transfer = summary.transfer;
-    final live = rate;
+    final live = rates;
     final small = TextStyle(fontSize: 12, color: palette.muted);
 
-    final Widget badge;
-    if (locked) {
-      badge = const Pill(label: 'travado', icon: LucideIcons.lock);
-    } else if (live?.stale ?? false) {
-      badge = const Pill(label: 'desatualizado', icon: LucideIcons.clockAlert, tone: Tone.warning);
-    } else if (live != null) {
-      badge = const Pill(label: 'ao vivo', icon: LucideIcons.radio, outline: true);
-    } else {
-      badge = const SizedBox();
+    Widget row(CurrencyConversion conversion) {
+      final liveRate = live?.rates[conversion.currency];
+      final name = currencyName(conversion.currency);
+
+      final Widget status;
+      if (conversion.rateLocked) {
+        status = Text(liveRate == null ? 'Travada' : 'Travada · ao vivo ${formatRate(liveRate, conversion.currency)}', style: small);
+      } else if (conversion.rate == null) {
+        status = Text('Sem cotação agora', style: small.copyWith(color: palette.warning));
+      } else if (live?.stale ?? false) {
+        status = Text('Desatualizada', style: small.copyWith(color: palette.warning));
+      } else {
+        status = Text('Ao vivo', style: small);
+      }
+
+      final Widget action;
+      if (conversion.rateLocked) {
+        action = IconButton.filledTonal(
+          tooltip: 'Usar cotação ao vivo de $name',
+          icon: const Icon(LucideIcons.lock, size: 18),
+          onPressed: () => onUnlock(conversion.currency),
+        );
+      } else if (liveRate != null) {
+        action = IconButton(
+          tooltip: 'Travar $name em ${formatRate(liveRate, conversion.currency)}',
+          icon: Icon(LucideIcons.lockOpen, size: 18, color: palette.muted),
+          onPressed: () => onLock(conversion.currency, liveRate),
+        );
+      } else {
+        action = IconButton(
+          tooltip: 'Tentar novamente',
+          icon: refreshing
+              ? const SizedBox.square(dimension: 16, child: CircularProgressIndicator(strokeWidth: 2))
+              : Icon(LucideIcons.refreshCw, size: 18, color: palette.muted),
+          onPressed: refreshing ? null : onRetry,
+        );
+      }
+
+      return Container(
+        padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+        decoration: BoxDecoration(border: Border(top: BorderSide(color: palette.border))),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(name, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: palette.highlighted)),
+                  const SizedBox(height: 2),
+                  status,
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(formatRate(conversion.rate, conversion.currency), style: money(fontSize: 18, fontWeight: FontWeight.w600, color: palette.highlighted)),
+            const SizedBox(width: 4),
+            action,
+          ],
+        ),
+      );
     }
 
     return Panel(
@@ -317,62 +362,30 @@ class RatePanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(children: [
-                  Expanded(child: Text('Preço do euro', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: palette.muted))),
-                  badge,
-                ]),
-                const SizedBox(height: 12),
-                Text(formatRate(transfer.rate), style: money(fontSize: 30, fontWeight: FontWeight.w600, color: palette.highlighted)),
-                const SizedBox(height: 12),
-                if (live != null)
-                  Text.rich(
-                    TextSpan(children: [
-                      if (locked) ...[
-                        const TextSpan(text: 'Ao vivo agora: '),
-                        TextSpan(text: formatRate(live.rate), style: money(fontSize: 12, color: palette.toned)),
-                        const TextSpan(text: '. '),
-                      ],
-                      TextSpan(text: 'Fonte: ${live.source.label}, ${formatDateTime(live.fetchedAt)}.'),
-                    ]),
-                    style: small,
-                  )
-                else
-                  Text('Nenhuma cotação disponível agora. Trave um valor para calcular o mês.', style: small.copyWith(color: palette.warning)),
-                if (error != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text('${live != null ? 'Falha ao atualizar' : 'Motivo'}: $error', style: small.copyWith(color: palette.error)),
-                  ),
-                const SizedBox(height: 12),
-                if (locked)
-                  ActionButton(
-                    label: 'Usar cotação ao vivo',
-                    icon: LucideIcons.lockOpen,
-                    style: ActionStyle.subtle,
-                    onPressed: () => onUpdate({'exchangeRate': null}),
-                  )
-                else if (live != null)
-                  ActionButton(
-                    label: 'Travar em ${formatRate(live.rate)}',
-                    icon: LucideIcons.lock,
-                    style: ActionStyle.subtle,
-                    onPressed: () => onUpdate({'exchangeRate': live.rate}),
-                  )
-                else
-                  ActionButton(
-                    label: 'Tentar novamente',
-                    icon: LucideIcons.refreshCw,
-                    style: ActionStyle.subtle,
-                    loading: refreshing,
-                    onPressed: onRetry,
-                  ),
+                Text('Cotações', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: palette.muted)),
+                const SizedBox(height: 2),
+                Text('Quanto vale ${formatMoney(1, summary.main)} em cada moeda do mês.', style: small),
               ],
             ),
           ),
+          ...summary.conversions.map(row),
+          if (live != null || error != null)
+            Container(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+              decoration: BoxDecoration(border: Border(top: BorderSide(color: palette.border))),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (live != null) Text('Fonte: ${live.source.label}, ${formatDateTime(live.fetchedAt)}.', style: small),
+                  if (error != null)
+                    Text('${live != null ? 'Falha ao atualizar' : 'Motivo'}: $error', style: small.copyWith(color: palette.error)),
+                ],
+              ),
+            ),
         ],
       ),
     );

@@ -2,7 +2,7 @@
 double round2(double value) => (value * 100 + 0.5).floorToDouble() / 100;
 
 final _prefix = RegExp(r'^=');
-final _ignored = RegExp(r'R\$|€|\s+');
+final _ignored = RegExp(r'R\$|\p{Sc}|\s+', unicode: true);
 final _numberToken = RegExp(r'^(?:\d+(?:[.,]\d+)*|[.,]\d+)');
 final _thousands = RegExp(r'^\d{1,3}(?:\.\d{3})+$');
 

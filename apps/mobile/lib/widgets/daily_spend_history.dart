@@ -134,7 +134,7 @@ class _DailySpendHistoryState extends State<DailySpendHistory> {
     // results would double count: what's left on one day rolls into the next days' budgets.
     final balance = days.isEmpty
         ? 0.0
-        : closed.length * summary.eur.net / days.length - closed.fold<double>(0, (sum, day) => sum + day.spent);
+        : closed.length * (summary.net ?? 0) / days.length - closed.fold<double>(0, (sum, day) => sum + day.spent);
 
     final heading = Wrap(
       alignment: WrapAlignment.spaceBetween,
@@ -159,7 +159,7 @@ class _DailySpendHistoryState extends State<DailySpendHistory> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                signedMoney(balance),
+                signedMoney(balance, summary.main),
                 style: money(fontSize: 24, fontWeight: FontWeight.w600, color: balance >= 0 ? palette.success : palette.error),
               ),
               Text('${balance >= 0 ? 'sobrou' : 'passou'} nos dias fechados', style: TextStyle(fontSize: 14, color: palette.muted)),
@@ -224,13 +224,13 @@ class _DailySpendHistoryState extends State<DailySpendHistory> {
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    _Stat(label: 'Valor do dia', value: formatMoney(selectedDay.budget, Currency.eur)),
+                    _Stat(label: 'Valor do dia', value: formatMoney(selectedDay.budget, summary.main)),
                     const SizedBox(width: 20),
-                    _Stat(label: 'Gasto', value: formatMoney(selectedDay.spent, Currency.eur)),
+                    _Stat(label: 'Gasto', value: formatMoney(selectedDay.spent, summary.main)),
                     const SizedBox(width: 20),
                     _Stat(
                       label: selectedDay.state == DayState.open ? 'Restam' : 'Resultado',
-                      value: selectedDay.state == DayState.open ? formatMoney(selectedDay.result, Currency.eur) : signedMoney(selectedDay.result!),
+                      value: selectedDay.state == DayState.open ? formatMoney(selectedDay.result, summary.main) : signedMoney(selectedDay.result!, summary.main),
                       color: selectedDay.result! >= 0 ? palette.success : palette.error,
                     ),
                   ],
@@ -244,13 +244,13 @@ class _DailySpendHistoryState extends State<DailySpendHistory> {
               if (selectedSpends.isNotEmpty)
                 SpendList(
                   spends: selectedSpends,
-                  inEur: (spend) => spendInEurFor(spend, summary.transfer),
+                  summary: summary,
                   onUpdate: controller.updateSpend,
                   onRemove: controller.removeSpend,
                 )
               else if (selectedDay.state == DayState.upcoming)
                 Text(
-                  'Ainda não chegou.${selectedDay.budget == null ? '' : ' Se o dia aberto fechasse agora, este dia teria ${formatMoney(selectedDay.budget, Currency.eur)}.'}',
+                  'Ainda não chegou.${selectedDay.budget == null ? '' : ' Se o dia aberto fechasse agora, este dia teria ${formatMoney(selectedDay.budget, summary.main)}.'}',
                   style: TextStyle(fontSize: 14, color: palette.muted),
                 )
               else
@@ -302,7 +302,7 @@ class _DailySpendHistoryState extends State<DailySpendHistory> {
                 const SizedBox(height: 4),
                 SpendList(
                   spends: group.spends,
-                  inEur: (spend) => spendInEurFor(spend, summary.transfer),
+                  summary: summary,
                   onUpdate: controller.updateSpend,
                   onRemove: controller.removeSpend,
                 ),

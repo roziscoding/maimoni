@@ -1,5 +1,6 @@
 /// Base URL of the maimoni server. Every API call is built from it (`$serverUrl/api/...`).
-const serverUrl = 'https://maimoni.roz.ninja';
+/// Override it in local builds with `--dart-define=SERVER_URL=http://10.0.2.2:3001`.
+const serverUrl = String.fromEnvironment('SERVER_URL', defaultValue: 'https://maimoni.roz.ninja');
 
 /// Google OAuth client IDs. The web one is the audience of the ID tokens the server accepts; the
 /// iOS one identifies the app to Google's iOS SDK (its reversed form is a URL scheme in Info.plist).

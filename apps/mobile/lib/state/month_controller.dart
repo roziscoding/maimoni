@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import '../api/client.dart';
 import '../api/models.dart';
 import '../domain/summary.dart';
+import 'currencies_store.dart';
 import 'months_store.dart';
 import 'toast.dart';
 
@@ -38,7 +39,11 @@ class MonthController extends ChangeNotifier {
 
   Future<void> load() async {
     try {
-      data = await _api.month(year, month);
+      // The screens lay themselves out by the user's currencies, so the first frame waits for them too.
+      final currencies = CurrenciesStore.instance.ensureLoaded();
+      final detail = await _api.month(year, month);
+      await currencies;
+      data = detail;
       error = null;
     } on ApiException catch (err) {
       data = null;
@@ -54,13 +59,7 @@ class MonthController extends ChangeNotifier {
     final current = data;
     _summary = current == null
         ? null
-        : summarizeMonth(
-            current.month,
-            current.items,
-            rate: current.rate?.rate,
-            spends: current.spends,
-            conversions: current.conversions,
-          );
+        : summarizeMonth(current.month, current.items, rates: current.rates?.rates, spends: current.spends);
     if (current != null && _summary != null) MonthsStore.instance.updateSummary(current.month, _summary!);
     notifyListeners();
   }
@@ -84,12 +83,6 @@ class MonthController extends ChangeNotifier {
   void _setSpends(List<DailySpend> Function(List<DailySpend>) update) {
     if (data == null) return;
     data!.spends = update(data!.spends);
-    _changed();
-  }
-
-  void _setConversions(List<Conversion> Function(List<Conversion>) update) {
-    if (data == null) return;
-    data!.conversions = update(data!.conversions);
     _changed();
   }
 
@@ -179,42 +172,30 @@ class MonthController extends ChangeNotifier {
     await _persist(() => _api.deleteSpend(year, month, id));
   }
 
-  /* ------------------------------- Conversions ----------------------------- */
+  /// Freezes [currency]'s rate at [rate], leaving the other locked rates as they are. The server
+  /// replaces the whole map, so the others are sent again.
+  Future<bool> lockRate(Currency currency, double rate) =>
+      updateMonth({'lockedRates': ratesToJson({...?data?.month.lockedRates, currency: rate})});
 
-  Future<Conversion?> addConversion(Json body) async {
-    final created = await _persist(() => _api.addConversion(year, month, body));
-    if (created != null) _setConversions((conversions) => [...conversions, created]);
-    return created;
-  }
-
-  Future<Conversion?> updateConversion(String id, Json patch) async {
-    _setConversions((conversions) => [
-          for (final conversion in conversions) conversion.id == id ? conversion.patch(patch) : conversion,
-        ]);
-    final saved = await _persist(() => _api.updateConversion(year, month, id, patch));
-    if (saved != null) {
-      _setConversions((conversions) => [for (final conversion in conversions) conversion.id == id ? saved : conversion]);
-    }
-    return saved;
-  }
-
-  Future<void> removeConversion(String id) async {
-    _setConversions((conversions) => conversions.where((conversion) => conversion.id != id).toList());
-    await _persist(() => _api.deleteConversion(year, month, id));
-  }
+  /// Sends [currency] back to the live rate.
+  Future<bool> unlockRate(Currency currency) =>
+      updateMonth({'lockedRates': ratesToJson({...?data?.month.lockedRates}..remove(currency))});
 
   /* ---------------------------------- Rate --------------------------------- */
 
-  Future<LiveRate?> refreshRate({bool refreshMonths = true}) async {
+  Future<LiveRates?> refreshRate({bool refreshMonths = true}) async {
+    // Nothing to ask before the month is loaded: the rates are quoted against its main currency.
+    final base = data?.month.mainCurrency;
+    if (base == null) return null;
     refreshingRate = true;
     _changed();
     try {
-      final rate = await _api.liveRate();
+      final rates = await _api.liveRates(base: base);
       data
-        ?..rate = rate
+        ?..rates = rates
         ..rateError = null;
       if (refreshMonths) await MonthsStore.instance.refresh();
-      return rate;
+      return rates;
     } catch (err) {
       data?.rateError = errorMessage(err);
       return null;

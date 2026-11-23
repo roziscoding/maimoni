@@ -5,6 +5,7 @@ import '../api/client.dart';
 import '../api/models.dart';
 import '../domain/summary.dart';
 import '../format.dart';
+import '../state/currencies_store.dart';
 import '../state/toast.dart';
 import '../theme.dart';
 import '../widgets/app_drawer.dart';
@@ -24,7 +25,9 @@ class TemplateScreen extends StatefulWidget {
 class _TemplateScreenState extends State<TemplateScreen> {
   final _api = Api.instance;
   TemplateDetail? _data;
-  LiveRate? _rate;
+
+  /// Quoted against the user's main currency, which a new month would be worked out in.
+  LiveRates? _rates;
   ApiException? _error;
   bool _loading = true;
 
@@ -36,9 +39,12 @@ class _TemplateScreenState extends State<TemplateScreen> {
 
   Future<void> _load() async {
     try {
-      final results = await Future.wait([_api.template(), _api.liveRate().then<LiveRate?>((rate) => rate).catchError((_) => null)]);
-      _data = results[0] as TemplateDetail;
-      _rate = results[1] as LiveRate?;
+      // The preview does without rates, and the sections without the list, when either can't be loaded.
+      final rates = _api.liveRates().then<LiveRates?>((rates) => rates).catchError((_) => null);
+      final currencies = CurrenciesStore.instance.ensureLoaded();
+      _data = await _api.template();
+      _rates = await rates;
+      await currencies;
       _error = null;
     } on ApiException catch (err) {
       _error = err;
@@ -55,7 +61,8 @@ class _TemplateScreenState extends State<TemplateScreen> {
   /// What a month created today from this template would look like, using next month's calendar.
   MonthSummary? get _preview {
     final data = _data;
-    if (data == null) return null;
+    final mainCurrency = CurrenciesStore.instance.main;
+    if (data == null || mainCurrency == null) return null;
     final now = DateTime.now();
     final next = DateTime(now.year, now.month + 1);
     final monthItems = [
@@ -78,12 +85,14 @@ class _TemplateScreenState extends State<TemplateScreen> {
       id: '',
       year: next.year,
       month: next.month,
-      exchangeRate: null,
+      mainCurrency: mainCurrency,
+      lockedRates: const {},
       activeDay: null,
       note: null,
       createdAt: '',
     );
-    return summarizeMonth(month, monthItems, rate: _rate?.rate, today: now);
+    // Rates quoted against another currency (the main one changed since they were loaded) don't apply.
+    return summarizeMonth(month, monthItems, rates: _rates?.base == mainCurrency ? _rates!.rates : null, today: now);
   }
 
   void _setItems(List<TemplateItem> Function(List<TemplateItem>) update) {
@@ -136,7 +145,10 @@ class _TemplateScreenState extends State<TemplateScreen> {
     return Scaffold(
       drawer: const AppDrawer(),
       appBar: AppBar(title: const Text('Template')),
-      body: RefreshIndicator(onRefresh: _load, child: _body(context)),
+      body: RefreshIndicator(
+        onRefresh: () => Future.wait([_load(), CurrenciesStore.instance.refresh()]),
+        child: ListenableBuilder(listenable: CurrenciesStore.instance, builder: (context, _) => _body(context)),
+      ),
     );
   }
 
@@ -155,8 +167,13 @@ class _TemplateScreenState extends State<TemplateScreen> {
       ]);
     }
     final preview = _preview;
+    final currencies = CurrenciesStore.instance;
+    // A section per offered currency, and per any other the template still has items in.
+    final sections = currencies.shown(_items.map((item) => item.currency));
+    // With a single currency the items need no heading saying which, and the preview has no rate.
+    final exchange = sections.length > 1;
     final groups = {
-      for (final currency in Currency.values)
+      for (final currency in sections)
         for (final kind in EntryKind.values) (currency, kind): _group(currency, kind),
     };
     final muted = TextStyle(fontSize: 14, color: palette.muted, height: 1.45);
@@ -176,13 +193,14 @@ class _TemplateScreenState extends State<TemplateScreen> {
           ]),
           style: muted,
         ),
-        for (final currency in Currency.values) ...[
+        if (currencies.none) ...[const SizedBox(height: 24), const NoCurrenciesCallout()],
+        for (final currency in sections) ...[
           const SizedBox(height: 24),
           Panel(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                PanelHeader(title: currency == Currency.brl ? 'Reais' : 'Euros', tag: currency.code),
+                if (exchange) PanelHeader(title: currencyPlural(currency), tag: currency.code),
                 Padding(
                   padding: const EdgeInsets.all(8),
                   child: Column(
@@ -208,7 +226,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
                             ),
                         const SizedBox(height: 8),
                       ],
-                      AddItemForm(currency: currency, onAdd: _add),
+                      if (currencies.offered.contains(currency)) AddItemForm(currency: currency, onAdd: _add),
                     ],
                   ),
                 ),
@@ -221,18 +239,21 @@ class _TemplateScreenState extends State<TemplateScreen> {
           Text('Prévia de um mês novo', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.highlighted)),
           const SizedBox(height: 4),
           Text(
-            'Com a cotação de agora (${formatRate(_rate?.rate)}), sem descontar taxa de conversão. '
-            'Itens variáveis em branco contam como zero.',
+            [
+              if (preview.conversions.isNotEmpty)
+                'Com a cotação de agora (${preview.conversions.map((conversion) => formatRate(conversion.rate, conversion.currency)).join(', ')}).',
+              'Itens variáveis em branco contam como zero.',
+            ].join(' '),
             style: muted,
           ),
           const SizedBox(height: 16),
-          FlowStrip(summary: preview),
+          FlowStrip(summary: preview, currencies: sections),
           const SizedBox(height: 16),
           Panel(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Row(children: [
               Expanded(child: Text('Por dia, em ${preview.allowance.days} dias', style: TextStyle(fontSize: 14, color: palette.muted))),
-              Text(formatMoney(preview.allowance.eur, Currency.eur), style: money(fontSize: 20, fontWeight: FontWeight.w600, color: palette.highlighted)),
+              Text(formatMoney(preview.allowance.amount, preview.main), style: money(fontSize: 20, fontWeight: FontWeight.w600, color: palette.highlighted)),
             ]),
           ),
         ],

@@ -14,7 +14,7 @@ import '../theme.dart';
 import 'common.dart';
 import 'month_create.dart';
 
-/// The web's sidebar: daily spending, new month, months by year (each with its EUR net), pages, theme.
+/// The web's sidebar: daily spending, new month, months by year (each with its net), pages, theme.
 class AppDrawer extends StatelessWidget {
   const AppDrawer({super.key});
 
@@ -45,14 +45,13 @@ class AppDrawer extends StatelessWidget {
                 rows.add(GroupLabel('$year', padding: const EdgeInsets.fromLTRB(12, 12, 12, 4)));
               }
               final isCurrent = monthPhase(entry.year, entry.monthNumber) == MonthPhase.current;
-              final net = entry.summary.transfer.eur == null ? null : entry.summary.eur.net;
               final target = monthRoute(entry.year, entry.monthNumber);
               rows.add(_NavItem(
                 icon: isCurrent ? LucideIcons.calendarCheck : LucideIcons.calendar,
                 label: monthName(entry.monthNumber),
                 strong: isCurrent,
                 selected: route == target,
-                trailing: _NetText(net),
+                trailing: _NetText(entry.summary.net, entry.summary.main),
                 onTap: () => go(target),
               ));
             }
@@ -75,7 +74,7 @@ class AppDrawer extends StatelessWidget {
                         icon: LucideIcons.wallet,
                         label: 'Gastos diários',
                         selected: route == todayRoute,
-                        trailing: current == null ? null : _NetText(current.summary.allowance.remainingEur, muteNull: false),
+                        trailing: current == null ? null : _NetText(current.summary.allowance.remaining, current.summary.main, muteNull: false),
                         onTap: () => go(todayRoute),
                       ),
                       const SizedBox(height: 8),
@@ -151,9 +150,12 @@ class AppDrawer extends StatelessWidget {
 }
 
 class _NetText extends StatelessWidget {
-  const _NetText(this.value, {this.muteNull = true});
+  const _NetText(this.value, this.currency, {this.muteNull = true});
 
   final double? value;
+
+  /// The currency the month is worked out in.
+  final Currency currency;
   final bool muteNull;
 
   @override
@@ -161,7 +163,7 @@ class _NetText extends StatelessWidget {
     final palette = context.palette;
     if (value == null && !muteNull) return const SizedBox();
     final color = value == null ? palette.dimmed : (value! < 0 ? palette.error : palette.muted);
-    return Text(formatMoney(value, Currency.eur), style: money(fontSize: 12, color: color));
+    return Text(formatMoney(value, currency), style: money(fontSize: 12, color: color));
   }
 }
 

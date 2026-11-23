@@ -9,6 +9,7 @@ import 'screens/login_screen.dart';
 import 'state/app_updates.dart';
 import 'state/months_store.dart';
 import 'state/session.dart';
+import 'state/currencies_store.dart';
 import 'state/theme_controller.dart';
 import 'state/toast.dart';
 import 'theme.dart';
@@ -20,6 +21,7 @@ Future<void> main() async {
   await Future.wait([initializeDateFormatting('pt_BR'), ThemeController.instance.load(), Session.instance.load()]);
   if (Session.instance.signedIn) {
     MonthsStore.instance.refresh();
+    CurrenciesStore.instance.refresh();
     checkSession();
   }
   confirmSignOuts();
@@ -74,8 +76,10 @@ class _MaimoniAppState extends State<MaimoniApp> {
     _signedIn = session.signedIn;
     if (_signedIn) {
       MonthsStore.instance.refresh();
+      CurrenciesStore.instance.refresh();
     } else {
       MonthsStore.instance.reset();
+      CurrenciesStore.instance.reset();
       if (session.expired) toast('Sua sessão expirou', description: 'Entre de novo.');
     }
     navigatorKey.currentState?.pushNamedAndRemoveUntil(todayRoute, (_) => false);
