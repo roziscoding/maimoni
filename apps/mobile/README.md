@@ -80,7 +80,7 @@ always sorts below the stable release that follows it.
 
 ## Updates
 
-- **Android, in the app:** ***Configurações -> Atualizações*** shows the installed version, the
+- **Android, in the app:** ***Ajustes -> Atualizações*** shows the installed version, the
   channel (stable, or beta for betas first) and newer releases. The app checks on launch, then
   downloads the APK and opens the system installer. It asks the server
   (`GET /api/app/android/latest`), which reads the private repository's releases with its

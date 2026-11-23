@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'api/auth.dart';
 import 'routes.dart';
+import 'screens/home_shell.dart';
 import 'screens/login_screen.dart';
 import 'state/app_updates.dart';
 import 'state/months_store.dart';
@@ -42,7 +43,7 @@ Future<void> _offerUpdate() async {
     actionLabel: 'Ver',
     onAction: () {
       final navigator = navigatorKey.currentState;
-      if (navigator != null && Session.instance.signedIn) navigateWith(navigator, settingsRoute);
+      if (navigator != null && Session.instance.signedIn) openTabWith(navigator, AppTab.settings);
     },
   );
 }
@@ -82,7 +83,8 @@ class _MaimoniAppState extends State<MaimoniApp> {
       CurrenciesStore.instance.reset();
       if (session.expired) toast('Sua sessão expirou', description: 'Entre de novo.');
     }
-    navigatorKey.currentState?.pushNamedAndRemoveUntil(todayRoute, (_) => false);
+    shellTab.value = AppTab.today;
+    navigatorKey.currentState?.pushNamedAndRemoveUntil('/', (_) => false);
   }
 
   @override
@@ -101,10 +103,12 @@ class _MaimoniAppState extends State<MaimoniApp> {
         locale: const Locale('pt', 'BR'),
         supportedLocales: const [Locale('pt', 'BR')],
         localizationsDelegates: GlobalMaterialLocalizations.delegates,
-        initialRoute: todayRoute,
-        // Signed out, every route is the login screen: no page that needs a session can be reached.
-        onGenerateRoute: (settings) =>
-            Session.instance.signedIn ? onGenerateRoute(settings) : MaterialPageRoute<void>(builder: (_) => const LoginScreen()),
+        // The only named route: the shell with a session, the login screen without one. Everything
+        // else is pushed above the shell.
+        onGenerateRoute: (settings) => MaterialPageRoute<void>(
+          settings: const RouteSettings(name: '/'),
+          builder: (_) => Session.instance.signedIn ? const HomeShell() : const LoginScreen(),
+        ),
       ),
     );
   }

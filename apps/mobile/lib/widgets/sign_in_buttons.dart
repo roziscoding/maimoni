@@ -6,7 +6,7 @@ import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 /// Height of every sign in button below the form: the height of Google's button and of the app's
 /// own. Apple doesn't allow its button to be smaller than the others, and ties its title's size to
 /// the height.
-const signInButtonHeight = 40.0;
+const signInButtonHeight = 48.0;
 
 /// "Continue with Google", drawn to Google's branding guidelines
 /// (https://developers.google.com/identity/branding-guidelines): the light theme's fill, stroke

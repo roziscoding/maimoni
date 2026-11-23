@@ -1,48 +1,37 @@
 import 'package:flutter/material.dart';
 
 import 'screens/month_screen.dart';
-import 'screens/settings_screen.dart';
-import 'screens/template_screen.dart';
-import 'screens/today_screen.dart';
 
-const todayRoute = '/';
-const templateRoute = '/template';
-const settingsRoute = '/settings';
-String monthRoute(int year, int month) => '/months/$year/$month';
+/// The destinations of the bottom bar, in its order.
+enum AppTab { today, months, template, settings }
 
-final _monthPath = RegExp(r'^/months/(\d{4})/(\d{1,2})$');
+/// The tab the home shell shows. Screens that keep their state between visits listen to it and
+/// reload when they come back to the front.
+final shellTab = ValueNotifier<AppTab>(AppTab.today);
 
-/// Tells Hoje when the page above it closes. Pages only: dialogs and sheets closing over Hoje
+/// Tells Hoje when the page above the shell closes. Pages only: dialogs and sheets closing over it
 /// don't count.
 final routeObserver = RouteObserver<PageRoute<void>>();
 
-Route<void> onGenerateRoute(RouteSettings settings) {
-  final name = settings.name ?? todayRoute;
-  final Widget screen;
-  final match = _monthPath.firstMatch(name);
-  if (match != null) {
-    screen = MonthScreen(key: ValueKey(name), year: int.parse(match.group(1)!), month: int.parse(match.group(2)!));
-  } else if (name == templateRoute) {
-    screen = const TemplateScreen();
-  } else if (name == settingsRoute) {
-    screen = const SettingsScreen();
-  } else {
-    screen = const TodayScreen();
-  }
-  return MaterialPageRoute(settings: RouteSettings(name: match == null && screen is TodayScreen ? todayRoute : name), builder: (_) => screen);
+/// Shows a tab of the shell, closing any page open above it.
+void openTab(BuildContext context, AppTab tab) => openTabWith(Navigator.of(context), tab);
+
+/// [openTab] for callers that hold the navigator (after an await, or from outside the tree).
+void openTabWith(NavigatorState navigator, AppTab tab) {
+  navigator.popUntil((route) => route.isFirst);
+  shellTab.value = tab;
 }
 
-/// Opens a top-level page: Hoje stays at the bottom of the stack, so back always returns to it.
-void navigate(BuildContext context, String route) => navigateWith(Navigator.of(context), route);
+/// Opens a month above the shell, replacing any other page open there: back returns to the tab.
+void openMonth(BuildContext context, int year, int month) => openMonthWith(Navigator.of(context), year, month);
 
-/// [navigate] for callers that close their own route first (sheets, dialogs).
-void navigateWith(NavigatorState navigator, String route) {
-  if (route == todayRoute) {
-    navigator.popUntil((route) => route.isFirst);
-    return;
-  }
-  navigator.pushNamedAndRemoveUntil(route, (route) => route.isFirst);
+/// [openMonth] for callers that close their own route first (sheets).
+void openMonthWith(NavigatorState navigator, int year, int month) {
+  navigator.pushAndRemoveUntil(
+    MaterialPageRoute<void>(
+      settings: RouteSettings(name: '/months/$year/$month'),
+      builder: (_) => MonthScreen(year: year, month: month),
+    ),
+    (route) => route.isFirst,
+  );
 }
-
-/// Name of the page currently on top, to highlight it in the drawer.
-String? currentRoute(BuildContext context) => ModalRoute.of(context)?.settings.name;

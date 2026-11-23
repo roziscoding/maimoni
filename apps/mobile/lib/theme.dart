@@ -16,7 +16,8 @@ abstract final class Neutral {
   static const n950 = Color(0xFF0A0A0A);
 }
 
-/// The web's semantic tokens (`bg-elevated`, `text-muted`, `border-default`, ...) for each mode.
+/// Semantic colors for each mode, named like the web's tokens (`bg-elevated`, `text-muted`, ...)
+/// so the two clients share one palette.
 @immutable
 class Palette extends ThemeExtension<Palette> {
   const Palette({
@@ -134,7 +135,10 @@ ThemeData buildTheme(Brightness brightness) {
     outlineVariant: palette.border,
   );
   final base = ThemeData(useMaterial3: true, colorScheme: scheme, brightness: brightness);
-  final radius = BorderRadius.circular(8);
+  final radius = BorderRadius.circular(12);
+  // Every button is at least a finger tall.
+  const buttonSize = Size(64, 48);
+  const buttonText = TextStyle(fontSize: 15, fontWeight: FontWeight.w600);
   OutlineInputBorder border(Color color, [double width = 1]) =>
       OutlineInputBorder(borderRadius: radius, borderSide: BorderSide(color: color, width: width));
 
@@ -150,20 +154,47 @@ ThemeData buildTheme(Brightness brightness) {
       foregroundColor: palette.highlighted,
       elevation: 0,
       scrolledUnderElevation: 0,
-      shape: Border(bottom: BorderSide(color: palette.border)),
-      titleTextStyle: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w600, color: palette.highlighted),
+      centerTitle: false,
+      titleTextStyle: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w600, letterSpacing: -0.3, color: palette.highlighted),
     ),
-    drawerTheme: DrawerThemeData(
-      backgroundColor: Color.alphaBlend(palette.bgElevated.withValues(alpha: 0.4), palette.bg),
+    navigationBarTheme: NavigationBarThemeData(
+      backgroundColor: palette.bg,
       surfaceTintColor: Colors.transparent,
-      shape: const RoundedRectangleBorder(),
+      elevation: 0,
+      height: 68,
+      indicatorColor: palette.bgAccented,
+      iconTheme: WidgetStateProperty.resolveWith(
+        (states) => IconThemeData(size: 22, color: states.contains(WidgetState.selected) ? palette.highlighted : palette.muted),
+      ),
+      labelTextStyle: WidgetStateProperty.resolveWith(
+        (states) => GoogleFonts.inter(
+          fontSize: 12,
+          fontWeight: states.contains(WidgetState.selected) ? FontWeight.w600 : FontWeight.w500,
+          color: states.contains(WidgetState.selected) ? palette.highlighted : palette.muted,
+        ),
+      ),
     ),
-    // `subtle` variant: elevated fill with an accented ring, like every input on the web.
+    tabBarTheme: TabBarThemeData(
+      labelColor: palette.highlighted,
+      unselectedLabelColor: palette.muted,
+      indicatorColor: primary,
+      indicatorSize: TabBarIndicatorSize.tab,
+      dividerColor: palette.border,
+      labelStyle: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600),
+      unselectedLabelStyle: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w500),
+    ),
+    floatingActionButtonTheme: FloatingActionButtonThemeData(
+      backgroundColor: primary,
+      foregroundColor: onPrimary,
+      elevation: 3,
+      highlightElevation: 3,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      extendedTextStyle: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600),
+    ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: palette.bgElevated,
-      isDense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       hintStyle: TextStyle(color: palette.dimmed),
       border: border(palette.borderAccented),
       enabledBorder: border(palette.borderAccented),
@@ -173,32 +204,40 @@ ThemeData buildTheme(Brightness brightness) {
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
+        minimumSize: buttonSize,
         shape: RoundedRectangleBorder(borderRadius: radius),
-        textStyle: const TextStyle(fontWeight: FontWeight.w500),
+        textStyle: buttonText,
       ),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
+        minimumSize: buttonSize,
         foregroundColor: palette.text,
         side: BorderSide(color: palette.borderAccented),
         shape: RoundedRectangleBorder(borderRadius: radius),
-        textStyle: const TextStyle(fontWeight: FontWeight.w500),
+        textStyle: buttonText,
       ),
     ),
     textButtonTheme: TextButtonThemeData(
-      style: TextButton.styleFrom(foregroundColor: palette.text, shape: RoundedRectangleBorder(borderRadius: radius)),
+      style: TextButton.styleFrom(
+        minimumSize: buttonSize,
+        foregroundColor: palette.text,
+        shape: RoundedRectangleBorder(borderRadius: radius),
+        textStyle: buttonText,
+      ),
     ),
     iconButtonTheme: IconButtonThemeData(style: IconButton.styleFrom(foregroundColor: palette.muted)),
     dialogTheme: DialogThemeData(
       backgroundColor: palette.bg,
       surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: palette.border)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
     ),
     bottomSheetTheme: BottomSheetThemeData(
       backgroundColor: palette.bg,
       surfaceTintColor: Colors.transparent,
       showDragHandle: true,
       dragHandleColor: palette.borderAccented,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
     ),
     popupMenuTheme: PopupMenuThemeData(
       color: palette.bg,
@@ -219,18 +258,18 @@ ThemeData buildTheme(Brightness brightness) {
     ),
     switchTheme: SwitchThemeData(
       trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
-      thumbColor: WidgetStateProperty.resolveWith((states) => palette.bg),
+      // Off, the thumb has to stand out from a track that is close to the background.
+      thumbColor: WidgetStateProperty.resolveWith((states) => states.contains(WidgetState.selected) ? onPrimary : palette.muted),
       trackColor: WidgetStateProperty.resolveWith(
         (states) => states.contains(WidgetState.selected) ? primary : palette.bgAccented,
       ),
     ),
     progressIndicatorTheme: ProgressIndicatorThemeData(color: primary, linearTrackColor: palette.bgAccented),
     listTileTheme: ListTileThemeData(
-      dense: true,
-      shape: RoundedRectangleBorder(borderRadius: radius),
-      selectedColor: palette.highlighted,
-      selectedTileColor: palette.bgElevated,
+      minTileHeight: 56,
       iconColor: palette.muted,
+      titleTextStyle: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w500, color: palette.highlighted),
+      subtitleTextStyle: GoogleFonts.inter(fontSize: 13, color: palette.muted),
     ),
   );
 }

@@ -27,6 +27,7 @@ class _LoginScreenState extends State<LoginScreen> {
   String? _passwordError;
   String? _failure;
   bool _loading = false;
+  bool _showPassword = false;
   List<String> _providers = const [];
   String? _busyProvider;
 
@@ -114,22 +115,24 @@ class _LoginScreenState extends State<LoginScreen> {
     final palette = context.palette;
     return Scaffold(
       body: SafeArea(
-        child: Center(
+        // From the top, like any other screen; only a tablet is wide enough to need the limit.
+        child: Align(
+          alignment: Alignment.topCenter,
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 384),
+              constraints: const BoxConstraints(maxWidth: 480),
               child: AutofillGroup(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
                       'maimoni',
-                      style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.w600, letterSpacing: -0.4, color: palette.highlighted),
+                      style: GoogleFonts.inter(fontSize: 34, fontWeight: FontWeight.w700, letterSpacing: -1, color: palette.highlighted),
                     ),
-                    const SizedBox(height: 4),
-                    Text('Entre com seu e-mail e senha.', style: TextStyle(fontSize: 14, color: palette.muted)),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 6),
+                    Text('Entre com seu e-mail e senha.', style: TextStyle(fontSize: 16, color: palette.muted)),
+                    const SizedBox(height: 32),
                     if (_failure != null) ...[
                       Callout(icon: LucideIcons.circleAlert, title: _failure!, tone: Tone.error),
                       const SizedBox(height: 16),
@@ -148,10 +151,17 @@ class _LoginScreenState extends State<LoginScreen> {
                     const FieldLabel('Senha'),
                     TextField(
                       controller: _password,
-                      obscureText: true,
+                      obscureText: !_showPassword,
                       autofillHints: const [AutofillHints.password],
                       onSubmitted: (_) => _submit(),
-                      decoration: InputDecoration(errorText: _passwordError),
+                      decoration: InputDecoration(
+                        errorText: _passwordError,
+                        suffixIcon: IconButton(
+                          tooltip: _showPassword ? 'Esconder a senha' : 'Mostrar a senha',
+                          icon: Icon(_showPassword ? LucideIcons.eyeOff : LucideIcons.eye, size: 20),
+                          onPressed: () => setState(() => _showPassword = !_showPassword),
+                        ),
+                      ),
                     ),
                     Align(
                       alignment: Alignment.centerRight,

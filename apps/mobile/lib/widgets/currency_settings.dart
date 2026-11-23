@@ -116,9 +116,12 @@ class _CurrencySettingsState extends State<CurrencySettings> {
 
     final Widget body;
     if (list == null) {
-      body = _store.loaded
-          ? Text('Não foi possível carregar as moedas: ${errorMessage(_store.error ?? '')}', style: TextStyle(fontSize: 14, color: palette.error))
-          : const Center(child: CircularProgressIndicator());
+      body = Panel(
+        padding: const EdgeInsets.all(16),
+        child: _store.loaded
+            ? Text('Não foi possível carregar as moedas: ${errorMessage(_store.error ?? '')}', style: TextStyle(fontSize: 14, color: palette.error))
+            : const Center(child: CircularProgressIndicator()),
+      );
     } else {
       // The main one first, then the rest in the app's order.
       final order = Currency.sorted(list.map((entry) => entry.currency));
@@ -145,7 +148,7 @@ class _CurrencySettingsState extends State<CurrencySettings> {
                 onTap: busy == null ? () => _pickNew(available) : null,
                 child: Container(
                   padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-                  decoration: BoxDecoration(color: palette.bgMuted, border: Border(top: BorderSide(color: palette.border))),
+                  decoration: BoxDecoration(border: Border(top: BorderSide(color: palette.border))),
                   child: Row(
                     children: [
                       SizedBox.square(
@@ -168,13 +171,17 @@ class _CurrencySettingsState extends State<CurrencySettings> {
     }
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('Moedas', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: palette.text)),
-        const SizedBox(height: 2),
-        Text('Moedas usadas nos itens e gastos. Uma moeda desativada deixa de ser oferecida e mantém o histórico.', style: muted),
-        const SizedBox(height: 12),
+        const SectionHeader('Moedas'),
         body,
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
+          child: Text(
+            'Usadas nos itens e gastos. Uma moeda desativada deixa de ser oferecida e mantém o histórico.',
+            style: TextStyle(fontSize: 13, height: 1.4, color: palette.muted),
+          ),
+        ),
       ],
     );
   }
@@ -194,7 +201,7 @@ class _SymbolTile extends StatelessWidget {
       height: 36,
       alignment: Alignment.center,
       padding: const EdgeInsets.symmetric(horizontal: 2),
-      decoration: BoxDecoration(color: palette.bgElevated, borderRadius: BorderRadius.circular(8)),
+      decoration: BoxDecoration(color: palette.bgAccented, borderRadius: BorderRadius.circular(8)),
       child: FittedBox(
         fit: BoxFit.scaleDown,
         child: Text(currencySymbol(currency), style: money(fontSize: 13, fontWeight: FontWeight.w500, color: palette.highlighted)),
@@ -274,18 +281,15 @@ class _CurrencyActions extends StatelessWidget {
 
   Future<void> _confirmRemove(BuildContext context) async {
     final navigator = Navigator.of(context);
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Remover ${currencyName(currency)}?'),
-        content: const Text('A moeda deixará de ser oferecida para novos itens e gastos. É possível adicioná-la novamente depois.'),
-        actions: [
-          OutlinedButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancelar')),
-          ActionButton(label: 'Remover moeda', icon: LucideIcons.trash2, danger: true, onPressed: () => Navigator.of(context).pop(true)),
-        ],
-      ),
+    final confirmed = await showConfirmSheet(
+      context,
+      title: 'Remover ${currencyName(currency)}?',
+      message: 'A moeda deixará de ser oferecida para novos itens e gastos. É possível adicioná-la novamente depois.',
+      confirmLabel: 'Remover moeda',
+      icon: LucideIcons.trash2,
+      danger: true,
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
     navigator.pop();
     await onRemove();
   }

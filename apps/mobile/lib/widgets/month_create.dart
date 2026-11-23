@@ -11,10 +11,11 @@ import 'common.dart';
 
 /// Creates [year]/[month] from the template or the previous month, then opens it.
 Future<bool> createMonth(BuildContext context, int year, int month, String source) async {
+  final navigator = Navigator.of(context);
   try {
     await Api.instance.createMonth(year, month, source);
     await MonthsStore.instance.refresh();
-    if (context.mounted) navigate(context, monthRoute(year, month));
+    if (navigator.mounted) openMonthWith(navigator, year, month);
     return true;
   } catch (err) {
     toast('Não foi possível criar o mês', description: errorMessage(err), tone: ToastTone.error);
@@ -22,7 +23,7 @@ Future<bool> createMonth(BuildContext context, int year, int month, String sourc
   }
 }
 
-/// Port of `MonthCreate.vue`: shown where a month that doesn't exist yet was expected.
+/// Shown where a month that doesn't exist yet was expected: the two ways to create it.
 class MonthCreate extends StatefulWidget {
   const MonthCreate({super.key, required this.year, required this.month, this.onCreated});
 
@@ -73,14 +74,9 @@ class _MonthCreateState extends State<MonthCreate> {
   }
 }
 
-/// Port of `NewMonthModal.vue`, as a bottom sheet.
+/// Opens the sheet that creates a month: which one, and where its items come from.
 Future<void> showNewMonthSheet(BuildContext context) {
-  return showSheet(
-    context,
-    title: 'Novo mês',
-    description: 'Escolha o mês e de onde vêm os itens.',
-    body: (context) => const _NewMonthForm(),
-  );
+  return showSheet(context, title: 'Novo mês', body: (context) => const _NewMonthForm());
 }
 
 class _NewMonthForm extends StatefulWidget {
@@ -91,202 +87,117 @@ class _NewMonthForm extends StatefulWidget {
 }
 
 class _NewMonthFormState extends State<_NewMonthForm> {
-  late int _year;
-  late int _month;
-  String _source = 'template';
-  bool _saving = false;
+  /// The month picked, as `year * 12 + month - 1`, so the arrows step it across years.
+  late int _index;
+  String? _pending;
+
+  int get _year => _index ~/ 12;
+  int get _month => _index % 12 + 1;
 
   @override
   void initState() {
     super.initState();
-    // Suggest the first month from now on that doesn't exist yet.
+    // Starts on the first month from now on that doesn't exist yet.
     final store = MonthsStore.instance;
     final now = DateTime.now();
-    var index = now.year * 12 + now.month - 1;
-    while (store.exists(index ~/ 12, index % 12 + 1)) {
-      index++;
+    _index = now.year * 12 + now.month - 1;
+    while (store.exists(_year, _month)) {
+      _index++;
     }
-    _year = index ~/ 12;
-    _month = index % 12 + 1;
   }
 
-  Future<void> _submit() async {
-    setState(() => _saving = true);
+  Future<void> _create(String source) async {
+    setState(() => _pending = source);
     final navigator = Navigator.of(context);
+    final year = _year;
+    final month = _month;
     try {
-      await Api.instance.createMonth(_year, _month, _source);
+      await Api.instance.createMonth(year, month, source);
       await MonthsStore.instance.refresh();
       navigator.pop();
-      navigateWith(navigator, monthRoute(_year, _month));
+      openMonthWith(navigator, year, month);
     } catch (err) {
       toast('Não foi possível criar o mês', description: errorMessage(err), tone: ToastTone.error);
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) setState(() => _pending = null);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final taken = MonthsStore.instance.exists(_year, _month);
+    final store = MonthsStore.instance;
+    final taken = store.exists(_year, _month);
+    final idle = _pending == null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Mês', style: TextStyle(fontWeight: FontWeight.w500, color: palette.text)),
-                  const SizedBox(height: 6),
-                  DropdownButtonFormField<int>(
-                    initialValue: _month,
-                    items: [for (var m = 1; m <= 12; m++) DropdownMenuItem(value: m, child: Text(monthName(m)))],
-                    onChanged: (value) => setState(() => _month = value ?? _month),
-                  ),
-                ],
+        Panel(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          child: Row(
+            children: [
+              IconButton(
+                tooltip: 'Mês anterior',
+                icon: const Icon(LucideIcons.chevronLeft, size: 22),
+                onPressed: idle ? () => setState(() => _index--) : null,
               ),
-            ),
-            const SizedBox(width: 12),
-            SizedBox(
-              width: 140,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Ano', style: TextStyle(fontWeight: FontWeight.w500, color: palette.text)),
-                  const SizedBox(height: 6),
-                  _Stepper(
-                    value: _year,
-                    onChanged: (value) => setState(() => _year = value.clamp(2000, 2100)),
-                  ),
-                ],
+              Expanded(
+                child: Text(
+                  monthLabel(_year, _month),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: palette.highlighted),
+                ),
               ),
-            ),
-          ],
+              IconButton(
+                tooltip: 'Mês seguinte',
+                icon: const Icon(LucideIcons.chevronRight, size: 22),
+                onPressed: idle ? () => setState(() => _index++) : null,
+              ),
+            ],
+          ),
         ),
-        if (taken) ...[
-          const SizedBox(height: 16),
+        const SizedBox(height: 20),
+        if (taken)
           Callout(
             icon: LucideIcons.calendarX,
             title: '${monthLabel(_year, _month)} já existe',
             action: OutlinedButton(
               onPressed: () {
                 final navigator = Navigator.of(context)..pop();
-                navigateWith(navigator, monthRoute(_year, _month));
+                openMonthWith(navigator, _year, _month);
               },
               child: const Text('Abrir'),
             ),
+          )
+        else ...[
+          ActionButton(
+            label: 'Criar do template',
+            icon: LucideIcons.layoutTemplate,
+            loading: _pending == 'template',
+            onPressed: idle ? () => _create('template') : null,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Valores fixos de sempre. Os que variam chegam para confirmar.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: palette.muted),
+          ),
+          const SizedBox(height: 16),
+          ActionButton(
+            label: 'Copiar mês anterior',
+            icon: LucideIcons.copy,
+            style: ActionStyle.subtle,
+            loading: _pending == 'previous',
+            onPressed: idle && store.hasBefore(_year, _month) ? () => _create('previous') : null,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            store.hasBefore(_year, _month) ? 'Os itens do último mês antes deste, como estão.' : 'Não há mês antes deste para copiar.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: palette.muted),
           ),
         ],
-        const SizedBox(height: 20),
-        Text('Itens', style: TextStyle(fontWeight: FontWeight.w500, color: palette.text)),
-        const SizedBox(height: 6),
-        for (final option in const [
-          (value: 'template', label: 'Template', description: 'Valores fixos de sempre; os variáveis chegam para confirmar.'),
-          (value: 'previous', label: 'Mês anterior', description: 'Copia os itens do último mês antes deste, como estão.'),
-        ])
-          _Choice(
-            label: option.label,
-            description: option.description,
-            selected: _source == option.value,
-            first: option.value == 'template',
-            onTap: () => setState(() => _source = option.value),
-          ),
-        SheetActions(
-          primary: ActionButton(
-            label: 'Criar mês',
-            icon: LucideIcons.calendarPlus,
-            loading: _saving,
-            onPressed: taken ? null : _submit,
-          ),
-        ),
       ],
-    );
-  }
-}
-
-/// Year field with − and + buttons.
-class _Stepper extends StatelessWidget {
-  const _Stepper({required this.value, required this.onChanged});
-
-  final int value;
-  final ValueChanged<int> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    return Container(
-      height: 46,
-      decoration: BoxDecoration(
-        color: palette.bgElevated,
-        border: Border.all(color: palette.borderAccented),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          IconButton(visualDensity: VisualDensity.compact, icon: const Icon(LucideIcons.minus, size: 16), onPressed: () => onChanged(value - 1)),
-          Expanded(child: Text('$value', textAlign: TextAlign.center, style: money(fontSize: 15, color: palette.text))),
-          IconButton(visualDensity: VisualDensity.compact, icon: const Icon(LucideIcons.plus, size: 16), onPressed: () => onChanged(value + 1)),
-        ],
-      ),
-    );
-  }
-}
-
-/// One row of a `URadioGroup variant="table"`.
-class _Choice extends StatelessWidget {
-  const _Choice({required this.label, required this.description, required this.selected, required this.first, required this.onTap});
-
-  final String label;
-  final String description;
-  final bool selected;
-  final bool first;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final primary = Theme.of(context).colorScheme.primary;
-    final radius = BorderRadius.vertical(
-      top: first ? const Radius.circular(8) : Radius.zero,
-      bottom: first ? Radius.zero : const Radius.circular(8),
-    );
-    return InkWell(
-      onTap: onTap,
-      borderRadius: radius,
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: selected ? palette.bgElevated : null,
-          borderRadius: radius,
-          border: Border.all(color: selected ? palette.borderAccented : palette.border),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 18,
-              height: 18,
-              margin: const EdgeInsets.only(top: 1, right: 10),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: selected ? primary : palette.borderAccented, width: selected ? 5 : 1.5),
-              ),
-            ),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label, style: TextStyle(fontWeight: FontWeight.w500, color: palette.highlighted)),
-                  Text(description, style: TextStyle(fontSize: 13, color: palette.muted)),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
