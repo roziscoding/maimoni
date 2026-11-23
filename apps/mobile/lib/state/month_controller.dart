@@ -172,14 +172,27 @@ class MonthController extends ChangeNotifier {
     await _persist(() => _api.deleteSpend(year, month, id));
   }
 
-  /// Freezes [currency]'s rate at [rate], leaving the other locked rates as they are. The server
-  /// replaces the whole map, so the others are sent again.
-  Future<bool> lockRate(Currency currency, double rate) =>
-      updateMonth({'lockedRates': ratesToJson({...?data?.month.lockedRates, currency: rate})});
+  /// Freezes [currency]'s rate at [rate], leaving the other locked rates as they are.
+  Future<bool> lockRate(Currency currency, double rate) => _changeLockedRates((locked) => locked..[currency] = rate);
 
   /// Sends [currency] back to the live rate.
-  Future<bool> unlockRate(Currency currency) =>
-      updateMonth({'lockedRates': ratesToJson({...?data?.month.lockedRates}..remove(currency))});
+  Future<bool> unlockRate(Currency currency) => _changeLockedRates((locked) => locked..remove(currency));
+
+  /// The last locked-rates write; the next one waits for it.
+  Future<bool> _lockedRatesWrite = Future.value(true);
+
+  /// The server replaces the whole map, so each write sends every locked rate again. Writes run one
+  /// after another, each built from the map the previous one saved: overlapping ones would otherwise
+  /// each send a map without the other's change, and the last to land would drop it.
+  Future<bool> _changeLockedRates(Rates Function(Rates locked) update) {
+    final write = _lockedRatesWrite.then<bool>((_) {
+      final current = data;
+      if (current == null || _disposed) return false;
+      return updateMonth({'lockedRates': ratesToJson(update({...current.month.lockedRates}))});
+    });
+    _lockedRatesWrite = write.catchError((_) => false);
+    return write;
+  }
 
   /* ---------------------------------- Rate --------------------------------- */
 

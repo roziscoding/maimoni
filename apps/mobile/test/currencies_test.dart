@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -15,6 +16,7 @@ import 'package:maimoni/format.dart';
 import 'package:maimoni/screens/settings_screen.dart';
 import 'package:maimoni/screens/template_screen.dart';
 import 'package:maimoni/state/currencies_store.dart';
+import 'package:maimoni/state/month_controller.dart';
 import 'package:maimoni/state/session.dart';
 import 'package:maimoni/theme.dart';
 import 'package:maimoni/widgets/spends.dart';
@@ -201,6 +203,72 @@ void main() {
       await tester.tap(find.text('Lançar'));
       await tester.pump();
       expect(sent.single['currency'], 'USD');
+    });
+  });
+
+  group('rate locks', () {
+    testWidgets('overlapping locks are saved one after another, each keeping the other', (tester) async {
+      Session.instance.setToken('t');
+      var locked = <String, Object?>{};
+      Map<String, Object?> detail() => {
+            'month': {
+              'id': 'm1',
+              'year': 2026,
+              'month': 10,
+              'mainCurrency': 'EUR',
+              'lockedRates': locked,
+              'activeDay': null,
+              'note': null,
+              'createdAt': '2026-10-01T00:00:00.000Z',
+            },
+            'items': [],
+            'spends': [],
+            'summary': {},
+            'rates': null,
+            'rateError': null,
+          };
+      final patches = <Map<String, dynamic>>[];
+      final answers = <Completer<void>>[];
+      Api.instance.httpClient = MockClient((request) async {
+        final path = request.url.path;
+        if (path == '/api/settings/currencies') return json([_currency('EUR', main: true), _currency('BRL'), _currency('USD')]);
+        if (path == '/api/months/2026/10' && request.method == 'GET') return json(detail());
+        if (path == '/api/months/2026/10' && request.method == 'PATCH') {
+          final patch = jsonDecode(request.body) as Map<String, dynamic>;
+          patches.add(patch);
+          final answer = Completer<void>();
+          answers.add(answer);
+          await answer.future;
+          locked = Map.of(patch['lockedRates'] as Map<String, dynamic>);
+          return json(detail());
+        }
+        return json({'error': 'Not found'}, status: 404);
+      });
+
+      final controller = MonthController(2026, 10);
+      await tester.pump();
+      await tester.pump();
+      expect(controller.data, isNotNull);
+
+      final first = controller.lockRate(Currency.brl, 6);
+      final second = controller.lockRate(const Currency('USD'), 1.1);
+      await tester.pump();
+      // The second waits for the first to be saved.
+      expect(patches, [
+        {'lockedRates': {'BRL': 6.0}},
+      ]);
+      answers.first.complete();
+      await tester.pump();
+      await tester.pump();
+      expect(patches.last, {
+        'lockedRates': {'BRL': 6.0, 'USD': 1.1},
+      });
+      answers.last.complete();
+      expect(await first, isTrue);
+      expect(await second, isTrue);
+      expect(controller.data!.month.lockedRates, {Currency.brl: 6, const Currency('USD'): 1.1});
+      // Before the test ends, which fails on the controller's pending rate timer.
+      controller.dispose();
     });
   });
 
