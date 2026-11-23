@@ -242,8 +242,10 @@ void main() {
 
   group('rate locks', () {
     /// Serves one month. A PATCH applies at once and answers with the month as it was then, but only
-    /// when the test completes its entry in the returned list.
-    ({List<Map<String, dynamic>> patches, List<Completer<void>> answers}) serve() {
+    /// when the test completes its entry in `answers`: with `true`, or with `false` to fail and undo it.
+    /// Reads after the first answer with the month as it was when they arrived, once the test
+    /// completes their entry in `reads`.
+    ({List<Map<String, dynamic>> patches, List<Completer<bool>> answers, List<Completer<void>> reads}) serve() {
       final month = <String, Object?>{
         'id': 'm1',
         'year': 2026,
@@ -257,24 +259,38 @@ void main() {
       Map<String, Object?> detail() =>
           {'month': Map.of(month), 'items': [], 'spends': [], 'summary': {}, 'rates': null, 'rateError': null};
       final patches = <Map<String, dynamic>>[];
-      final answers = <Completer<void>>[];
+      final answers = <Completer<bool>>[];
+      final reads = <Completer<void>>[];
+      var served = 0;
       Api.instance.httpClient = MockClient((request) async {
         final path = request.url.path;
         if (path == '/api/settings/currencies') return json([_currency('EUR', main: true), _currency('BRL'), _currency('USD')]);
-        if (path == '/api/months/2026/10' && request.method == 'GET') return json(detail());
+        if (path == '/api/months/2026/10' && request.method == 'GET') {
+          final answer = detail();
+          if (served++ > 0) {
+            final gate = Completer<void>();
+            reads.add(gate);
+            await gate.future;
+          }
+          return json(answer);
+        }
         if (path == '/api/months/2026/10' && request.method == 'PATCH') {
           final patch = jsonDecode(request.body) as Map<String, dynamic>;
           patches.add(patch);
+          final before = Map.of(month);
           month.addAll(patch);
           final answer = detail();
-          final gate = Completer<void>();
+          final gate = Completer<bool>();
           answers.add(gate);
-          await gate.future;
-          return json(answer);
+          if (await gate.future) return json(answer);
+          month
+            ..clear()
+            ..addAll(before);
+          return json({'error': 'boom'}, status: 500);
         }
         return json({'error': 'Not found'}, status: 404);
       });
-      return (patches: patches, answers: answers);
+      return (patches: patches, answers: answers, reads: reads);
     }
 
     Future<MonthController> open(WidgetTester tester) async {
@@ -287,7 +303,7 @@ void main() {
     }
 
     testWidgets('overlapping locks are saved one after another, each keeping the other', (tester) async {
-      final (:patches, :answers) = serve();
+      final (:patches, :answers, reads: _) = serve();
       final controller = await open(tester);
 
       final first = controller.lockRate(Currency.brl, 6);
@@ -297,13 +313,13 @@ void main() {
       expect(patches, [
         {'lockedRates': {'BRL': 6.0}},
       ]);
-      answers.first.complete();
+      answers.first.complete(true);
       await tester.pump();
       await tester.pump();
       expect(patches.last, {
         'lockedRates': {'BRL': 6.0, 'USD': 1.1},
       });
-      answers.last.complete();
+      answers.last.complete(true);
       expect(await first, isTrue);
       expect(await second, isTrue);
       expect(controller.data!.month.lockedRates, {Currency.brl: 6, const Currency('USD'): 1.1});
@@ -312,7 +328,7 @@ void main() {
     });
 
     testWidgets('a note answered after a lock does not put back the old locked rates', (tester) async {
-      final (:patches, :answers) = serve();
+      final (:patches, :answers, reads: _) = serve();
       final controller = await open(tester);
 
       final note = controller.updateMonth({'note': 'trip'});
@@ -320,13 +336,38 @@ void main() {
       final lock = controller.lockRate(Currency.brl, 6);
       await tester.pump();
       expect(patches, hasLength(2));
-      answers.last.complete();
+      answers.last.complete(true);
       expect(await lock, isTrue);
       // The note's answer was made before the lock, so its locked rates are empty.
-      answers.first.complete();
+      answers.first.complete(true);
       expect(await note, isTrue);
       expect(controller.data!.month.note, 'trip');
       expect(controller.data!.month.lockedRates, {Currency.brl: 6});
+      controller.dispose();
+    });
+
+    testWidgets('the reload after a failed note does not put back the old locked rates', (tester) async {
+      final (:patches, :answers, :reads) = serve();
+      final controller = await open(tester);
+
+      final note = controller.updateMonth({'note': 'trip'});
+      await tester.pump();
+      // The note fails, and the month is read again before the lock reaches the server.
+      answers.first.complete(false);
+      await tester.pump();
+      await tester.pump();
+      expect(reads, hasLength(1));
+      final lock = controller.lockRate(Currency.brl, 6);
+      await tester.pump();
+      expect(patches, hasLength(2));
+      answers.last.complete(true);
+      expect(await lock, isTrue);
+      // The read was answered before the lock was saved.
+      reads.single.complete();
+      expect(await note, isFalse);
+      expect(controller.data!.month.lockedRates, {Currency.brl: 6});
+      // The failed note goes back to what the server has.
+      expect(controller.data!.month.note, isNull);
       controller.dispose();
     });
   });

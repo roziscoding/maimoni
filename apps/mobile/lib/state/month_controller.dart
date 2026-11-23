@@ -37,12 +37,25 @@ class MonthController extends ChangeNotifier {
 
   MonthSummary? get summary => _summary;
 
+  /// Counts the month writes the server saved; [_savedAt] holds, per field, the count when it was
+  /// last saved. A [load] compares them with the count it started at.
+  int _monthWrites = 0;
+  final _savedAt = <String, int>{};
+
   Future<void> load() async {
     try {
+      final since = _monthWrites;
       // The screens lay themselves out by the user's currencies, so the first frame waits for them too.
       final currencies = CurrenciesStore.instance.ensureLoaded();
       final detail = await _api.month(year, month);
       await currencies;
+      // A month write that saved while this read was in flight is newer than what the read got.
+      final written = [
+        for (final MapEntry(:key, :value) in _savedAt.entries)
+          if (value > since) key,
+      ];
+      final local = data?.month.toJson();
+      if (local != null && written.isNotEmpty) detail.month = detail.month.patch({for (final key in written) key: local[key]});
       data = detail;
       error = null;
     } on ApiException catch (err) {
@@ -129,6 +142,10 @@ class MonthController extends ChangeNotifier {
     }
     final saved = await _persist(() => _api.updateMonth(year, month, patch));
     if (saved != null && data != null) {
+      _monthWrites++;
+      for (final key in patch.keys) {
+        _savedAt[key] = _monthWrites;
+      }
       // Only the fields this write changed: the rest of the answer may predate a write that saved
       // after it (a note answered after a rate lock would otherwise put back the old locked rates).
       final answered = saved.month.toJson();
