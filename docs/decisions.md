@@ -12,9 +12,9 @@ Choices made while turning `Financeiro.xlsx` into an app. They were made without
 | EUR table (Nome / Valor / Pago) | EUR expense items |
 | `Entrada` in Resultado BRL | BRL **income** item (`kind: income`) — a list, so salary + extras can be separate lines |
 | `Saída` / `Líquido` | Computed: sum of expenses / income − expenses |
-| `Entrada` in Resultado EUR (`Líquido BRL × (1 − Taxa Wise) ÷ Preço Euro`) | Completed **conversions** plus the BRL that remains, converted at the rate with no fee |
-| `Preço Euro` (GOOGLEFINANCE) | **Live rate** from the backend; can be **locked** per month (`exchangeRate`) |
-| `Taxa Wise` | Not projected. Each completed conversion has its own fee, worked out from what was sent, what arrived and the rate |
+| `Entrada` in Resultado EUR (`Líquido BRL × (1 − Taxa Wise) ÷ Preço Euro`) | The BRL net, converted at the rate with no fee |
+| `Preço Euro` (GOOGLEFINANCE) | **Live rate** from the backend; can be **locked** per month (`lockedRates`) |
+| `Taxa Wise` | Not counted. The app doesn't record transfers or what they cost |
 | Allowance (`Líquido EUR ÷ (EOMONTH(TODAY()) − TODAY() + 1)`) + BRL equivalent | **Daily allowance** hero on the month page |
 | Values typed as formulas (`=11.99+2.99`) | Amount inputs accept arithmetic; the expression is stored alongside the value. Numbers can be typed pt-BR style: `1.250,99`, `1250,99` and `2.500` (a dot followed by exactly three digits is a thousands separator, since money never has three decimals), plus `1250.99`. `R$`/`€` are ignored. |
 
@@ -27,33 +27,30 @@ All the arithmetic lives in one place, `packages/shared/src/summary.ts`, used by
 - **Copy from the previous month** is offered as an alternative source. It copies amounts and resets `paid`; items linked to variable template items are flagged again.
 - **"Salvar no template"** on a month item writes its name/value into the template, updating the linked item or creating a new linked one. This replaces editing the Template sheet after noticing a value changed for good.
 
-## Currency, rate and conversions
+## Currency and rate
 
-- **Only BRL and EUR** (Postgres enum), matching the sheet. Rates are always quoted as EUR→BRL (how many reais per euro), as `Preço Euro` was.
-- **Live rate sources, in order:** Frankfurter (the ECB's reference rate, published once per working day), then open.er-api (updated once a day). No API keys needed, and nothing is asked of Wise. The rate is a daily reference, so it differs a little from what a transfer gets at the moment it is made; a conversion's fee absorbs that difference. The providers are asked once a day: the first request of a day (UTC) fetches the rate and stores it in `exchange_rates`, and every other request that day reads that row. If every provider fails, the last stored rate is served with `stale: true`, and the UI shows a badge.
-- **Lock per month.** While a month's rate is unlocked it follows the live rate, as the spreadsheet did. Locking freezes it, so past months stop moving. Imported months are left unlocked because the workbook only had the GOOGLEFINANCE fallback value, which was the same in every sheet.
-- **Completed conversions are actuals.** Each one records total BRL sent and EUR received. Multiple conversions can happen in the same month; they reduce the BRL remaining, and their received EUR is added directly to EUR income.
-- **The projection has no fee.** The BRL that remains is converted at the rate, in full. What a transfer costs only shows up once it is recorded as a conversion.
-- **A conversion's fee is worked out, not typed in.**
-  - **The sum:** `sentBrl − receivedEur × rate`, never below zero (`conversionFee()` in `packages/shared/src/summary.ts`).
-  - **The rate:** the month's locked rate, or the live rate when the month has none. Without any rate the fee is zero.
-  - **When:** the backend does the sum when the amounts are saved and stores the result in `conversions.fee_brl`, since the rate keeps moving. Changing only the day or the note keeps it.
-  - **No fee quotes:** the app doesn't ask Wise, or anyone, what a transfer would cost.
-- **Negative BRL net isn't converted.** A transfer below zero makes no sense, so it's clamped to 0; the deficit still shows in the BRL net.
+- **A fixed list of currencies** (Postgres enum, made from `currencies` in `packages/shared/src/schemas.ts`): the 30 that Frankfurter publishes the ECB's reference rates for, so each one has a rate against any other. A user picks which of them they use. Adding one to the list takes a migration.
+  - Amounts are stored with two decimals in every currency, including those normally written without any, such as the yen.
+- **A month is worked out in one currency, its main one.** It is the user's main currency when the month is created, stored on the month, so changing the main currency later leaves the months that exist as they were. The months that existed before this are in EUR.
+- **Rates are quoted against the month's main currency:** how many units of each other currency one unit of it is worth. With EUR as the main one that is reais per euro, as `Preço Euro` was.
+- **Live rate sources, in order:** Frankfurter (the ECB's reference rate, published once per working day), then open.er-api (updated once a day). No API keys needed, and nothing is asked of Wise. The rate is a daily reference, so it differs a little from what a transfer gets at the moment it is made. The providers are asked once a day for each base currency in use: the first request of a day (UTC) fetches the rates and stores them in `exchange_rates`, one row per quoted currency, and every other request that day reads those rows. If every provider fails, the last stored rates are served with `stale: true`, and the UI shows a badge.
+- **Lock per month, per currency.** While a currency's rate is unlocked in a month it follows the live rate, as the spreadsheet did. Locking freezes it, so past months stop moving. The locked rates are a map on the month (`locked_rates`). Imported months are left unlocked because the workbook only had the GOOGLEFINANCE fallback value, which was the same in every sheet.
+- **The conversion is a projection, with no fee.** What is left in each other currency is converted into the main one at the rate, in full. Transfers that were actually made, and what they cost, aren't recorded.
+- **A net below zero is converted too.** A currency with more expenses than income has to be covered from the main one, so its deficit comes out of the month's net. Before the main currency existed, a negative BRL net was left out of the EUR result.
 
 ## Allowance
 
-- **Current month:** EUR net ÷ remaining days including today, like the sheet.
+- **Current month:** the month's net, in its main currency, ÷ remaining days including today, like the sheet.
 - **Future months:** divided by every day of the month.
 - **Past months:** no allowance; the page shows "mês encerrado" with the final net instead. The sheet's `TODAY()` made old sheets show meaningless numbers.
-- **BRL equivalent:** allowance × rate, with no fee, matching the sheet.
+- **Equivalents in the other currencies:** allowance × rate, with no fee, matching the sheet's BRL equivalent.
 
 ### Daily spending ("Hoje")
 
-- **Kept apart from the month's obligations.** Day-to-day spends live in their own table (`daily_spends`). They never appear in the month's lists or in its EUR totals. They only feed the allowance.
-- **Euros or reais.** A spend keeps its own currency and amount. A BRL spend costs the allowance what those reais would have become at the rate: amount ÷ rate, using the month's rate (locked or live). It isn't stored as euros, so it follows the rate until the month's rate is locked. Without any rate, BRL spends count as zero until one is available.
+- **Kept apart from the month's obligations.** Day-to-day spends live in their own table (`daily_spends`). They never appear in the month's lists or in its totals. They only feed the allowance.
+- **Any of the user's currencies.** A spend keeps its own currency and amount. One in a currency other than the month's main one costs the allowance what it would have become at the rate: amount ÷ rate, using the month's rate for that currency (locked or live). It isn't stored converted, so it follows the rate until that rate is locked. Without a rate, such spends count as zero until one is available.
 - **An open day instead of the calendar day.** Each month has an `activeDay`: the day spends are recorded on. Until a day is first closed it's simply today (the 1st for a future month), so the numbers match the sheet's formula.
-- **The formula:** day budget = (EUR net − spends on days before the open day) ÷ days from the open day to the end of the month. What's left today = day budget − spends on the open day. A spend only reduces today; it doesn't change the budget until the day is closed.
+- **The formula:** day budget = (net − spends on days before the open day) ÷ days from the open day to the end of the month. What's left today = day budget − spends on the open day. A spend only reduces today; it doesn't change the budget until the day is closed.
 - **"Fechar o dia"** moves the open day forward, and the same formula spreads the leftover (or the overspend) over the remaining days. Nothing extra is stored, so editing or deleting an old spend re-spreads automatically.
   - **Where it moves:** to today when earlier days were left open, or to tomorrow when today is the open day (closing at night). Past the last day, the month shows as fully closed.
   - **Undo:** the toast after closing offers "Desfazer", which restores the previous open day.
@@ -108,7 +105,7 @@ All the arithmetic lives in one place, `packages/shared/src/summary.ts`, used by
     - Android assertions carry `android:apk-key-hash:<hash>` as their origin, so the passkey plugin's `origin` lists one per fingerprint in `ANDROID_APP_CERT_SHA256`, next to the web origin.
     - The challenge travels in a cookie. The verify request is the only one where the app sends a cookie, together with an `Origin` header, since Better Auth refuses a cookie without one.
     - The backend builds the association files (`assetlinks.json`, `apple-app-site-association`) and the frontend serves them at `/.well-known/*`.
-  - Data is per user. Every user-owned table has its own `user_id`, so row-level security can check it without joins. Month items, spends and conversions reference their month through `(month_id, user_id)`, so their owner can't differ from the month's. Cached exchange rates stay shared.
+  - Data is per user. Every user-owned table has its own `user_id`, so row-level security can check it without joins. Month items and spends reference their month through `(month_id, user_id)`, so their owner can't differ from the month's. Cached exchange rates stay shared.
   - The `0005_auth` migration assigns data that already exists to a placeholder owner (`owner@maimoni.invalid`). To keep that data, update the placeholder instead of inserting a new user:
 
     ```sql

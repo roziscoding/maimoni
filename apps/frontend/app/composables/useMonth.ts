@@ -1,4 +1,4 @@
-import type { Conversion, CreateConversion, CreateDailySpend, CreateMonthItem, DailySpend, LiveRate, MonthDetail, MonthItem, MonthListEntry, TemplateItem, UpdateConversion, UpdateDailySpend, UpdateMonth, UpdateMonthItem } from '@maimoni/shared'
+import type { CreateDailySpend, CreateMonthItem, DailySpend, LiveRates, MonthDetail, MonthItem, MonthListEntry, TemplateItem, UpdateDailySpend, UpdateMonth, UpdateMonthItem } from '@maimoni/shared'
 import { nextActiveDay, summarizeMonth } from '@maimoni/shared'
 
 const RATE_REFRESH_MS = 5 * 60 * 1000
@@ -18,9 +18,8 @@ export async function useMonth(year: number, month: number) {
 
   const summary = computed(() => data.value
     ? summarizeMonth(data.value.month, data.value.items, {
-        rate: data.value.rate?.rate ?? null,
+        rates: data.value.rates?.rates ?? null,
         spends: data.value.spends,
-        conversions: data.value.conversions,
       })
     : null)
 
@@ -111,41 +110,21 @@ export async function useMonth(year: number, month: number) {
     await persist(() => $fetch(`${base}/spends/${id}`, { method: 'DELETE' }))
   }
 
-  function setConversions(update: (conversions: Conversion[]) => Conversion[]) {
-    if (data.value)
-      data.value = { ...data.value, conversions: update(data.value.conversions) }
-  }
-
-  async function addConversion(body: CreateConversion) {
-    const created = await persist(() => $fetch<Conversion>(`${base}/conversions`, { method: 'POST', body }))
-    if (created)
-      setConversions(conversions => [...conversions, created])
-    return created
-  }
-
-  async function updateConversion(id: string, patch: UpdateConversion) {
-    setConversions(conversions => conversions.map(conversion => conversion.id === id ? { ...conversion, ...patch } as Conversion : conversion))
-    const saved = await persist(() => $fetch<Conversion>(`${base}/conversions/${id}`, { method: 'PATCH', body: patch }))
-    if (saved)
-      setConversions(conversions => conversions.map(conversion => conversion.id === id ? saved : conversion))
-    return saved
-  }
-
-  async function removeConversion(id: string) {
-    setConversions(conversions => conversions.filter(conversion => conversion.id !== id))
-    await persist(() => $fetch(`${base}/conversions/${id}`, { method: 'DELETE' }))
-  }
-
   const refreshingRate = ref(false)
   async function refreshRate(refreshMonths = true) {
     refreshingRate.value = true
+    // Nothing to ask before the month is loaded: the rates are quoted against its main currency.
+    if (!data.value) {
+      refreshingRate.value = false
+      return null
+    }
     try {
-      const rate = await $fetch<LiveRate>('/api/rates/live')
+      const rates = await $fetch<LiveRates>('/api/rates/live', { query: { base: data.value.month.mainCurrency } })
       if (data.value)
-        data.value = { ...data.value, rate, rateError: null }
+        data.value = { ...data.value, rates, rateError: null }
       if (refreshMonths)
         await refreshNuxtData('months')
-      return rate
+      return rates
     }
     catch (error) {
       if (data.value)
@@ -182,5 +161,5 @@ export async function useMonth(year: number, month: number) {
 
   await fetched
   // Not spreading `fetched`: it is thenable, so awaiting this object would resolve to the bare AsyncData.
-  return { data, error, summary, refreshingRate, refreshRate, updateItem, addItem, removeItem, promoteItem, updateMonth, removeMonth, addSpend, updateSpend, removeSpend, addConversion, updateConversion, removeConversion, closeDay }
+  return { data, error, summary, refreshingRate, refreshRate, updateItem, addItem, removeItem, promoteItem, updateMonth, removeMonth, addSpend, updateSpend, removeSpend, closeDay }
 }

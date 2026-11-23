@@ -1,4 +1,5 @@
-import type { Conversion, Currency, DailySpend, Month, MonthItem } from './schemas'
+import type { Currency, DailySpend, Month, MonthItem, Rates } from './schemas'
+import { currencies } from './schemas'
 
 export interface CurrencyTotals {
   income: number
@@ -10,31 +11,33 @@ export interface CurrencyTotals {
   unresolved: number
 }
 
+/** How what is left in a currency other than the month's main one becomes main currency. */
+export interface CurrencyConversion {
+  currency: Currency
+  /** How many units of the currency one unit of the main currency is worth; `null` when there is no rate for it. */
+  rate: number | null
+  /** Whether the rate is the one the month locked, rather than the live one. */
+  rateLocked: boolean
+  /** The currency's own net: its income minus its expenses. */
+  net: number
+  /** That net in the main currency, with no fee taken off; `null` when it isn't zero and there is no rate. */
+  converted: number | null
+}
+
 export interface MonthSummary {
-  brl: CurrencyTotals
-  eur: CurrencyTotals
-  transfer: {
-    /** EUR→BRL rate used for the conversion. */
-    rate: number | null
-    rateLocked: boolean
-    /** BRL left after completed conversions; negative when they exceeded this month's net. */
-    remainingBrl: number
-    realized: {
-      /** Total BRL debited by completed conversions, fees included. */
-      sentBrl: number
-      convertedBrl: number
-      feeBrl: number
-      receivedEur: number
-    }
-    projected: {
-      /** Positive BRL balance still expected to be converted. */
-      sentBrl: number
-      /** Expected EUR for the remaining BRL at the rate, with no fee taken off; `null` without a rate. */
-      eur: number | null
-    }
-    /** Completed EUR plus the projection for the remaining BRL. */
-    eur: number | null
-  }
+  /** The currency the month is worked out in. */
+  main: Currency
+  /** Totals of each currency's own items: the main currency, and every other one with an item. */
+  totals: Partial<Record<Currency, CurrencyTotals>>
+  /** The rate in use for each currency: the month's locked one, or the live one. */
+  rates: Rates
+  /** One entry per other currency the month has items or spends in, in the app's order. */
+  conversions: CurrencyConversion[]
+  /** What the other currencies add up to in the main one; `null` while any of them can't be converted. */
+  converted: number | null
+  /** The main currency's own net plus `converted`; `null` while `converted` is. */
+  net: number | null
+  /** Daily spending, all in the main currency. */
   allowance: {
     /** Day of the month open for daily spending; `null` for past months and once every day was closed. */
     activeDay: number | null
@@ -42,27 +45,24 @@ export interface MonthSummary {
     days: number
     /** Daily spending on days other than the open day (normally the closed ones); it already came out of the budget being spread. */
     spentBefore: number
-    /** Daily spending on the open day, in EUR (BRL spends converted with `spendInEur`). */
+    /** Daily spending on the open day (spends in other currencies converted with `spendInMain`). */
     spentToday: number
-    /** All daily spending of the month, in EUR. */
+    /** All daily spending of the month. */
     spentTotal: number
-    /** Budget for the open day: (EUR net − spentBefore) ÷ days. */
-    eur: number | null
+    /** Budget for the open day: (net − spentBefore) ÷ days. */
+    amount: number | null
     /** What is left of the open day's budget after its spending. */
-    remainingEur: number | null
-    brl: number | null
+    remaining: number | null
   }
 }
 
 export type MonthPhase = 'past' | 'current' | 'future'
 
 export interface SummaryContext {
-  /** Live EUR→BRL rate, used unless the month locked its own. */
-  rate: number | null
+  /** Live rates quoted against the month's main currency, used for the currencies the month didn't lock. */
+  rates: Rates | null
   /** Day-to-day spending recorded for the month. */
   spends?: Pick<DailySpend, 'day' | 'amount' | 'currency'>[]
-  /** Completed BRL→EUR conversions recorded for the month. */
-  conversions?: Pick<Conversion, 'sentBrl' | 'feeBrl' | 'receivedEur'>[]
 }
 
 const round = (value: number) => Math.round(value * 100) / 100
@@ -140,62 +140,68 @@ function totals(items: MonthItem[], currency: Currency): CurrencyTotals {
 }
 
 /**
- * What a daily spend costs the EUR allowance. Reais spent are reais that won't be converted, so a
- * BRL spend is worth what it would have become at the rate: amount ÷ rate. `null` when a BRL spend
- * has no rate to convert with.
+ * What a daily spend costs the allowance, in the month's main currency. Money spent in another
+ * currency is money that won't become main currency, so it is worth what it would have become at
+ * the rate: amount ÷ rate. `null` when its currency has no rate.
  */
-export function spendInEur(spend: Pick<DailySpend, 'amount' | 'currency'>, transfer: Pick<MonthSummary['transfer'], 'rate'>) {
-  if (spend.currency === 'EUR')
+export function spendInMain(spend: Pick<DailySpend, 'amount' | 'currency'>, summary: Pick<MonthSummary, 'main' | 'rates'>) {
+  if (spend.currency === summary.main)
     return spend.amount
-  return transfer.rate ? round(spend.amount / transfer.rate) : null
+  const rate = summary.rates[spend.currency]
+  return rate ? round(spend.amount / rate) : null
 }
 
 /**
- * The fee of a completed conversion: what was sent beyond the BRL the received EUR are worth at
- * `rate`. Zero when the rate has moved so far that they are worth more than was sent, or without a rate.
- */
-export function conversionFee(conversion: Pick<Conversion, 'sentBrl' | 'receivedEur'>, rate: number | null) {
-  return rate ? Math.max(0, round(conversion.sentBrl - conversion.receivedEur * rate)) : 0
-}
-
-/**
- * Computes the month's result and allowance. Completed conversions use their actual BRL, fee and
- * EUR amounts; the BRL left after them is projected at the rate, with no fee taken off. EUR
- * expenses are then paid from actual plus projected EUR, and the remainder is split across the open days.
+ * Computes the month's result and allowance, in the month's main currency. What is left in every
+ * other currency, above or below zero, is converted into it at that currency's rate, with no fee
+ * taken off. The result is then split across the open days.
  */
 export function summarizeMonth(
-  month: Pick<Month, 'year' | 'month' | 'exchangeRate' | 'activeDay'>,
+  month: Pick<Month, 'year' | 'month' | 'mainCurrency' | 'lockedRates' | 'activeDay'>,
   items: MonthItem[],
   context: SummaryContext,
   today = new Date(),
 ): MonthSummary {
-  const brl = totals(items, 'BRL')
-  const eurOwn = totals(items, 'EUR')
-  const rate = month.exchangeRate ?? context.rate
-  const realized = (context.conversions ?? []).reduce((result, conversion) => ({
-    sentBrl: result.sentBrl + conversion.sentBrl,
-    convertedBrl: result.convertedBrl + conversion.sentBrl - conversion.feeBrl,
-    feeBrl: result.feeBrl + conversion.feeBrl,
-    receivedEur: result.receivedEur + conversion.receivedEur,
-  }), { sentBrl: 0, convertedBrl: 0, feeBrl: 0, receivedEur: 0 })
-  const remainingBrl = round(brl.net - realized.sentBrl)
-  const projectedBrl = Math.max(0, remainingBrl)
-  const projectedEur = projectedBrl === 0 ? 0 : rate ? round(projectedBrl / rate) : null
-  const transferEur = projectedEur === null ? null : round(realized.receivedEur + projectedEur)
+  const main = month.mainCurrency
+  const spends = context.spends ?? []
+  const rates: Rates = { ...context.rates, ...month.lockedRates }
+  delete rates[main]
 
-  const eurIncome = round(eurOwn.income + realized.receivedEur + (projectedEur ?? 0))
-  const eur: CurrencyTotals = { ...eurOwn, income: eurIncome, net: round(eurIncome - eurOwn.expenses) }
+  const used = new Set<Currency>([main, ...items.map(item => item.currency)])
+  const byCurrency: MonthSummary['totals'] = {}
+  for (const currency of currencies) {
+    if (used.has(currency))
+      byCurrency[currency] = totals(items, currency)
+  }
 
-  // Daily spending is kept out of the EUR totals: days before the open day reduce what gets spread
-  // over the remaining days, while the open day's spending only eats into that day's budget.
+  const converting = new Set<Currency>([...used, ...spends.map(spend => spend.currency)])
+  converting.delete(main)
+  const conversions: CurrencyConversion[] = currencies.filter(currency => converting.has(currency)).map((currency) => {
+    const rate = rates[currency] ?? null
+    const net = byCurrency[currency]?.net ?? 0
+    return {
+      currency,
+      rate,
+      rateLocked: month.lockedRates[currency] !== undefined,
+      net,
+      converted: net === 0 ? 0 : rate ? round(net / rate) : null,
+    }
+  })
+  const converted = conversions.some(conversion => conversion.converted === null)
+    ? null
+    : round(conversions.reduce((sum, conversion) => sum + conversion.converted!, 0))
+  const net = converted === null ? null : round(byCurrency[main]!.net + converted)
+
+  // Daily spending is kept out of the net: days before the open day reduce what gets spread over
+  // the remaining days, while the open day's spending only eats into that day's budget.
   const activeDay = openDay(month, today)
   const days = activeDay === null ? 0 : daysInMonth(month.year, month.month) - activeDay + 1
   let spentBefore = 0
   let spentToday = 0
   let spentTotal = 0
-  for (const spend of context.spends ?? []) {
-    // Without a rate a BRL spend can't be converted; it counts once a rate is available.
-    const value = spendInEur(spend, { rate }) ?? 0
+  for (const spend of spends) {
+    // Without a rate a spend in another currency can't be converted; it counts once a rate is available.
+    const value = spendInMain(spend, { main, rates }) ?? 0
     spentTotal += value
     // Spends on later days only exist after undoing a close; they are still money already gone.
     if (spend.day === activeDay)
@@ -203,36 +209,23 @@ export function summarizeMonth(
     else
       spentBefore += value
   }
-  const allowanceEur = days > 0 && transferEur !== null ? round((eur.net - spentBefore) / days) : null
+  const amount = days > 0 && net !== null ? round((net - spentBefore) / days) : null
 
   return {
-    brl,
-    eur,
-    transfer: {
-      rate,
-      rateLocked: month.exchangeRate !== null,
-      remainingBrl,
-      realized: {
-        sentBrl: round(realized.sentBrl),
-        convertedBrl: round(realized.convertedBrl),
-        feeBrl: round(realized.feeBrl),
-        receivedEur: round(realized.receivedEur),
-      },
-      projected: {
-        sentBrl: round(projectedBrl),
-        eur: projectedEur,
-      },
-      eur: transferEur,
-    },
+    main,
+    totals: byCurrency,
+    rates,
+    conversions,
+    converted,
+    net,
     allowance: {
       activeDay,
       days,
       spentBefore: round(spentBefore),
       spentToday: round(spentToday),
       spentTotal: round(spentTotal),
-      eur: allowanceEur,
-      remainingEur: allowanceEur === null ? null : round(allowanceEur - spentToday),
-      brl: allowanceEur !== null && rate ? round(allowanceEur * rate) : null,
+      amount,
+      remaining: amount === null ? null : round(amount - spentToday),
     },
   }
 }
@@ -241,9 +234,9 @@ export interface DayResult {
   day: number
   /** closed: before the open day; open: the day spends go to; upcoming: not reached yet */
   state: 'closed' | 'open' | 'upcoming'
-  /** The day's budget in EUR; for upcoming days, what they'd get if the open day closed now. */
+  /** The day's budget, in the main currency; for upcoming days, what they'd get if the open day closed now. */
   budget: number | null
-  /** Daily spending on the day, in EUR. */
+  /** Daily spending on the day, in the main currency. */
   spent: number
   /** budget − spent: what was left (or, negative, what went over); for the open day, what's still left. */
   result: number | null
@@ -252,7 +245,7 @@ export interface DayResult {
 /**
  * Per-day budgets and results for a month's calendar. Budgets aren't stored, so closed days are
  * rebuilt by replaying the month as if each day had been closed in order: a day's budget is
- * (EUR net − spends on earlier days) ÷ days from it to the end of the month. The open day uses the
+ * (net − spends on earlier days) ÷ days from it to the end of the month. The open day uses the
  * summary's own figures, so it matches Hoje.
  */
 export function dayResults(
@@ -262,27 +255,27 @@ export function dayResults(
 ): DayResult[] {
   const total = daysInMonth(month.year, month.month)
   const openDay = summary.allowance.activeDay
-  const hasBudget = summary.transfer.eur !== null
-  const spentOn = Array.from({ length: total + 2 }).fill(0)
+  const net = summary.net
+  const spentOn = Array.from<number>({ length: total + 2 }).fill(0)
   for (const spend of spends)
-    spentOn[spend.day] = (spentOn[spend.day] ?? 0) + (spendInEur(spend, summary.transfer) ?? 0)
+    spentOn[spend.day] = (spentOn[spend.day] ?? 0) + (spendInMain(spend, summary) ?? 0)
   const spentAll = spentOn.reduce((sum, value) => sum + value, 0)
   // Upcoming days: what the open day's close would leave for each of the days after it.
   const upcomingDays = openDay === null ? 0 : total - openDay
-  const projected = hasBudget && upcomingDays > 0 ? round((summary.eur.net - spentAll) / upcomingDays) : null
+  const projected = net !== null && upcomingDays > 0 ? round((net - spentAll) / upcomingDays) : null
 
   const results: DayResult[] = []
   let spentBefore = 0
   for (let day = 1; day <= total; day++) {
     const spent = round(spentOn[day] ?? 0)
     if (openDay !== null && day === openDay) {
-      results.push({ day, state: 'open', budget: summary.allowance.eur, spent: summary.allowance.spentToday, result: summary.allowance.remainingEur })
+      results.push({ day, state: 'open', budget: summary.allowance.amount, spent: summary.allowance.spentToday, result: summary.allowance.remaining })
     }
     else if (openDay !== null && day > openDay) {
       results.push({ day, state: 'upcoming', budget: projected, spent, result: projected })
     }
     else {
-      const budget = hasBudget ? round((summary.eur.net - spentBefore) / (total - day + 1)) : null
+      const budget = net === null ? null : round((net - spentBefore) / (total - day + 1))
       results.push({ day, state: 'closed', budget, spent, result: budget === null ? null : round(budget - spent) })
     }
     spentBefore += spentOn[day] ?? 0

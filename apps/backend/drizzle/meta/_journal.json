@@ -71,6 +71,34 @@
       "when": 1795343734968,
       "tag": "0009_user_currencies_enabled",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1795349176125,
+      "tag": "0010_drop_conversions",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1795349428314,
+      "tag": "0011_month_main_currency",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1795349435540,
+      "tag": "0012_drop_month_exchange_rate",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1795350085057,
+      "tag": "0013_more_currencies",
+      "breakpoints": true
     }
   ]
 }

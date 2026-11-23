@@ -6,10 +6,9 @@ import { createMonthItemSchema, createMonthSchema, monthKeySchema, reorderSchema
 import { and, asc, desc, eq, inArray, lt, max, or, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { conversions, dailySpends, monthItems, months, templateItems } from '../db/schema'
+import { dailySpends, monthItems, months, templateItems } from '../db/schema'
 import { validate } from '../lib/validate'
-import { listConversions, toConversion } from './conversions'
-import { CURRENCY_NOT_ADDED, userHasCurrency } from './currencies'
+import { CURRENCY_NOT_ADDED, mainCurrencyOf, userHasCurrency } from './currencies'
 import { listSpends, toDailySpend } from './spends'
 import { listTemplateItems, toTemplateItem } from './template'
 
@@ -70,28 +69,27 @@ async function seedItems(db: Database, userId: string, { year, month }: MonthKey
 
 export function monthRoutes(db: Database, rates: RateService) {
   async function detail(row: typeof months.$inferSelect): Promise<MonthDetail> {
-    const [items, spends, monthConversions, rateResult] = await Promise.all([listItems(db, row.id), listSpends(db, row.id), listConversions(db, row.id), rates.get()])
+    const [items, spends, rateResult] = await Promise.all([listItems(db, row.id), listSpends(db, row.id), rates.get(row.mainCurrency)])
     const month = toMonth(row)
-    const summary = summarizeMonth(month, items, { rate: rateResult.rate?.rate ?? null, spends, conversions: monthConversions })
-    return { month, items, spends, conversions: monthConversions, summary, rate: rateResult.rate, rateError: rateResult.error }
+    const summary = summarizeMonth(month, items, { rates: rateResult.rates?.rates ?? null, spends })
+    return { month, items, spends, summary, rates: rateResult.rates, rateError: rateResult.error }
   }
 
   return new Hono<AuthEnv>()
     .get('/months', async (c) => {
       const userId = c.var.user.id
-      const [rows, items, spends, conversionRows, rateResult] = await Promise.all([
+      const [rows, items, spends] = await Promise.all([
         db.select().from(months).where(eq(months.userId, userId)).orderBy(desc(months.year), desc(months.month)),
         db.select().from(monthItems).where(eq(monthItems.userId, userId)).orderBy(asc(monthItems.position)),
         db.select().from(dailySpends).where(eq(dailySpends.userId, userId)),
-        db.select().from(conversions).where(eq(conversions.userId, userId)),
-        rates.get(),
       ])
+      // Months made under different main currencies are quoted against different ones.
+      const liveRates = new Map(await Promise.all([...new Set(rows.map(row => row.mainCurrency))].map(async base => [base, (await rates.get(base)).rates?.rates ?? null] as const)))
       const itemsByMonth = Map.groupBy(items.map(toMonthItem), item => item.monthId)
       const spendsByMonth = Map.groupBy(spends.map(toDailySpend), spend => spend.monthId)
-      const conversionsByMonth = Map.groupBy(conversionRows.map(toConversion), conversion => conversion.monthId)
       const body: MonthListEntry[] = rows.map((row) => {
         const month = toMonth(row)
-        const summary = summarizeMonth(month, itemsByMonth.get(month.id) ?? [], { rate: rateResult.rate?.rate ?? null, spends: spendsByMonth.get(month.id) ?? [], conversions: conversionsByMonth.get(month.id) ?? [] })
+        const summary = summarizeMonth(month, itemsByMonth.get(month.id) ?? [], { rates: liveRates.get(month.mainCurrency) ?? null, spends: spendsByMonth.get(month.id) ?? [] })
         return { ...month, summary }
       })
       return c.json(body)
@@ -104,8 +102,12 @@ export function monthRoutes(db: Database, rates: RateService) {
       const items = await seedItems(db, userId, key, source)
       if (!items)
         return c.json({ error: 'There is no earlier month to copy from' }, 400)
+      // The month keeps this currency: changing the main one later doesn't move it.
+      const mainCurrency = await mainCurrencyOf(db, userId)
+      if (!mainCurrency)
+        return c.json({ error: 'Add a currency before creating a month' }, 409)
       const row = await db.transaction(async (tx) => {
-        const [created] = await tx.insert(months).values({ ...key, userId }).returning()
+        const [created] = await tx.insert(months).values({ ...key, userId, mainCurrency }).returning()
         if (items.length)
           await tx.insert(monthItems).values(items.map(item => ({ ...item, monthId: created!.id, userId })))
         return created!

@@ -4,7 +4,7 @@
  * as `1250.99`, `1250,99`, `2.500` or pt-BR style `1.250,99`; currency symbols are ignored. Returns `null` for anything else.
  */
 export function evaluateExpression(input: string): number | null {
-  const source = input.trim().replace(/^=/, '').replace(/R\$|€|\s+/g, '')
+  const source = input.trim().replace(/^=/, '').replace(/R\$|\p{Sc}|\s+/gu, '')
   if (!source)
     return null
 

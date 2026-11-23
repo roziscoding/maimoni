@@ -26,7 +26,7 @@ Every route below except `/api/health`, `/api/sign-in-providers`, `/api/password
 | GET | `/api/well-known/assetlinks.json` | | Digital Asset Links statement for the Android app (404 unless `ANDROID_APP_PACKAGE` and `ANDROID_APP_CERT_SHA256` are set) |
 | GET | `/api/well-known/apple-app-site-association` | | `{ webcredentials: { apps } }` (404 unless `APPLE_TEAM_ID` and `APPLE_APP_BUNDLE_IDENTIFIER` are set) |
 | GET | `/api/flags` | | `Flags` (`{ purge }`): whether `DELETE /api/data` is served, so the clients know to offer it |
-| GET | `/api/rates/live` | | `LiveRate` (503 when no provider answered and nothing is cached) |
+| GET | `/api/rates/live?base=` | | `LiveRates` (`{ base, rates, source, fetchedAt, stale }`): how many units of every other currency one unit of `base` is worth. `base` defaults to the user's main currency (409 when they have none). 503 when no provider answered and nothing is cached |
 | GET | `/api/template` | | `TemplateDetail` (`{ items }`) |
 | POST | `/api/template/items` | `CreateTemplateItem` | `TemplateItem` (201) |
 | PATCH | `/api/template/items/:id` | `UpdateTemplateItem` | `TemplateItem` |
@@ -42,14 +42,10 @@ Every route below except `/api/health`, `/api/sign-in-providers`, `/api/password
 | DELETE | `/api/months/:year/:month/items/:id` | | 204 |
 | PUT | `/api/months/:year/:month/items/order` | `{ ids: string[] }` | `MonthItem[]` |
 | POST | `/api/months/:year/:month/items/:id/promote` | | `TemplateItem` — writes the item's name/amount/expression into the template (updates the linked template item or creates a new one and links it) |
-| GET | `/api/months/:year/:month/conversions` | | `Conversion[]` |
-| POST | `/api/months/:year/:month/conversions` | `CreateConversion` | `Conversion` (201) |
-| PATCH | `/api/months/:year/:month/conversions/:id` | `UpdateConversion` | `Conversion` |
-| DELETE | `/api/months/:year/:month/conversions/:id` | | 204 |
 | POST | `/api/months/:year/:month/spends` | `CreateDailySpend` (`{ day, amount, currency?, expression?, note? }`) | `DailySpend` (201) |
 | PATCH | `/api/months/:year/:month/spends/:id` | `UpdateDailySpend` | `DailySpend` |
 | DELETE | `/api/months/:year/:month/spends/:id` | | 204 |
-| DELETE | `/api/data` | | 204 — deletes the user's months (with their items, spends and conversions), and template items; 404 unless `FLAG_ENABLE_PURGE` is `true` |
+| DELETE | `/api/data` | | 204 — deletes the user's months (with their items and spends), and template items; 404 unless `FLAG_ENABLE_PURGE` is `true` |
 | GET | `/api/settings/currencies` | | `UserCurrency[]` (`{ currency, enabled, main, inUse }`), the main one first. `enabled` tells the clients which ones to offer; the server takes items and spends in a disabled one all the same. `inUse` says a template item, month item or daily spend is in it, so it can't be removed |
 | POST | `/api/settings/currencies` | `AddUserCurrency` (`{ currency, enabled?, main? }`) | `UserCurrency` (201, 409 if already added). `main: true` makes it the main one, in place of the previous one. The user's first currency is the main one whatever `main` says, so adding it with `enabled: false` answers 409. 400 for `enabled: false` with `main: true` |
 | PUT | `/api/settings/currencies` | `ReplaceUserCurrencies` (`{ currencies: { currency, enabled }[], main }`) | `UserCurrency[]` — replaces the whole list. `main` has to be one of `currencies` and enabled (400 otherwise). A currency left out is removed. When any left out is in use it answers 409 `CurrenciesInUseError` (`{ error, inUse }`, the currencies in use) and changes nothing |
@@ -62,10 +58,14 @@ Every route below except `/api/health`, `/api/sign-in-providers`, `/api/password
 
 ## Behaviour notes
 
-- **Creating a month** copies every template item into the month (`source: "template"`, default) or every item of the closest earlier month (`source: "previous"`). Items copied from a `variable` template item get `needsReview: true`; template items without an amount are copied with `amount: null`. `exchangeRate` starts as `null`.
+- **Creating a month** copies every template item into the month (`source: "template"`, default) or every item of the closest earlier month (`source: "previous"`). Items copied from a `variable` template item get `needsReview: true`; template items without an amount are copied with `amount: null`. The month takes the user's main currency as its `mainCurrency` and keeps it from then on; a user with no currency gets 409. `lockedRates` starts as `{}`.
 - **Editing a month item's `amount`** clears `needsReview` unless the request explicitly sends `needsReview`.
-- **`exchangeRate: null`** on a month means "use the live rate". Locking = PATCH the month with the current live rate.
-- **Conversions** (`MonthDetail.conversions`) record completed BRL→EUR transfers: day, total BRL sent, EUR received, and an optional note. `feeBrl` is not accepted: the server sets it to `sentBrl − receivedEur × rate` (never below zero) with the month's locked rate, or the live rate, when the amounts are saved. The summary separates the actual amounts under `summary.transfer.realized`, then converts `summary.transfer.remainingBrl` at the rate, with no fee, under `summary.transfer.projected`.
-- **Daily spends** (`MonthDetail.spends`) are day-to-day spending in `EUR` (default) or `BRL`, stored apart from the month items and never counted in `summary.eur`. BRL spends count against the allowance through `spendInEur()` (amount ÷ rate). The client sends the `day` (the open day it shows), so day boundaries follow the browser's timezone.
-- **`activeDay`** on a month is the day open for daily spending; `null` means "today" (or the 1st for a future month). Closing a day is `PATCH { activeDay }` with `nextActiveDay()` from `@maimoni/shared`; 32 means every day was closed. `summary.allowance` is `(eur.net − spends before the open day) ÷ days from the open day to month end`, and `remainingEur` subtracts the open day's own spends.
-- **`summary`** is computed with `summarizeMonth` from `@maimoni/shared`, using the month's locked rate or the live rate. The frontend recomputes it locally with the same function after optimistic edits.
+- **Rates** are quoted against a month's main currency: `rates.BRL` is how many reais one unit of it is worth. `MonthDetail.rates` holds the live ones for that currency.
+- **`lockedRates`** on a month freezes the rate of the currencies in it; any other follows the live rate. `PATCH { lockedRates }` replaces the whole map, so locking one more currency means sending the others again, and `{}` unlocks all.
+- **`summary`** is in the month's main currency (`summary.main`):
+  - `totals` has each currency's own income, expenses and net.
+  - `conversions` has one entry per other currency with items or spends: its `net`, the `rate` in use, whether it is locked, and the net `converted` into the main currency (net ÷ rate, with no fee). A net below zero is converted too.
+  - `net` is the main currency's own net plus every `converted`. It is `null`, and so is the allowance, while a currency with something left has no rate.
+- **Daily spends** (`MonthDetail.spends`) are day-to-day spending, stored apart from the month items and never counted in `summary.totals`. One sent without a `currency` goes in the month's main currency. A spend in another currency counts against the allowance through `spendInMain()` (amount ÷ rate). The client sends the `day` (the open day it shows), so day boundaries follow the browser's timezone.
+- **`activeDay`** on a month is the day open for daily spending; `null` means "today" (or the 1st for a future month). Closing a day is `PATCH { activeDay }` with `nextActiveDay()` from `@maimoni/shared`; 32 means every day was closed. `summary.allowance.amount` is `(net − spends before the open day) ÷ days from the open day to month end`, and `remaining` subtracts the open day's own spends.
+- **`summary`** is computed with `summarizeMonth` from `@maimoni/shared`, using the month's locked rates and the live ones for the rest. The frontend recomputes it locally with the same function after optimistic edits.

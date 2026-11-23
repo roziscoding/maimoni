@@ -6,7 +6,7 @@ const props = defineProps<{
   year: number
   month: number
   summary: MonthSummary
-  /** Whether the month has more than one currency, and so a rate and an equivalent in reais to show. */
+  /** Whether the month has more than one currency, and so rates and equivalents in the others to show. */
   exchange: boolean
 }>()
 
@@ -24,9 +24,15 @@ const days = computed(() => Array.from({ length: total.value }, (_, index) => {
 }))
 
 const allowance = computed(() => props.summary.allowance)
-const net = computed(() => props.summary.transfer.eur === null ? null : props.summary.eur.net)
 // Past months show what was left over; open months show the daily budget.
-const headline = computed(() => phase.value === 'past' ? net.value : allowance.value.eur)
+const headline = computed(() => phase.value === 'past' ? props.summary.net : allowance.value.amount)
+/** The daily budget in each other currency of the month that has a rate. */
+const equivalents = computed(() => {
+  const amount = allowance.value.amount
+  if (amount === null)
+    return []
+  return props.summary.conversions.filter(conversion => conversion.rate).map(conversion => formatMoney(amount * conversion.rate!, conversion.currency))
+})
 </script>
 
 <template>
@@ -40,21 +46,23 @@ const headline = computed(() => phase.value === 'past' ? net.value : allowance.v
           class="money mt-1 text-5xl font-semibold tracking-tight sm:text-7xl"
           :class="(headline ?? 0) < 0 ? 'text-error' : 'text-highlighted'"
         >
-          {{ formatMoney(headline, 'EUR') }}
+          {{ formatMoney(headline, summary.main) }}
         </p>
       </div>
 
       <div class="space-y-1 pb-1 text-sm sm:text-right">
         <p v-if="phase === 'past'" class="text-muted">
-          {{ exchange ? 'Líquido final em euros' : 'Líquido final' }}
+          {{ exchange ? `Líquido final em ${currencyPlural(summary.main).toLowerCase()}` : 'Líquido final' }}
         </p>
-        <p v-else-if="allowance.eur === null" class="text-muted">
-          Sem cotação do euro, não dá para calcular o valor por dia.
+        <p v-else-if="allowance.amount === null" class="text-muted">
+          Sem cotação, não dá para calcular o valor por dia.
         </p>
         <template v-else>
-          <p v-if="exchange" class="money text-base text-default">
-            ≈ {{ formatMoney(allowance.brl, 'BRL') }} por dia
-          </p>
+          <template v-if="exchange">
+            <p v-for="equivalent in equivalents" :key="equivalent" class="money text-base text-default">
+              ≈ {{ equivalent }} por dia
+            </p>
+          </template>
           <p class="text-muted">
             <template v-if="phase === 'current'">
               {{ allowance.days === 1 ? 'Último dia do mês' : `${allowance.days} dias restantes, contando hoje` }}

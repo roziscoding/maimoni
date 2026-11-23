@@ -12,7 +12,7 @@ if (!params.success)
 const { year, month } = params.data
 
 const toast = useToast()
-const { data, error, summary, refreshingRate, refreshRate, updateItem, addItem, removeItem, promoteItem, updateMonth, removeMonth, addConversion, updateConversion, removeConversion } = await useMonth(year, month)
+const { data, error, summary, refreshingRate, refreshRate, updateItem, addItem, removeItem, promoteItem, updateMonth, removeMonth } = await useMonth(year, month)
 const { data: months } = useNuxtData<MonthListEntry[]>('months')
 
 const title = monthLabel(year, month)
@@ -26,14 +26,15 @@ const items = computed(() => data.value?.items.toSorted((a, b) => a.position - b
 
 const currencies = useCurrencies()
 await currencies.ready
-/** A section per currency the month shows: the offered ones, and any other it already has items, spends or conversions in. */
+/** A section per currency the month shows: the offered ones, and any other it already has items or spends in. */
 const sections = computed(() => currencies.shownInMonth(data.value).map(currency => ({
   currency,
   items: items.value.filter(item => item.currency === currency),
-  totals: currency === 'BRL' ? summary.value!.brl : summary.value!.eur,
+  // A currency the month only offers, with no item in it yet, has nothing to total.
+  totals: summary.value?.totals[currency] ?? { income: 0, expenses: 0, net: 0, paid: 0, pending: 0, unresolved: 0 },
   offered: currencies.offered.value.includes(currency),
 })))
-/** With a single currency there is nothing to convert: no rate, no conversions. */
+/** With a single currency there is nothing to convert, and so no rate. */
 const exchange = computed(() => sections.value.length > 1)
 
 const note = ref(data.value?.month.note ?? '')
@@ -94,17 +95,6 @@ const menu: DropdownMenuItem[] = [
 
         <div class="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_19rem]">
           <div class="space-y-6">
-            <ConversionSection
-              v-if="exchange"
-              :year="year"
-              :month="month"
-              :conversions="data.conversions"
-              :rate="summary.transfer.rate"
-              :create="addConversion"
-              :update="updateConversion"
-              :remove="removeConversion"
-            />
-
             <ItemSection
               v-for="section in sections"
               :key="section.currency"
@@ -124,7 +114,7 @@ const menu: DropdownMenuItem[] = [
             <RatePanel
               v-if="exchange"
               :month="data.month"
-              :rate="data.rate"
+              :rates="data.rates"
               :error="data.rateError"
               :summary="summary"
               :refreshing="refreshingRate"

@@ -22,7 +22,7 @@ async function leave() {
   }
 }
 
-/** Months grouped under a year label, newest first, each showing what is left in euros. */
+/** Months grouped under a year label, newest first, each showing what is left, in the currency it is worked out in. */
 const monthItems = computed<NavigationMenuItem[]>(() => {
   const items: NavigationMenuItem[] = []
   let year: number | undefined
@@ -31,12 +31,12 @@ const monthItems = computed<NavigationMenuItem[]>(() => {
       year = entry.year
       items.push({ label: String(year), type: 'label' })
     }
-    const net = entry.summary.transfer.eur === null ? null : entry.summary.eur.net
     items.push({
       label: monthName(entry.month),
       to: `/months/${entry.year}/${entry.month}`,
       icon: monthPhase(entry.year, entry.month) === 'current' ? 'i-lucide-calendar-check' : 'i-lucide-calendar',
-      net,
+      net: entry.summary.net,
+      currency: entry.summary.main,
       current: monthPhase(entry.year, entry.month) === 'current',
     })
   }
@@ -46,7 +46,7 @@ const monthItems = computed<NavigationMenuItem[]>(() => {
 const todayItems = computed<NavigationMenuItem[]>(() => {
   const current = months.value.find(entry => monthPhase(entry.year, entry.month) === 'current')
   return [
-    { label: 'Gastos diários', icon: 'i-lucide-wallet', to: '/', net: current?.summary.allowance.remainingEur ?? null },
+    { label: 'Gastos diários', icon: 'i-lucide-wallet', to: '/', net: current?.summary.allowance.remaining ?? null, currency: current?.summary.main },
   ]
 })
 
@@ -91,7 +91,7 @@ const userItems = computed<DropdownMenuItem[][]>(() => [
               v-if="item.net !== null"
               class="money text-xs"
               :class="item.net < 0 ? 'text-error' : 'text-muted'"
-            >{{ formatMoney(item.net, 'EUR') }}</span>
+            >{{ formatMoney(item.net, item.currency) }}</span>
           </template>
         </UNavigationMenu>
 
@@ -120,7 +120,7 @@ const userItems = computed<DropdownMenuItem[][]>(() => [
               v-if="item.to"
               class="money text-xs"
               :class="item.net === null ? 'text-dimmed' : item.net < 0 ? 'text-error' : 'text-muted'"
-            >{{ formatMoney(item.net, 'EUR') }}</span>
+            >{{ formatMoney(item.net, item.currency) }}</span>
           </template>
         </UNavigationMenu>
         <p v-else class="px-2.5 py-2 text-sm text-muted">

@@ -37,15 +37,11 @@ export function useCurrencies() {
     return knownCurrencies.filter(currency => all.has(currency))
   }
 
-  /** `shown` for a month: its items and spends, and both sides of the exchange once it has a conversion. */
+  /** `shown` for a month: the currency it is worked out in, and the ones of its items and spends. */
   function shownInMonth(detail: MonthDetail | null | undefined) {
     if (!detail)
       return shown([])
-    return shown([
-      ...detail.items.map(item => item.currency),
-      ...detail.spends.map(spend => spend.currency),
-      ...(detail.conversions.length ? ['BRL', 'EUR'] as const : []),
-    ])
+    return shown([detail.month.mainCurrency, ...detail.items.map(item => item.currency), ...detail.spends.map(spend => spend.currency)])
   }
 
   return { ready: fetched, offered, none, main, shown, shownInMonth }

@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import type { LiveRate, Month, MonthSummary, UpdateMonth } from '@maimoni/shared'
+import type { Currency, LiveRates, Month, MonthSummary, UpdateMonth } from '@maimoni/shared'
 
 const props = defineProps<{
   month: Month
-  rate: LiveRate | null
+  /** Live rates quoted against the month's main currency. */
+  rates: LiveRates | null
   error: string | null
   summary: MonthSummary
   refreshing: boolean
@@ -14,63 +15,80 @@ const emit = defineEmits<{
   retry: []
 }>()
 
-const sources: Record<LiveRate['source'], string> = {
+const sources: Record<LiveRates['source'], string> = {
   'frankfurter': 'Frankfurter (BCE)',
   'open-er-api': 'Open Exchange Rates',
   'cache': 'último valor salvo',
 }
 
-const locked = computed(() => props.month.exchangeRate !== null)
+/** One row per currency the month converts from: the rate in use, the live one, and whether it is locked. */
+const rows = computed(() => props.summary.conversions.map(conversion => ({
+  ...conversion,
+  live: props.rates?.rates[conversion.currency] ?? null,
+})))
+
+/** Freezes a currency's rate at the live value, leaving the other locked rates as they are. */
+function lock(currency: Currency, rate: number) {
+  emit('update', { lockedRates: { ...props.month.lockedRates, [currency]: rate } })
+}
+
+function unlock(currency: Currency) {
+  const { [currency]: _unlocked, ...rest } = props.month.lockedRates
+  emit('update', { lockedRates: rest })
+}
 </script>
 
 <template>
   <section aria-labelledby="rate-title" class="divide-y divide-default rounded-xl border border-default">
-    <div class="space-y-3 p-4">
+    <div class="space-y-1 p-4">
+      <h2 id="rate-title" class="text-sm font-medium text-muted">
+        Cotações
+      </h2>
+      <p class="text-xs text-muted">
+        Quanto vale {{ formatMoney(1, summary.main) }} em cada moeda do mês.
+      </p>
+    </div>
+
+    <div v-for="row in rows" :key="row.currency" class="space-y-3 p-4">
       <div class="flex items-center justify-between gap-2">
-        <h2 id="rate-title" class="text-sm font-medium text-muted">
-          Preço do euro
-        </h2>
-        <UBadge v-if="locked" color="neutral" variant="subtle" size="sm" icon="i-lucide-lock" label="travado" />
-        <UBadge v-else-if="rate?.stale" color="warning" variant="subtle" size="sm" icon="i-lucide-clock-alert" label="desatualizado" />
-        <UBadge v-else-if="rate" color="neutral" variant="outline" size="sm" icon="i-lucide-radio" label="ao vivo" />
+        <h3 class="text-sm font-medium text-highlighted">
+          {{ currencyName(row.currency) }}
+        </h3>
+        <UBadge v-if="row.rateLocked" color="neutral" variant="subtle" size="sm" icon="i-lucide-lock" label="travada" />
+        <UBadge v-else-if="rates?.stale" color="warning" variant="subtle" size="sm" icon="i-lucide-clock-alert" label="desatualizada" />
+        <UBadge v-else-if="row.live" color="neutral" variant="outline" size="sm" icon="i-lucide-radio" label="ao vivo" />
       </div>
 
       <p class="money text-3xl font-semibold text-highlighted">
-        {{ formatRate(summary.transfer.rate) }}
+        {{ formatRate(row.rate, row.currency) }}
       </p>
 
-      <p v-if="rate" class="text-xs text-muted">
-        <template v-if="locked">
-          Ao vivo agora: <span class="money text-toned">{{ formatRate(rate.rate) }}</span>.
-        </template>
-        Fonte: {{ sources[rate.source] }}, {{ formatDateTime(rate.fetchedAt) }}.
+      <p v-if="row.rateLocked && row.live" class="text-xs text-muted">
+        Ao vivo agora: <span class="money text-toned">{{ formatRate(row.live, row.currency) }}</span>.
       </p>
-      <p v-else class="text-xs text-warning">
-        Nenhuma cotação disponível agora. Trave um valor para calcular o mês.
-      </p>
-      <p v-if="error" class="text-xs text-error">
-        {{ rate ? 'Falha ao atualizar' : 'Motivo' }}: {{ error }}
+      <p v-else-if="!row.rate" class="text-xs text-warning">
+        Nenhuma cotação disponível agora.
       </p>
 
       <UButton
-        v-if="locked"
+        v-if="row.rateLocked"
         icon="i-lucide-lock-open"
         label="Usar cotação ao vivo"
         color="neutral"
         variant="subtle"
         size="sm"
         block
-        @click="emit('update', { exchangeRate: null })"
+        @click="unlock(row.currency)"
       />
       <UButton
-        v-else-if="rate"
+        v-else-if="row.live"
         icon="i-lucide-lock"
-        :label="`Travar em ${formatRate(rate.rate)}`"
+        :label="`Travar em ${formatRate(row.live, row.currency)}`"
         color="neutral"
         variant="subtle"
         size="sm"
         block
-        @click="emit('update', { exchangeRate: rate.rate })"
+        @click="lock(row.currency, row.live)"
       />
       <UButton
         v-else
@@ -83,6 +101,15 @@ const locked = computed(() => props.month.exchangeRate !== null)
         :loading="refreshing"
         @click="emit('retry')"
       />
+    </div>
+
+    <div v-if="rates || error" class="space-y-1 p-4 text-xs">
+      <p v-if="rates" class="text-muted">
+        Fonte: {{ sources[rates.source] }}, {{ formatDateTime(rates.fetchedAt) }}.
+      </p>
+      <p v-if="error" class="text-error">
+        {{ rates ? 'Falha ao atualizar' : 'Motivo' }}: {{ error }}
+      </p>
     </div>
   </section>
 </template>

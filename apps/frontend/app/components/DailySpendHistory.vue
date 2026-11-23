@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { DailySpend, DayResult, MonthListEntry } from '@maimoni/shared'
-import { dayResults, groupDailySpends, spendInEur } from '@maimoni/shared'
+import { dayResults, groupDailySpends, currencies as knownCurrencies, spendInMain } from '@maimoni/shared'
 
 const route = useRoute()
 const view = computed(() => route.query.view === 'spends' ? 'spends' : 'calendar')
@@ -33,7 +33,7 @@ const withinBudget = computed(() => closed.value.filter(day => (day.result ?? 0)
 const balance = computed(() => {
   if (!summary.value || !days.value.length)
     return 0
-  const planned = closed.value.length * summary.value.eur.net / days.value.length
+  const planned = closed.value.length * (summary.value.net ?? 0) / days.value.length
   return planned - closed.value.reduce((sum, day) => sum + day.spent, 0)
 })
 /** Months before daily tracking existed have nothing to show day by day. */
@@ -51,10 +51,12 @@ const selectedDay = computed(() => days.value.find(day => day.day === selected.v
 const selectedSpends = computed(() => data.value?.spends.filter(spend => spend.day === selected.value) ?? [])
 const spendGroups = computed(() => groupDailySpends(data.value?.spends ?? []))
 
-/** A spend's cost to the EUR allowance (reais are converted the way the allowance counts them). */
-const inEur = (spend: DailySpend) => summary.value ? spendInEur(spend, summary.value.transfer) : null
+/** The currency the month is worked out in; every figure here is in it. */
+const main = computed(() => summary.value?.main ?? knownCurrencies[0])
+/** A spend's cost to the allowance (one in another currency is converted the way the allowance counts it). */
+const costOf = (spend: DailySpend) => summary.value ? spendInMain(spend, summary.value) : null
 
-const signed = (value: number) => `${value >= 0 ? '+' : '−'}${formatMoney(Math.abs(value), 'EUR')}`
+const signed = (value: number) => `${value >= 0 ? '+' : '−'}${formatMoney(Math.abs(value), main.value)}`
 /** Compact form for narrow cells: `+12` / `−8`. */
 const compact = (value: number) => `${value >= 0 ? '+' : '−'}${Math.round(Math.abs(value))}`
 
@@ -77,7 +79,7 @@ function cellLabel(day: DayResult) {
   if (day.result === null)
     return `Dia ${day.day}: sem cotação para calcular`
   return day.state === 'open'
-    ? `Dia ${day.day}, aberto: restam ${formatMoney(day.result, 'EUR')}`
+    ? `Dia ${day.day}, aberto: restam ${formatMoney(day.result, main.value)}`
     : `Dia ${day.day}: ${signed(day.result)}`
 }
 </script>
@@ -156,18 +158,18 @@ function cellLabel(day: DayResult) {
                     <span class="hidden sm:inline">{{ signed(day.result) }}</span>
                   </span>
                   <span class="money hidden text-[11px] text-dimmed sm:block">
-                    {{ day.spent ? `gasto ${formatMoney(day.spent, 'EUR')}` : 'sem gastos' }}
+                    {{ day.spent ? `gasto ${formatMoney(day.spent, main)}` : 'sem gastos' }}
                   </span>
                 </template>
                 <template v-else-if="day.state === 'open' && day.result !== null">
                   <span class="hidden text-[11px] text-muted sm:block">aberto, restam</span>
                   <span class="money block text-[11px] font-semibold sm:text-sm" :class="day.result >= 0 ? 'text-highlighted' : 'text-error'">
                     <span class="sm:hidden">{{ compact(day.result).replace('+', '') }}</span>
-                    <span class="hidden sm:inline">{{ formatMoney(day.result, 'EUR') }}</span>
+                    <span class="hidden sm:inline">{{ formatMoney(day.result, main) }}</span>
                   </span>
                 </template>
                 <span v-else-if="day.state === 'upcoming' && day.budget !== null" class="money hidden text-[11px] text-dimmed sm:block">
-                  {{ formatMoney(day.budget, 'EUR') }}
+                  {{ formatMoney(day.budget, main) }}
                 </span>
 
                 <span
@@ -199,7 +201,7 @@ function cellLabel(day: DayResult) {
                     Valor do dia
                   </dt>
                   <dd class="money">
-                    {{ formatMoney(selectedDay.budget, 'EUR') }}
+                    {{ formatMoney(selectedDay.budget, main) }}
                   </dd>
                 </div>
                 <div>
@@ -207,7 +209,7 @@ function cellLabel(day: DayResult) {
                     Gasto
                   </dt>
                   <dd class="money">
-                    {{ formatMoney(selectedDay.spent, 'EUR') }}
+                    {{ formatMoney(selectedDay.spent, main) }}
                   </dd>
                 </div>
                 <div>
@@ -215,7 +217,7 @@ function cellLabel(day: DayResult) {
                     {{ selectedDay.state === 'open' ? 'Restam' : 'Resultado' }}
                   </dt>
                   <dd class="money font-semibold" :class="selectedDay.result >= 0 ? 'text-success' : 'text-error'">
-                    {{ selectedDay.state === 'open' ? formatMoney(selectedDay.result, 'EUR') : signed(selectedDay.result) }}
+                    {{ selectedDay.state === 'open' ? formatMoney(selectedDay.result, main) : signed(selectedDay.result) }}
                   </dd>
                 </div>
               </dl>
@@ -233,7 +235,8 @@ function cellLabel(day: DayResult) {
                 v-for="spend in selectedSpends"
                 :key="spend.id"
                 :spend="spend"
-                :eur="inEur(spend)"
+                :main="main"
+                :cost="costOf(spend)"
                 @update="updateSpend(spend.id, $event)"
                 @remove="removeSpend(spend.id)"
               />
@@ -241,7 +244,7 @@ function cellLabel(day: DayResult) {
             <p v-else-if="selectedDay.state === 'upcoming'" class="text-sm text-muted">
               Ainda não chegou.
               <template v-if="selectedDay.budget !== null">
-                Se o dia aberto fechasse agora, este dia teria {{ formatMoney(selectedDay.budget, 'EUR') }}.
+                Se o dia aberto fechasse agora, este dia teria {{ formatMoney(selectedDay.budget, main) }}.
               </template>
             </p>
             <p v-else class="text-sm text-muted">
@@ -269,7 +272,8 @@ function cellLabel(day: DayResult) {
                 v-for="spend in group.spends"
                 :key="spend.id"
                 :spend="spend"
-                :eur="inEur(spend)"
+                :main="main"
+                :cost="costOf(spend)"
                 @update="updateSpend(spend.id, $event)"
                 @remove="removeSpend(spend.id)"
               />

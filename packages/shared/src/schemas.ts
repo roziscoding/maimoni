@@ -1,6 +1,42 @@
 import { z } from 'zod'
 
-export const currencies = ['BRL', 'EUR'] as const
+/**
+ * The currencies a user can pick from, in the order the app lists them: the ones Frankfurter
+ * publishes the ECB's reference rates for, so each has a rate against any other. The Postgres
+ * `currency` enum is made from this list; adding one here takes a migration.
+ */
+export const currencies = [
+  'AUD',
+  'BRL',
+  'CAD',
+  'CHF',
+  'CNY',
+  'CZK',
+  'DKK',
+  'EUR',
+  'GBP',
+  'HKD',
+  'HUF',
+  'IDR',
+  'ILS',
+  'INR',
+  'ISK',
+  'JPY',
+  'KRW',
+  'MXN',
+  'MYR',
+  'NOK',
+  'NZD',
+  'PHP',
+  'PLN',
+  'RON',
+  'SEK',
+  'SGD',
+  'THB',
+  'TRY',
+  'USD',
+  'ZAR',
+] as const
 export const currencySchema = z.enum(currencies)
 export type Currency = z.infer<typeof currencySchema>
 
@@ -14,7 +50,12 @@ const name = z.string().trim().min(1).max(120)
 const amount = z.number().finite().transform(value => Math.round(value * 100) / 100)
 /** Optional arithmetic expression the amount was typed as (e.g. `11.99+2.99`). */
 const expression = z.string().trim().max(200).nullable()
-export const exchangeRateSchema = z.number().positive()
+/**
+ * Exchange rates by currency, all quoted against one other currency (a month's main one): how many
+ * units of the key that one is worth. A currency left out has no rate.
+ */
+export const ratesSchema = z.partialRecord(currencySchema, z.number().positive())
+export type Rates = z.infer<typeof ratesSchema>
 
 /* -------------------------------------------------------------------------- */
 /*                                    Auth                                    */
@@ -177,8 +218,13 @@ export const monthSchema = z.object({
   id,
   year: z.number().int(),
   month: z.number().int(),
-  /** Locked EUR→BRL rate. `null` means the live rate is used. */
-  exchangeRate: z.number().nullable(),
+  /**
+   * The currency the month is worked out in: the user's main currency when it was created. Changing
+   * the main currency later leaves existing months as they were.
+   */
+  mainCurrency: currencySchema,
+  /** Rates the month froze, by currency. A currency left out follows the live rate. */
+  lockedRates: ratesSchema,
   /**
    * Day of the month open for daily spending. `null` means no day was closed yet, so the open day
    * is today. Past the last day means every day was closed.
@@ -198,55 +244,20 @@ export const createMonthSchema = z.object({
 export type CreateMonth = z.input<typeof createMonthSchema>
 
 export const updateMonthSchema = z.object({
-  exchangeRate: exchangeRateSchema.nullable().optional(),
+  /** Replaces every locked rate: a currency left out goes back to the live rate, and `{}` unlocks all. */
+  lockedRates: ratesSchema.optional(),
   activeDay: z.number().int().min(1).max(32).nullable().optional(),
   note: z.string().trim().max(2000).nullable().optional(),
 })
 export type UpdateMonth = z.input<typeof updateMonthSchema>
 
 /* -------------------------------------------------------------------------- */
-/*                                Conversions                                 */
-/* -------------------------------------------------------------------------- */
-
-export const conversionSchema = z.object({
-  id,
-  monthId: id,
-  day: z.number().int(),
-  /** Total BRL sent, including whatever the transfer cost. */
-  sentBrl: z.number(),
-  /**
-   * What the transfer cost: the BRL sent beyond what the EUR received were worth at the exchange
-   * rate when the conversion was recorded. The server works it out.
-   */
-  feeBrl: z.number(),
-  receivedEur: z.number(),
-  note: z.string().nullable(),
-  createdAt: z.string(),
-})
-export type Conversion = z.infer<typeof conversionSchema>
-
-const conversionFields = z.object({
-  day: z.number().int().min(1).max(31),
-  sentBrl: amount.pipe(z.number().positive()),
-  receivedEur: amount.pipe(z.number().positive()),
-  note: z.string().trim().max(200).transform(value => value || null).nullable(),
-})
-
-export const createConversionSchema = conversionFields.extend({
-  note: conversionFields.shape.note.default(null),
-})
-export type CreateConversion = z.input<typeof createConversionSchema>
-
-export const updateConversionSchema = conversionFields.partial()
-export type UpdateConversion = z.input<typeof updateConversionSchema>
-
-/* -------------------------------------------------------------------------- */
 /*                                Daily spends                                */
 /* -------------------------------------------------------------------------- */
 
 /**
- * Day-to-day spending, kept apart from the month's obligations. BRL spends count against the EUR
- * allowance as what those reais would have become at the rate (see `spendInEur`).
+ * Day-to-day spending, kept apart from the month's obligations. A spend in another currency counts
+ * against the allowance as what it would have become in the month's main one (see `spendInMain`).
  */
 export const dailySpendSchema = z.object({
   id,
@@ -269,7 +280,8 @@ const dailySpendFields = z.object({
 })
 
 export const createDailySpendSchema = dailySpendFields.extend({
-  currency: currencySchema.default('EUR'),
+  /** Left out, the spend goes in the month's main currency. */
+  currency: currencySchema.optional(),
   expression: expression.default(null),
   note: z.string().trim().max(200).nullable().default(null),
 })
@@ -283,14 +295,14 @@ export type UpdateDailySpend = z.input<typeof updateDailySpendSchema>
 /* -------------------------------------------------------------------------- */
 
 export const rateSourceSchema = z.enum(['frankfurter', 'open-er-api', 'cache'])
-export const liveRateSchema = z.object({
-  base: z.literal('EUR'),
-  quote: z.literal('BRL'),
-  /** How many BRL one EUR costs. */
-  rate: z.number(),
+export const liveRatesSchema = z.object({
+  /** The currency the rates are quoted against. */
+  base: currencySchema,
+  /** How many units of each other currency one unit of `base` costs. */
+  rates: ratesSchema,
   source: rateSourceSchema,
   fetchedAt: z.string(),
-  /** True when every provider failed and the last stored rate is being served. */
+  /** True when every provider failed and the last stored rates are being served. */
   stale: z.boolean(),
 })
-export type LiveRate = z.infer<typeof liveRateSchema>
+export type LiveRates = z.infer<typeof liveRatesSchema>

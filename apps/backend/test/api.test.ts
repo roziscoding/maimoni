@@ -1,4 +1,4 @@
-import type { Conversion, DailySpend, MonthDetail, MonthItem, MonthListEntry, TemplateDetail, TemplateItem, UserCurrency } from '@maimoni/shared'
+import type { DailySpend, MonthDetail, MonthItem, MonthListEntry, TemplateDetail, TemplateItem, UserCurrency } from '@maimoni/shared'
 import { daysInMonth } from '@maimoni/shared'
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { setup } from './setup'
@@ -38,7 +38,7 @@ describe('template', () => {
   })
 
   test('validates input', async () => {
-    const { status, body } = await request('POST', '/template/items', { name: '', currency: 'USD' })
+    const { status, body } = await request('POST', '/template/items', { name: '', currency: 'XXX' })
     expect(status).toBe(400)
     expect(body.issues).toBeArray()
   })
@@ -54,9 +54,12 @@ describe('months', () => {
     const nubank = body.items.find(item => item.name === 'Nubank')!
     expect(nubank.amount).toBeNull()
     expect(nubank.needsReview).toBe(true)
-    expect(body.summary.brl.net).toBe(9000)
-    // The projection converts everything at the rate: no fee is taken off.
-    expect(body.summary.transfer).toMatchObject({ projected: { sentBrl: 9000, eur: 1500 }, eur: 1500 })
+    // The month is worked out in the user's main currency, and what is left in reais is converted
+    // into it at the rate: no fee is taken off.
+    expect(body.month).toMatchObject({ mainCurrency: 'EUR', lockedRates: {} })
+    expect(body.summary.totals.BRL!.net).toBe(9000)
+    expect(body.summary.conversions).toEqual([{ currency: 'BRL', rate: 6, rateLocked: false, net: 9000, converted: 1500 }])
+    expect(body.summary.net).toBe(485.02)
 
     expect((await request('POST', '/months', { year: 2026, month: 10 })).status).toBe(409)
   })
@@ -70,8 +73,8 @@ describe('months', () => {
     expect(item).toMatchObject({ amount: 2000, expression: '1500+500', paid: true, needsReview: false })
 
     const { body: month } = await request<MonthDetail>('GET', '/months/2026/10')
-    expect(month.summary.brl.expenses).toBe(3000)
-    expect(month.summary.brl.paid).toBe(2000)
+    expect(month.summary.totals.BRL!.expenses).toBe(3000)
+    expect(month.summary.totals.BRL!.paid).toBe(2000)
   })
 
   test('partial updates keep the fields they do not send', async () => {
@@ -92,68 +95,43 @@ describe('months', () => {
   test('locks and unlocks the exchange rate', async () => {
     await seedTemplate()
     await request('POST', '/months', { year: 2026, month: 10 })
-    const { body } = await request<MonthDetail>('PATCH', '/months/2026/10', { exchangeRate: 5 })
-    expect(body.month.exchangeRate).toBe(5)
-    expect(body.summary.transfer.rate).toBe(5)
+    const { body } = await request<MonthDetail>('PATCH', '/months/2026/10', { lockedRates: { BRL: 5 } })
+    expect(body.month.lockedRates).toEqual({ BRL: 5 })
+    expect(body.summary.conversions[0]).toMatchObject({ currency: 'BRL', rate: 5, rateLocked: true, converted: 1800 })
 
-    const { body: unlocked } = await request<MonthDetail>('PATCH', '/months/2026/10', { exchangeRate: null })
-    expect(unlocked.summary.transfer.rate).toBe(6)
+    const { body: unlocked } = await request<MonthDetail>('PATCH', '/months/2026/10', { lockedRates: {} })
+    expect(unlocked.summary.conversions[0]).toMatchObject({ rate: 6, rateLocked: false })
+    expect((await request('PATCH', '/months/2026/10', { lockedRates: { BRL: 0 } })).status).toBe(400)
+    expect((await request('PATCH', '/months/2026/10', { lockedRates: { XXX: 5 } })).status).toBe(400)
   })
 
-  test('creates, lists, updates and deletes completed conversions', async () => {
+  test('a month keeps the main currency it was created with', async () => {
     await seedTemplate()
-    const base = '/months/2026/10'
-    const { body: month } = await request<MonthDetail>('POST', '/months', { year: 2026, month: 10 })
-    expect(month.conversions).toEqual([])
+    await request('POST', '/months', { year: 2026, month: 10 })
+    await request('PATCH', '/settings/currencies/BRL', { main: true })
+    const { body: later } = await request<MonthDetail>('POST', '/months', { year: 2026, month: 11 })
 
-    // Only what was sent and what arrived are given. At the rate of 6, 480 EUR are worth 2880 BRL,
-    // so the other 120 BRL were the fee. A fee sent by an older client is ignored.
-    const { status, body: created } = await request<Conversion>('POST', `${base}/conversions`, {
-      day: 5,
-      sentBrl: 3000,
-      feeBrl: 999,
-      receivedEur: 480,
-      note: 'primeira parte',
-    })
-    expect(status).toBe(201)
-    expect(created).toMatchObject({ day: 5, sentBrl: 3000, feeBrl: 120, receivedEur: 480, note: 'primeira parte' })
+    // The new month is worked out in reais: the euros left (a deficit here) are converted into them.
+    expect(later.month.mainCurrency).toBe('BRL')
+    expect(later.rates).toMatchObject({ base: 'BRL', rates: { EUR: 6 } })
+    expect(later.summary.conversions).toEqual([{ currency: 'EUR', rate: 6, rateLocked: false, net: -1014.98, converted: -169.16 }])
+    expect(later.summary.net).toBe(8830.84)
 
-    const { body: converted } = await request<MonthDetail>('GET', base)
-    expect(converted.conversions).toHaveLength(1)
-    expect(converted.summary.transfer).toMatchObject({
-      remainingBrl: 6000,
-      realized: { sentBrl: 3000, convertedBrl: 2880, feeBrl: 120, receivedEur: 480 },
-      projected: { sentBrl: 6000, eur: 1000 },
-      eur: 1480,
-    })
-    expect((await request<Conversion[]>('GET', `${base}/conversions`)).body).toHaveLength(1)
+    // The earlier one still is in euros, in the detail and in the list.
+    const { body: earlier } = await request<MonthDetail>('GET', '/months/2026/10')
+    expect(earlier.month.mainCurrency).toBe('EUR')
+    expect(earlier.summary.net).toBe(485.02)
+    const { body: list } = await request<MonthListEntry[]>('GET', '/months')
+    expect(list.map(entry => [entry.month, entry.summary.main, entry.summary.net])).toEqual([[11, 'BRL', 8830.84], [10, 'EUR', 485.02]])
 
-    // New amounts get a new fee: 500 EUR are worth exactly the 3000 BRL sent.
-    const { body: updated } = await request<Conversion>('PATCH', `${base}/conversions/${created.id}`, { receivedEur: 500, note: null })
-    expect(updated).toMatchObject({ sentBrl: 3000, feeBrl: 0, receivedEur: 500, note: null })
-    expect((await request<MonthDetail>('GET', base)).body.summary.transfer.eur).toBe(1500)
-
-    // A fee is never negative, and the month's locked rate is the one used.
-    await request('PATCH', base, { exchangeRate: 5 })
-    const { body: locked } = await request<Conversion>('POST', `${base}/conversions`, { day: 6, sentBrl: 1000, receivedEur: 190 })
-    expect(locked.feeBrl).toBe(50)
-    const { body: cheap } = await request<Conversion>('POST', `${base}/conversions`, { day: 6, sentBrl: 1000, receivedEur: 250 })
-    expect(cheap.feeBrl).toBe(0)
-    // Changing the day or the note keeps the fee, even after the rate moved.
-    await request('PATCH', base, { exchangeRate: 4 })
-    expect((await request<Conversion>('PATCH', `${base}/conversions/${locked.id}`, { day: 7 })).body).toMatchObject({ day: 7, feeBrl: 50 })
-    await request('DELETE', `${base}/conversions/${locked.id}`)
-    await request('DELETE', `${base}/conversions/${cheap.id}`)
-
-    expect((await request('DELETE', `${base}/conversions/${created.id}`)).status).toBe(204)
-    expect((await request<MonthDetail>('GET', base)).body.conversions).toEqual([])
+    // EUR is still what a month is worked out in, so it can be disabled but not removed.
+    expect((await request('DELETE', '/settings/currencies/EUR')).status).toBe(409)
   })
 
-  test('rejects invalid completed conversions', async () => {
-    await request('POST', '/months', { year: 2026, month: 2 })
-    const input = { sentBrl: 1000, receivedEur: 160 }
-    expect((await request('POST', '/months/2026/2/conversions', { ...input, day: 29 })).status).toBe(400)
-    expect((await request('POST', '/months/2026/2/conversions', { ...input, day: 1, sentBrl: 0 })).status).toBe(400)
+  test('live rates are quoted against the main currency unless another base is asked for', async () => {
+    expect((await request('GET', '/rates/live')).body).toMatchObject({ base: 'EUR', rates: { BRL: 6 } })
+    expect((await request('GET', '/rates/live?base=BRL')).body).toMatchObject({ base: 'BRL', rates: { EUR: 6 } })
+    expect((await request('GET', '/rates/live?base=XXX')).status).toBe(400)
   })
 
   test('copies from the previous month', async () => {
@@ -179,7 +157,7 @@ describe('months', () => {
     await request('POST', '/months', { year: 2025, month: 12 })
     const { body } = await request<MonthListEntry[]>('GET', '/months')
     expect(body.map(month => `${month.year}-${month.month}`)).toEqual(['2026-10', '2026-3', '2025-12'])
-    expect(body[0]!.summary.brl.net).toBe(9000)
+    expect(body[0]!.summary.totals.BRL!.net).toBe(9000)
   })
 
   test('promotes a month item to the template', async () => {
@@ -262,7 +240,7 @@ describe('currencies', () => {
     expect((await request<UserCurrency>('POST', base, { currency: 'EUR' })).body).toEqual(entry('EUR', false))
 
     expect((await request('POST', base, { currency: 'EUR' })).status).toBe(409)
-    expect((await request('POST', base, { currency: 'USD' })).status).toBe(400)
+    expect((await request('POST', base, { currency: 'XXX' })).status).toBe(400)
     expect(await list()).toEqual([entry('BRL', true), entry('EUR', false)])
   })
 
@@ -364,7 +342,7 @@ describe('currencies', () => {
       { currencies: [{ currency: 'BRL', enabled: false }, { currency: 'EUR', enabled: true }], main: 'BRL' },
       { currencies: [...both, { currency: 'EUR', enabled: false }], main: 'EUR' },
       { currencies: [], main: 'EUR' },
-      { currencies: [{ currency: 'USD', enabled: true }], main: 'USD' },
+      { currencies: [{ currency: 'XXX', enabled: true }], main: 'XXX' },
     ]
     for (const body of invalid)
       expect((await request('PUT', base, body)).status).toBe(400)
@@ -404,7 +382,7 @@ describe('daily spends', () => {
     await seedTemplate()
     await request('POST', '/months', { year, month })
     const { body: opened } = await request<MonthDetail>('PATCH', base, { activeDay: 1 })
-    const net = opened.summary.eur.net
+    const net = opened.summary.net!
     expect(opened.summary.allowance).toMatchObject({ activeDay: 1, days: total, spentToday: 0 })
 
     const { status, body: spend } = await request<DailySpend>('POST', `${base}/spends`, { day: 1, amount: 30, note: 'mercado' })
@@ -414,13 +392,15 @@ describe('daily spends', () => {
     const { body: spent } = await request<MonthDetail>('GET', base)
     expect(spent.items).toHaveLength(5)
     expect(spent.spends.map(item => item.amount)).toEqual([30, 12.5])
-    expect(spent.summary.eur.net).toBe(net)
-    expect(spent.summary.allowance.eur).toBe(opened.summary.allowance.eur)
-    expect(spent.summary.allowance.remainingEur).toBeCloseTo(opened.summary.allowance.eur! - 42.5, 2)
+    // Sent without a currency, the spends went in the month's main one.
+    expect(spent.spends.map(item => item.currency)).toEqual(['EUR', 'EUR'])
+    expect(spent.summary.net).toBe(net)
+    expect(spent.summary.allowance.amount).toBe(opened.summary.allowance.amount)
+    expect(spent.summary.allowance.remaining).toBeCloseTo(opened.summary.allowance.amount! - 42.5, 2)
 
     const { body: closed } = await request<MonthDetail>('PATCH', base, { activeDay: 2 })
     expect(closed.summary.allowance).toMatchObject({ activeDay: 2, days: total - 1, spentBefore: 42.5, spentToday: 0 })
-    expect(closed.summary.allowance.eur).toBeCloseTo((net - 42.5) / (total - 1), 1)
+    expect(closed.summary.allowance.amount).toBeCloseTo((net - 42.5) / (total - 1), 1)
 
     const { body: edited } = await request<DailySpend>('PATCH', `${base}/spends/${spend.id}`, { amount: 25 })
     expect(edited).toMatchObject({ amount: 25, note: 'mercado', day: 1 })

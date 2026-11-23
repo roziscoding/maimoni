@@ -1,0 +1,1 @@
+ALTER TABLE "months" DROP COLUMN "exchange_rate";

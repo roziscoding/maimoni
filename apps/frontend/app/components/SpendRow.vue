@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import type { DailySpend, UpdateDailySpend } from '@maimoni/shared'
+import type { Currency, DailySpend, UpdateDailySpend } from '@maimoni/shared'
 
 const props = defineProps<{
   spend: DailySpend
-  /** What the spend costs the EUR allowance; shown next to BRL spends. */
-  eur: number | null
+  /** The currency the month is worked out in. */
+  main: Currency
+  /** What the spend costs the allowance, in the main currency; shown next to spends in another one. */
+  cost: number | null
 }>()
 
 const emit = defineEmits<{
@@ -40,8 +42,8 @@ function editNote(value: string) {
         class="w-full"
         @commit="$event.amount !== null && emit('update', { amount: $event.amount, expression: $event.expression })"
       />
-      <span v-if="spend.currency === 'BRL'" class="money pe-2.5 text-xs text-dimmed">
-        ≈ {{ formatMoney(eur, 'EUR') }}
+      <span v-if="spend.currency !== main" class="money pe-2.5 text-xs text-dimmed">
+        ≈ {{ formatMoney(cost, main) }}
       </span>
     </div>
     <UButton
