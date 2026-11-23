@@ -157,6 +157,8 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver, 
           body: RefreshIndicator(
             onRefresh: _refresh,
             child: ListView(
+              // A short list still takes the pull that reloads it.
+              physics: const AlwaysScrollableScrollPhysics(),
               // Room under the last row for the floating button.
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 104),
               children: _content(context, data, _today.summary),

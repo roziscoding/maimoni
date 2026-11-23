@@ -239,7 +239,8 @@ class _TemplateScreenState extends State<TemplateScreen> {
     final data = _data;
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (data == null) {
-      return ListView(children: [
+      // A short list still takes the pull that reloads it.
+      return ListView(physics: const AlwaysScrollableScrollPhysics(), children: [
         EmptyState(
           icon: LucideIcons.cloudOff,
           title: 'Não foi possível carregar o template',
@@ -256,6 +257,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
     final exchange = sections.length > 1;
 
     return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
       // Room under the last row for the floating button.
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 104),
       children: [

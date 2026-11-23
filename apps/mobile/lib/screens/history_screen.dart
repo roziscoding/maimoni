@@ -103,7 +103,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
           ),
           body: RefreshIndicator(
             onRefresh: _controller.load,
-            child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 32), children: _content(context)),
+            child: ListView(
+              // A short list still takes the pull that reloads it.
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+              children: _content(context),
+            ),
           ),
         );
       },
@@ -124,6 +129,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
           icon: LucideIcons.calendarX,
           title: notFound ? '${monthLabel(controller.year, controller.month)} não existe' : 'Não foi possível carregar o mês',
           description: notFound ? null : controller.error?.message,
+          actions: [
+            if (!notFound)
+              ActionButton(label: 'Tentar de novo', icon: LucideIcons.refreshCw, style: ActionStyle.subtle, onPressed: controller.load),
+          ],
         ),
       ];
     }

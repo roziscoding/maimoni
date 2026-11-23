@@ -26,6 +26,8 @@ class MonthsScreen extends StatelessWidget {
         child: ListenableBuilder(
           listenable: store,
           builder: (context, _) => ListView(
+            // A short list still takes the pull that reloads it.
+            physics: const AlwaysScrollableScrollPhysics(),
             // Room under the last row for the floating button.
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 104),
             children: _content(context, store),

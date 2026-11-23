@@ -164,6 +164,8 @@ class _MonthScreenState extends State<MonthScreen> with SingleTickerProviderStat
   Widget _missing(BuildContext context) {
     if (_controller.loading) return const Center(child: CircularProgressIndicator());
     return ListView(
+      // A short list still takes the pull that reloads it.
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16),
       children: [
         if (_controller.error?.notFound ?? false)
@@ -186,6 +188,7 @@ class _MonthScreenState extends State<MonthScreen> with SingleTickerProviderStat
     // With a single currency there is nothing to convert, and so no rate.
     final exchange = sections.length > 1;
     return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 24, 16, 32),
       children: [
         AllowanceHero(year: widget.year, month: widget.month, summary: summary, exchange: exchange),
@@ -225,6 +228,7 @@ class _MonthScreenState extends State<MonthScreen> with SingleTickerProviderStat
     // A section per currency the month shows: the offered ones, and any other it already has items or spends in.
     final sections = currencies.shownInMonth(data);
     return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
       // Room under the last row for the floating button.
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 104),
       children: [
