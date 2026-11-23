@@ -49,11 +49,34 @@ Run from the repository root. iOS tasks only work on macOS.
 
 - **`mise run mobile:run:android`**: boots the `maimoni` emulator (created by `mobile:setup:emulator`) and runs the app with hot reload.
 - **`mise run mobile:run:ios`**: same, on the iOS Simulator.
+- **`mise run mobile:preview:android`** / **`mobile:preview:ios`**: runs the app against [fake data](#preview-with-fake-data), with no backend.
 - **`mise run mobile:build`**: release builds for both platforms (`mobile:build:android`, `mobile:build:ios`).
 - **`mise run mobile:build:ipa`**: signed IPA for TestFlight; pass `--export-options-plist`.
 - **`mise run mobile:install:android`** / **`mobile:install:ios`**: build and install on the connected device.
 - **`mise run mobile:check`**: analyzer and tests.
 - **`mise run mobile:branding`**: regenerates icons and splash from `assets/branding`.
+
+## Preview with fake data
+
+`mise run mobile:preview:android` (or `mobile:preview:ios`) runs `preview/main.dart` instead of the
+app's own entrypoint. It starts signed in and answers every request from a fake server kept in
+memory, so every screen can be opened and used without a backend or an account. The development
+backend has sign up turned off, which makes this the quickest way to look at a UI change.
+
+- **Data:** built around today's date.
+  - This month has today open and spends on every day before it.
+  - Three earlier months are closed, one of them a year back.
+  - The currencies are EUR (main) and BRL.
+  - One item is an estimate waiting to be confirmed and another has no amount.
+- **Changes:** adding, editing and deleting work, and are lost when the app closes.
+- **Login screen:** pass `--dart-define=PREVIEW_SIGNED_OUT=true` to start signed out. Signing in
+  doesn't work there: the fake server has no auth routes.
+- **Arguments:** anything after the task name goes to `flutter run`.
+- **Builds:** the file is outside `lib/` and nothing imports it, so no build of the real app
+  includes it. `mobile:check` still analyzes it.
+
+A screenshot of the running emulator: `adb exec-out screencap -p > screen.png`. The emulator also
+runs without a window (`emulator -avd maimoni -no-window`), which is enough for screenshots.
 
 ## Releases
 
