@@ -9,8 +9,11 @@ import 'package:http/testing.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:maimoni/api/client.dart';
 import 'package:maimoni/api/models.dart';
+import 'package:maimoni/domain/expression.dart';
+import 'package:maimoni/domain/summary.dart';
 import 'package:maimoni/format.dart';
 import 'package:maimoni/screens/settings_screen.dart';
+import 'package:maimoni/screens/template_screen.dart';
 import 'package:maimoni/state/currencies_store.dart';
 import 'package:maimoni/state/session.dart';
 import 'package:maimoni/theme.dart';
@@ -198,6 +201,50 @@ void main() {
       await tester.tap(find.text('Lançar'));
       await tester.pump();
       expect(sent.single['currency'], 'USD');
+    });
+  });
+
+  group('template preview', () {
+    Future<void> open(WidgetTester tester, {required bool rates}) async {
+      tester.view.physicalSize = const Size(1200, 40000); // Tall enough for a section per known currency.
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      Session.instance.setToken('t');
+      Api.instance.httpClient = MockClient((request) async {
+        final path = request.url.path;
+        if (path == '/api/template') {
+          return json({
+            'items': [
+              {'id': 'i1', 'name': 'Salary', 'currency': 'USD', 'kind': 'income', 'amount': 3000, 'expression': null, 'variable': false, 'position': 0},
+            ],
+          });
+        }
+        if (path == '/api/rates/live' && rates) {
+          return json({'base': 'USD', 'rates': {'EUR': 0.9}, 'source': 'frankfurter', 'fetchedAt': '2026-10-01T00:00:00.000Z', 'stale': false});
+        }
+        return json({'error': 'boom'}, status: 500);
+      });
+      await tester.pumpWidget(MaterialApp(theme: buildTheme(Brightness.light), home: const TemplateScreen()));
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(seconds: 1));
+    }
+
+    testWidgets('without the currency list it is worked out in the base of the live rates', (tester) async {
+      await open(tester, rates: true);
+      final next = DateTime(DateTime.now().year, DateTime.now().month + 1);
+      final days = daysInMonth(next.year, next.month);
+      expect(find.text('Por dia, em $days dias'), findsOneWidget);
+      expect(find.text(formatMoney(round2(3000 / days), const Currency('USD'))), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('without the list or the rates there is no preview', (tester) async {
+      await open(tester, rates: false);
+      expect(find.text('O ponto de partida de todo mês'), findsOneWidget);
+      expect(find.text('Prévia de um mês novo'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
     });
   });
 

@@ -61,7 +61,10 @@ class _TemplateScreenState extends State<TemplateScreen> {
   /// What a month created today from this template would look like, using next month's calendar.
   MonthSummary? get _preview {
     final data = _data;
-    final mainCurrency = CurrenciesStore.instance.main;
+    final currencies = CurrenciesStore.instance;
+    // Without the list, the store's main is only a fallback; the live rates are quoted against the
+    // user's real main currency, so their base is the one to use. With neither, there is no preview.
+    final mainCurrency = currencies.list != null ? currencies.main : _rates?.base;
     if (data == null || mainCurrency == null) return null;
     final now = DateTime.now();
     final next = DateTime(now.year, now.month + 1);
