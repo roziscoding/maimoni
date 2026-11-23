@@ -15,7 +15,8 @@ Future<bool> createMonth(BuildContext context, int year, int month, String sourc
   try {
     await Api.instance.createMonth(year, month, source);
     await MonthsStore.instance.refresh();
-    if (navigator.mounted) openMonthWith(navigator, year, month);
+    // Only while the screen that asked for the month is still open: leaving it cancels the visit.
+    if (context.mounted) openMonthWith(navigator, year, month);
     return true;
   } catch (err) {
     toast('Não foi possível criar o mês', description: errorMessage(err), tone: ToastTone.error);
