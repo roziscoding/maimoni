@@ -466,6 +466,8 @@ class _ClearDataFormState extends State<_ClearDataForm> {
   }
 
   Future<void> _clear() async {
+    // The keyboard's done key can submit again while the request is in flight.
+    if (_clearing) return;
     setState(() => _clearing = true);
     try {
       await Api.instance.clearData();
