@@ -42,13 +42,18 @@ class MonthController extends ChangeNotifier {
   int _monthWrites = 0;
   final _savedAt = <String, int>{};
 
+  /// Goes up on every [load]; a read that a newer one started after is out of date and dropped.
+  int _loads = 0;
+
   Future<void> load() async {
+    final generation = ++_loads;
     try {
       final since = _monthWrites;
       // The screens lay themselves out by the user's currencies, so the first frame waits for them too.
       final currencies = CurrenciesStore.instance.ensureLoaded();
       final detail = await _api.month(year, month);
       await currencies;
+      if (generation != _loads) return;
       // A month write that saved while this read was in flight is newer than what the read got.
       final written = [
         for (final MapEntry(:key, :value) in _savedAt.entries)
@@ -59,6 +64,7 @@ class MonthController extends ChangeNotifier {
       data = detail;
       error = null;
     } on ApiException catch (err) {
+      if (generation != _loads) return;
       data = null;
       error = err;
     }

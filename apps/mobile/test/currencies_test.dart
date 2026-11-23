@@ -244,8 +244,8 @@ void main() {
     /// Serves one month. A PATCH applies at once and answers with the month as it was then, but only
     /// when the test completes its entry in `answers`: with `true`, or with `false` to fail and undo it.
     /// Reads after the first answer with the month as it was when they arrived, once the test
-    /// completes their entry in `reads`.
-    ({List<Map<String, dynamic>> patches, List<Completer<bool>> answers, List<Completer<void>> reads}) serve() {
+    /// completes their entry in `reads`: with `true`, or with `false` to fail.
+    ({List<Map<String, dynamic>> patches, List<Completer<bool>> answers, List<Completer<bool>> reads}) serve() {
       final month = <String, Object?>{
         'id': 'm1',
         'year': 2026,
@@ -260,7 +260,7 @@ void main() {
           {'month': Map.of(month), 'items': [], 'spends': [], 'summary': {}, 'rates': null, 'rateError': null};
       final patches = <Map<String, dynamic>>[];
       final answers = <Completer<bool>>[];
-      final reads = <Completer<void>>[];
+      final reads = <Completer<bool>>[];
       var served = 0;
       Api.instance.httpClient = MockClient((request) async {
         final path = request.url.path;
@@ -268,9 +268,9 @@ void main() {
         if (path == '/api/months/2026/10' && request.method == 'GET') {
           final answer = detail();
           if (served++ > 0) {
-            final gate = Completer<void>();
+            final gate = Completer<bool>();
             reads.add(gate);
-            await gate.future;
+            if (!await gate.future) return json({'error': 'boom'}, status: 500);
           }
           return json(answer);
         }
@@ -363,11 +363,50 @@ void main() {
       answers.last.complete(true);
       expect(await lock, isTrue);
       // The read was answered before the lock was saved.
-      reads.single.complete();
+      reads.single.complete(true);
       expect(await note, isFalse);
       expect(controller.data!.month.lockedRates, {Currency.brl: 6});
       // The failed note goes back to what the server has.
       expect(controller.data!.month.note, isNull);
+      controller.dispose();
+    });
+
+    testWidgets('an older reload ending after a newer failed one is dropped', (tester) async {
+      final (:patches, :answers, :reads) = serve();
+      final controller = await open(tester);
+
+      // A failed note starts a reload, which the server answers before the lock is saved.
+      final note = controller.updateMonth({'note': 'trip'});
+      await tester.pump();
+      answers.first.complete(false);
+      await tester.pump();
+      await tester.pump();
+      final lock = controller.lockRate(Currency.brl, 6);
+      await tester.pump();
+      answers.last.complete(true);
+      expect(await lock, isTrue);
+      // A second failed note starts a newer reload, which fails.
+      final again = controller.updateMonth({'note': 'trip'});
+      await tester.pump();
+      answers.last.complete(false);
+      await tester.pump();
+      await tester.pump();
+      expect(reads, hasLength(2));
+      reads.last.complete(false);
+      expect(await again, isFalse);
+      expect(controller.data, isNull);
+      // The older reload ends last, with the locked rates from before the lock: it is dropped.
+      reads.first.complete(true);
+      expect(await note, isFalse);
+      expect(controller.data, isNull);
+      expect(patches, hasLength(3));
+
+      // Trying again reads the month the server has, lock included.
+      final retry = controller.load();
+      await tester.pump();
+      reads.last.complete(true);
+      await retry;
+      expect(controller.data!.month.lockedRates, {Currency.brl: 6});
       controller.dispose();
     });
   });
