@@ -122,6 +122,8 @@ export function createAuth({ db, baseURL, secret, trustedOrigins, mail, env = pr
     },
     socialProviders: socialProviders(env, disableSignUp),
     account: { accountLinking: { enabled: true, trustedProviders: ['google', 'apple'] } },
+    // The client sets it through `update-user` once the first-run setup is finished or skipped.
+    user: { additionalFields: { onboarded: { type: 'boolean', defaultValue: false } } },
     plugins: [
       passkey({
         rpName: 'maimoni',

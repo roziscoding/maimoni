@@ -190,4 +190,11 @@ describe('auth', () => {
     expect((await as({ authorization: `Bearer ${first}` })('GET', '/months')).status).toBe(401)
     expect((await as({ authorization: `Bearer ${second}` })('GET', '/months')).status).toBe(200)
   })
+
+  test('a new user is not onboarded until the client says so', async () => {
+    const { request } = await setup()
+    expect((await request('GET', '/auth/get-session')).body.user.onboarded).toBe(false)
+    expect((await request('POST', '/auth/update-user', { onboarded: true })).status).toBe(200)
+    expect((await request('GET', '/auth/get-session')).body.user.onboarded).toBe(true)
+  })
 })
