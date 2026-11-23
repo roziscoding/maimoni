@@ -48,20 +48,39 @@ class _TemplateScreenState extends State<TemplateScreen> {
     if (shellTab.value == AppTab.template) _load();
   }
 
+  /// Goes up on every [_load]; a read that a newer one started after is out of date and dropped.
+  int _loads = 0;
+
+  /// Goes up on every write. A read that started before one would put back what the write changed.
+  int _writes = 0;
+
   Future<void> _load() async {
+    final generation = ++_loads;
+    final writes = _writes;
+    TemplateDetail? data;
+    LiveRates? liveRates;
+    ApiException? error;
     try {
       // The preview does without rates, and the sections without the list, when either can't be loaded.
       final rates = _api.liveRates().then<LiveRates?>((rates) => rates).catchError((_) => null);
       final currencies = CurrenciesStore.instance.ensureLoaded();
-      _data = await _api.template();
-      _rates = await rates;
+      data = await _api.template();
+      liveRates = await rates;
       await currencies;
-      _error = null;
     } on ApiException catch (err) {
-      _error = err;
+      error = err;
     }
-    if (!mounted) return;
-    setState(() => _loading = false);
+    if (!mounted || generation != _loads) return;
+    setState(() {
+      _loading = false;
+      // The list on screen is newer than this read: it has a write the read may not.
+      if (writes != _writes) return;
+      if (error == null) {
+        _data = data;
+        _rates = liveRates;
+      }
+      _error = error;
+    });
   }
 
   List<TemplateItem> get _items => [...?_data?.items]..sort((a, b) => a.position.compareTo(b.position));
@@ -115,6 +134,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
   }
 
   Future<T?> _persist<T>(Future<T> Function() request) async {
+    _writes++;
     try {
       return await request();
     } catch (err) {
