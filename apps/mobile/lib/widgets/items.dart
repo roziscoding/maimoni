@@ -144,18 +144,9 @@ class ItemRow extends StatelessWidget {
         kind: item.kind,
         currency: item.currency,
         submitLabel: 'Salvar',
+        confirmable: item.needsReview,
         onSubmit: onUpdate,
         actions: [
-          if (item.needsReview)
-            SheetAction(
-              icon: LucideIcons.check,
-              label: 'Confirmar valor',
-              subtitle: 'O valor veio do template como estimativa.',
-              onTap: () {
-                Navigator.of(context).pop();
-                onUpdate({'needsReview': false});
-              },
-            ),
           SheetAction(
             icon: LucideIcons.layoutTemplate,
             label: item.templateItemId != null ? 'Atualizar no template' : 'Salvar no template',
@@ -266,6 +257,7 @@ class ItemForm extends StatefulWidget {
     this.currency,
     this.currencies = const [],
     this.variable,
+    this.confirmable = false,
     required this.submitLabel,
     required this.onSubmit,
     this.actions = const [],
@@ -287,6 +279,11 @@ class ItemForm extends StatefulWidget {
 
   /// The template's "changes every month" switch. Null leaves it out of the form.
   final bool? variable;
+
+  /// Whether the item's amount is an estimate waiting to be confirmed. The form then offers to
+  /// confirm it, which saves what is in the form (the estimate, or the amount typed over it) and
+  /// submits `needsReview: false` with it.
+  final bool confirmable;
   final String submitLabel;
   final ValueChanged<Json> onSubmit;
 
@@ -308,7 +305,7 @@ class _ItemFormState extends State<ItemForm> {
 
   String get _initialAmount => amountText(widget.amount, widget.expression);
 
-  void _submit() {
+  void _submit({bool confirm = false}) {
     final name = _name.text.trim();
     final amountText = _amount.text.trim();
     setState(() {
@@ -327,6 +324,7 @@ class _ItemFormState extends State<ItemForm> {
         if (_kind != widget.kind) 'kind': _kind.name,
         if (amountText != _initialAmount) ...amount,
         if (_variable != widget.variable) 'variable': _variable,
+        if (confirm) 'needsReview': false,
       };
     } else {
       values = {
@@ -416,10 +414,17 @@ class _ItemFormState extends State<ItemForm> {
         ],
         const SizedBox(height: 20),
         FilledButton(onPressed: _submit, child: Text(widget.submitLabel)),
-        if (widget.actions.isNotEmpty) ...[
+        if (widget.confirmable || widget.actions.isNotEmpty) ...[
           const SizedBox(height: 12),
           const Divider(height: 1),
           const SizedBox(height: 4),
+          if (widget.confirmable)
+            SheetAction(
+              icon: LucideIcons.check,
+              label: 'Confirmar valor',
+              subtitle: 'O valor veio do template como estimativa.',
+              onTap: () => _submit(confirm: true),
+            ),
           ...widget.actions,
         ],
       ],
