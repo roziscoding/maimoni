@@ -41,6 +41,28 @@ final _rates = {
   'stale': false,
 };
 
+/// Starts as a user who never set anything up, so the app opens on the first-run setup.
+const _onboarding = bool.fromEnvironment('PREVIEW_ONBOARDING');
+
+/// The main currency chosen in the setup; EUR until there is one.
+String get _main => _currencies.where((entry) => entry['main'] == true).firstOrNull?['currency'] as String? ?? 'EUR';
+
+/// [_rates] quoted against the main currency, which in the setup is whichever the person chose.
+/// Only the three currencies above have a rate; any other goes without one.
+Json get _liveRates {
+  const perEuro = {'EUR': 1.0, 'BRL': 6.2134, 'USD': 1.0812};
+  final base = perEuro[_main];
+  if (base == null) return {..._rates, 'base': _main, 'rates': <String, double>{}};
+  return {
+    ..._rates,
+    'base': _main,
+    'rates': {
+      for (final MapEntry(:key, :value) in perEuro.entries)
+        if (key != _main) key: value / base,
+    },
+  };
+}
+
 Json _item(String name, String currency, String kind, num? amount, {bool paid = false, bool review = false, String? expression, bool variable = false}) => {
       'id': _id(),
       'monthId': 'm',
@@ -182,8 +204,17 @@ Future<http.Response> _serve(http.Request request) async {
   if (path == 'months' && method == 'POST') {
     final year = body['year'] as int;
     final month = body['month'] as int;
-    _months['$year/$month'] = _month(DateTime(year, month), activeDay: null);
-    return _json(_months['$year/$month'], 201);
+    final created = _month(DateTime(year, month), activeDay: null);
+    // After the setup, the month is made of what the person entered, in the currency they chose.
+    if (_onboarding) {
+      created['month'] = {...(created['month'] as Json), 'mainCurrency': _main};
+      created['items'] = [
+        for (final item in _template) {...item, 'id': _id(), 'templateItemId': item['id'], 'paid': false, 'needsReview': item['variable'] == true},
+      ];
+      created['rates'] = _liveRates;
+    }
+    _months['$year/$month'] = created;
+    return _json(created, 201);
   }
   if (segments.length >= 3 && segments[0] == 'months') {
     final key = '${segments[1]}/${segments[2]}';
@@ -235,8 +266,19 @@ Future<http.Response> _serve(http.Request request) async {
     _template[index] = {..._template[index], ...(body as Json)};
     return _json(_template[index]);
   }
-  if (path == 'rates/live') return _json(_rates);
+  if (path == 'rates/live') return _json(_liveRates);
+  if (path == 'auth/update-user') return _json({'status': true});
   if (path == 'settings/currencies' && method == 'GET') return _json(_currencies);
+  if (path == 'settings/currencies' && method == 'PUT') {
+    final used = {for (final item in _template) item['currency']};
+    _currencies
+      ..clear()
+      ..addAll([
+        for (final entry in (body['currencies'] as List).cast<Json>())
+          {'currency': entry['currency'], 'enabled': entry['enabled'], 'main': entry['currency'] == body['main'], 'inUse': used.contains(entry['currency'])},
+      ]);
+    return _json(_currencies);
+  }
   if (path == 'settings/currencies' && method == 'POST') {
     _currencies.add({'currency': body['currency'], 'enabled': true, 'main': false, 'inUse': false});
     return _json(_currencies.last, 201);
@@ -278,9 +320,14 @@ Future<void> main() async {
   Api.instance.httpClient = MockClient(_serve);
   await Future.wait([initializeDateFormatting('pt_BR'), ThemeController.instance.load()]);
   const signedOut = bool.fromEnvironment('PREVIEW_SIGNED_OUT');
+  if (_onboarding) {
+    _currencies.clear();
+    _template.clear();
+    _months.clear();
+  }
   if (!signedOut) {
     Session.instance.setToken('preview');
-    Session.instance.setUser(const SessionUser(name: 'Ana Prévia', email: 'ana@example.com'));
+    Session.instance.setUser(const SessionUser(name: 'Ana Prévia', email: 'ana@example.com', onboarded: !_onboarding));
     MonthsStore.instance.refresh();
     CurrenciesStore.instance.refresh();
   }

@@ -5,13 +5,20 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class SessionUser {
-  const SessionUser({required this.name, required this.email});
+  const SessionUser({required this.name, required this.email, this.onboarded = true});
 
-  factory SessionUser.fromJson(Map<String, dynamic> json) =>
-      SessionUser(name: json['name'] as String? ?? '', email: json['email'] as String? ?? '');
+  factory SessionUser.fromJson(Map<String, dynamic> json) => SessionUser(
+        name: json['name'] as String? ?? '',
+        email: json['email'] as String? ?? '',
+        onboarded: json['onboarded'] as bool? ?? true,
+      );
 
   final String name;
   final String email;
+
+  /// Whether the user went through the first-run setup, here or on the web. A server too old to
+  /// have the field doesn't send it, and its users aren't asked to set anything up.
+  final bool onboarded;
 }
 
 /// Who is signed in. The token is kept in the platform's secure storage and sent as a bearer by
@@ -26,11 +33,20 @@ class Session extends ChangeNotifier {
   );
 
   static const _pendingKey = 'pending_sign_outs';
+  static const _onboardedKey = 'session_onboarded';
 
   String? _token;
   List<String> _pendingSignOuts = [];
   SessionUser? _user;
   bool _expired = false;
+
+  /// What the server last said about the user's setup; `null` until it says anything.
+  bool? _onboarded;
+
+  /// Whether the user went through the first-run setup. Kept on the device with the token, so the
+  /// app knows what to open before the server answers, or when it can't be reached. Taken as done
+  /// while nothing is known.
+  bool get onboarded => _onboarded ?? true;
 
   String? get token => _token;
   SessionUser? get user => _user;
@@ -45,6 +61,8 @@ class Session extends ChangeNotifier {
   Future<void> load() async {
     try {
       _token = await _storage.read(key: _key);
+      final onboarded = await _storage.read(key: _onboardedKey);
+      _onboarded = onboarded == null ? null : onboarded == 'true';
       final pending = await _storage.read(key: _pendingKey);
       _pendingSignOuts = pending == null ? [] : (jsonDecode(pending) as List).whereType<String>().toList();
     } catch (_) {
@@ -88,7 +106,30 @@ class Session extends ChangeNotifier {
 
   void setUser(SessionUser? user) {
     _user = user;
+    if (user != null) _rememberOnboarded(user.onboarded);
     notifyListeners();
+  }
+
+  /// Takes the first-run setup as done, once the server recorded it.
+  void setOnboarded() {
+    final user = _user;
+    if (user != null) _user = SessionUser(name: user.name, email: user.email);
+    _rememberOnboarded(true);
+    notifyListeners();
+  }
+
+  void _rememberOnboarded(bool? value) {
+    if (value == _onboarded) return;
+    _onboarded = value;
+    unawaited(_persistOnboarded());
+  }
+
+  Future<void> _persistOnboarded() async {
+    try {
+      await _storage.write(key: _onboardedKey, value: _onboarded?.toString());
+    } catch (_) {
+      // Not persisted; the server says it again on the next session check.
+    }
   }
 
   /// Ends the session on this device. With [ifToken], only when that is still the current token, so
@@ -98,6 +139,7 @@ class Session extends ChangeNotifier {
     _token = null;
     _user = null;
     _expired = expired;
+    _rememberOnboarded(null);
     unawaited(_persist());
     notifyListeners();
   }

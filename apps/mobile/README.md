@@ -71,6 +71,9 @@ backend has sign up turned off, which makes this the quickest way to look at a U
 - **Changes:** adding, editing and deleting work, and are lost when the app closes.
 - **Login screen:** pass `--dart-define=PREVIEW_SIGNED_OUT=true` to start signed out. Signing in
   doesn't work there: the fake server has no auth routes.
+- **First-run setup:** pass `--dart-define=PREVIEW_ONBOARDING=true` to start as a user with no
+  currencies, template or months, which opens the app on the setup. EUR, BRL and USD have exchange
+  rates; an item in any other currency leaves the daily amount without a figure.
 - **Arguments:** anything after the task name goes to `flutter run`.
 - **Builds:** the file is outside `lib/` and nothing imports it, so no build of the real app
   includes it. `mobile:check` still analyzes it.

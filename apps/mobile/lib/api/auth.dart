@@ -137,6 +137,13 @@ Future<void> checkSession() async {
   }
 }
 
+/// Records on the server that the first-run setup was finished or skipped, so neither this app nor
+/// the web shows it again. Throws when the server couldn't be told.
+Future<void> finishOnboarding() async {
+  await Api.instance.request('POST', '/auth/update-user', body: {'onboarded': true});
+  Session.instance.setOnboarded();
+}
+
 /// Ends the session here at once and tells the server in the background. Until the server answers,
 /// the token is kept aside and [confirmSignOuts] tries again when the app starts.
 void signOut() {

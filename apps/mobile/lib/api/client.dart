@@ -170,6 +170,23 @@ class Api {
           UserCurrency.fromJson(row as Json),
       ];
 
+  /// Replaces the whole list with [enabled] and [disabled], [main] being one of the enabled. A
+  /// currency left out is removed, which the server refuses for one that is in use.
+  Future<List<UserCurrency>> replaceCurrencies({
+    required List<Currency> enabled,
+    List<Currency> disabled = const [],
+    required Currency main,
+  }) async {
+    final body = {
+      'currencies': [
+        for (final currency in enabled) {'currency': currency.code, 'enabled': true},
+        for (final currency in disabled) {'currency': currency.code, 'enabled': false},
+      ],
+      'main': main.code,
+    };
+    return [for (final row in await _send('PUT', '/settings/currencies', body: body) as List) UserCurrency.fromJson(row as Json)];
+  }
+
   Future<void> deleteCurrency(Currency currency) => _send('DELETE', '/settings/currencies/${currency.code}');
 
   /* ---------------------------------- Flags -------------------------------- */
