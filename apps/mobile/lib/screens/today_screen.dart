@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../api/models.dart';
@@ -10,13 +11,12 @@ import '../state/month_controller.dart';
 import '../state/months_store.dart';
 import '../state/toast.dart';
 import '../theme.dart';
-import '../widgets/app_drawer.dart';
 import '../widgets/common.dart';
-import '../widgets/daily_spend_history.dart';
 import '../widgets/month_create.dart';
 import '../widgets/spends.dart';
+import 'history_screen.dart';
 
-/// Port of `pages/index.vue`: the open day's budget, spending entry, and the month's history.
+/// The open day: what is left to spend, the day's spends, and the way to close it.
 class TodayScreen extends StatefulWidget {
   const TodayScreen({super.key});
 
@@ -28,14 +28,14 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver, 
   DateTime _now = DateTime.now();
   late MonthController _today = MonthController(_now.year, _now.month);
 
-  /// The month shown in the history; the same controller as [_today] for the current month.
-  late MonthController _history = _today;
-  HistoryView _view = HistoryView.calendar;
+  /// The currency the last spend was entered in, which the next one starts in.
+  Currency? _spendCurrency;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    shellTab.addListener(_onTab);
   }
 
   @override
@@ -50,11 +50,13 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver, 
     if (state == AppLifecycleState.resumed) _followCalendar();
   }
 
-  /// Back on Hoje from another page, where the month may have been created, edited or deleted.
+  /// Back on Hoje from a page above the shell, where the month may have been created, edited or deleted.
   @override
-  void didPopNext() {
-    _today.load();
-    if (_history != _today) _history.load();
+  void didPopNext() => _today.load();
+
+  /// Back on Hoje from another tab, where the data it shows may have been cleared.
+  void _onTab() {
+    if (shellTab.value == AppTab.today) _today.load();
   }
 
   /// Hoje lives as long as the app: after midnight it reloads, and in a new month it switches to it.
@@ -62,32 +64,17 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver, 
     final now = DateTime.now();
     if (now.year == _now.year && now.month == _now.month && now.day == _now.day) return;
     final previous = _today;
+    final sameMonth = previous.year == now.year && previous.month == now.month;
     setState(() {
       _now = now;
-      if (previous.year == now.year && previous.month == now.month) return;
-      // The history may already show the new month: reuse its controller instead of loading it twice.
-      _today = _history.year == now.year && _history.month == now.month ? _history : MonthController(now.year, now.month);
-      if (_history == previous) _history = _today;
+      if (sameMonth) return;
+      _today = MonthController(now.year, now.month);
       previous.dispose();
     });
-    if (_today == previous) previous.load();
+    if (sameMonth) previous.load();
   }
 
-  void _showHistoryMonth(int year, int month) {
-    if (year == _history.year && month == _history.month) return;
-    setState(() {
-      if (_history != _today) _history.dispose();
-      _history = year == _today.year && month == _today.month ? _today : MonthController(year, month);
-    });
-  }
-
-  Future<void> _refresh() async {
-    await Future.wait([
-      _today.load(),
-      if (_history != _today) _history.load(),
-      MonthsStore.instance.refresh(),
-    ]);
-  }
+  Future<void> _refresh() => Future.wait([_today.load(), MonthsStore.instance.refresh()]);
 
   Future<void> _confirmClose(MonthDetail data, Allowance allowance) async {
     final next = nextActiveDay(data.month);
@@ -96,15 +83,18 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver, 
     // The allowance as it will look once the day is closed: same data, open day moved forward.
     final afterClose =
         summarizeMonth(data.month.patch({'activeDay': next}), data.items, rates: data.rates?.rates, spends: data.spends).allowance;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) =>
-          _CloseDayDialog(day: allowance.activeDay!, allowance: allowance, afterClose: afterClose, main: main, today: _now.day),
+    final confirmed = await showConfirmSheet(
+      context,
+      title: 'Fechar o dia ${allowance.activeDay}?',
+      body: _CloseDaySummary(allowance: allowance, afterClose: afterClose, main: main, today: _now.day),
+      confirmLabel: 'Fechar o dia',
+      icon: LucideIcons.calendarCheck,
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
     final closedDay = allowance.activeDay;
     final result = await _today.closeDay();
     if (result == null || closedDay == null) return;
+    HapticFeedback.mediumImpact();
     final amount = _today.summary?.allowance.amount;
     toast(
       'Dia $closedDay fechado',
@@ -119,9 +109,9 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver, 
 
   @override
   void dispose() {
+    shellTab.removeListener(_onTab);
     routeObserver.unsubscribe(this);
     WidgetsBinding.instance.removeObserver(this);
-    if (_history != _today) _history.dispose();
     _today.dispose();
     super.dispose();
   }
@@ -132,43 +122,46 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver, 
       listenable: Listenable.merge([_today, MonthsStore.instance, CurrenciesStore.instance]),
       builder: (context, _) {
         final data = _today.data;
-        final summary = _today.summary;
-        final allowance = summary?.allowance;
+        final allowance = _today.summary?.allowance;
         final activeDay = allowance?.activeDay;
-        final canClose = data != null && activeDay != null && nextActiveDay(data.month) != null;
-        /// Days before today that were never closed: their budget hasn't been spread yet.
-        final lagging = activeDay != null && activeDay < _now.day;
+        // A spend goes into the open day, in a currency, against a budget that could be worked out.
+        final canSpend = activeDay != null && allowance?.amount != null && !CurrenciesStore.instance.none;
 
         return Scaffold(
-          drawer: const AppDrawer(),
           appBar: AppBar(
             title: Text(activeDay == null ? 'Hoje' : dayLabel(_now.year, _now.month, activeDay)),
             actions: [
-              if (canClose)
-                Padding(
-                  padding: const EdgeInsets.only(right: 12),
-                  child: ActionButton(
-                    label: 'Fechar o dia',
-                    icon: LucideIcons.calendarCheck,
-                    style: lagging ? ActionStyle.solid : ActionStyle.outline,
-                    onPressed: () => _confirmClose(data, allowance!),
-                  ),
+              IconButton(
+                tooltip: 'Histórico',
+                icon: const Icon(LucideIcons.calendarDays, size: 22),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(builder: (_) => HistoryScreen(year: _now.year, month: _now.month)),
                 ),
+              ),
+              const SizedBox(width: 4),
             ],
           ),
+          floatingActionButton: canSpend
+              ? AppFab(
+                  label: 'Lançar gasto',
+                  icon: LucideIcons.plus,
+                  onPressed: () => showSpendSheet(
+                    context,
+                    day: activeDay,
+                    create: _today.addSpend,
+                    currency: _spendCurrency,
+                    onCurrencyPicked: (currency) => _spendCurrency = currency,
+                  ),
+                )
+              : null,
           body: RefreshIndicator(
             onRefresh: _refresh,
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 48),
-              children: [
-                ..._main(context, data, summary),
-                DailySpendHistory(
-                  controller: _history,
-                  view: _view,
-                  onViewChanged: (view) => setState(() => _view = view),
-                  onMonthChanged: _showHistoryMonth,
-                ),
-              ],
+              // A short list still takes the pull that reloads it.
+              physics: const AlwaysScrollableScrollPhysics(),
+              // Room under the last row for the floating button.
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 104),
+              children: _content(context, data, _today.summary),
             ),
           ),
         );
@@ -176,7 +169,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver, 
     );
   }
 
-  List<Widget> _main(BuildContext context, MonthDetail? data, MonthSummary? summary) {
+  List<Widget> _content(BuildContext context, MonthDetail? data, MonthSummary? summary) {
     final palette = context.palette;
     if (_today.loading) {
       return const [Padding(padding: EdgeInsets.all(48), child: Center(child: CircularProgressIndicator()))];
@@ -199,7 +192,6 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver, 
 
     final allowance = summary.allowance;
     final activeDay = allowance.activeDay;
-    final lagging = activeDay != null && activeDay < _now.day;
     // The currency the month is worked out in; every figure here is in it.
     final main = summary.main;
     final currencies = CurrenciesStore.instance;
@@ -234,9 +226,11 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver, 
       ];
     }
 
+    /// Days before today that were never closed: their budget hasn't been spread yet.
+    final lagging = activeDay < _now.day;
+    final canClose = nextActiveDay(data.month) != null;
     final spendsToday = data.spends.where((spend) => spend.day == activeDay).toList();
-    final spentBefore = allowance.spentBefore;
-    final toned = money(fontSize: 14, color: palette.toned);
+    void close() => _confirmClose(data, allowance);
 
     return [
       if (lagging) ...[
@@ -244,54 +238,61 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver, 
           icon: LucideIcons.calendarClock,
           title: 'O dia $activeDay ainda está aberto',
           description: 'Gastos novos entram nele. Feche o dia para levar a sobra (ou o que passou) para os dias que faltam.',
+          action: canClose ? ActionButton(label: 'Fechar o dia $activeDay', icon: LucideIcons.calendarCheck, onPressed: close) : null,
         ),
-        const SizedBox(height: 32),
+        const SizedBox(height: 24),
       ],
+      const SizedBox(height: 8),
       DayHero(summary: summary, spends: spendsToday, exchange: exchange),
       const SizedBox(height: 32),
-      if (currencies.none) const NoCurrenciesCallout() else SpendForm(day: activeDay, create: _today.addSpend),
-      if (spendsToday.isNotEmpty) ...[
-        const SizedBox(height: 32),
-        Row(
-          children: [
-            Expanded(child: Text('Gastos do dia', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: palette.muted))),
-            Text(formatMoney(allowance.spentToday, main), style: money(fontSize: 14, color: palette.muted)),
-          ],
-        ),
-        const SizedBox(height: 4),
-        SpendList(
-          spends: spendsToday,
-          summary: summary,
-          onUpdate: _today.updateSpend,
-          onRemove: _today.removeSpend,
-        ),
+      if (currencies.none) ...[const NoCurrenciesCallout(), const SizedBox(height: 32)],
+      SectionHeader(
+        'Gastos do dia',
+        trailing: spendsToday.isEmpty ? null : Text(formatMoney(allowance.spentToday, main), style: money(fontSize: 14, color: palette.muted)),
+      ),
+      Panel(
+        child: spendsToday.isEmpty
+            ? Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text('Nada lançado ainda.', style: TextStyle(fontSize: 15, color: palette.dimmed)),
+              )
+            : SpendList(
+                spends: spendsToday,
+                summary: summary,
+                onUpdate: _today.updateSpend,
+                onRemove: _today.removeSpend,
+                onRestore: _today.addSpend,
+              ),
+      ),
+      if (canClose && !lagging) ...[
+        const SizedBox(height: 12),
+        ActionButton(label: 'Fechar o dia', icon: LucideIcons.calendarCheck, style: ActionStyle.outline, onPressed: close),
       ],
       const SizedBox(height: 32),
-      Text.rich(
-        TextSpan(children: [
-          const TextSpan(text: 'O mês tem '),
-          TextSpan(text: formatMoney(summary.net, main), style: toned),
-          const TextSpan(text: ' livres depois das contas. '),
-          if (spentBefore != 0) ...[
-            const TextSpan(text: 'Já foram '),
-            TextSpan(text: formatMoney(spentBefore, main), style: toned),
-            const TextSpan(text: ' nos dias anteriores, '),
-          ] else
-            const TextSpan(text: 'Isso '),
-          TextSpan(text: 'dividido por ${allowance.days} ${plural(allowance.days, 'dia', 'dias')} dá '),
-          TextSpan(text: formatMoney(allowance.amount, main), style: toned),
-          const TextSpan(text: ' por dia.'),
-        ]),
-        style: TextStyle(fontSize: 14, color: palette.muted, height: 1.5),
+      const SectionHeader('De onde vem o valor do dia'),
+      Panel(
+        child: Column(
+          children: [
+            FigureRow(label: 'Livre no mês, depois das contas', value: formatMoney(summary.net, main)),
+            if (allowance.spentBefore != 0) ...[
+              const RowDivider(),
+              FigureRow(label: 'Gasto nos dias anteriores', value: formatMoney(allowance.spentBefore, main)),
+            ],
+            const RowDivider(),
+            FigureRow(label: 'Dias que faltam, contando hoje', value: '${allowance.days}'),
+            const RowDivider(),
+            FigureRow(label: 'Por dia', value: formatMoney(allowance.amount, main), strong: true),
+          ],
+        ),
       ),
     ];
   }
 }
 
-class _CloseDayDialog extends StatefulWidget {
-  const _CloseDayDialog({required this.day, required this.allowance, required this.afterClose, required this.main, required this.today});
+/// What closing the open day does: where what is left goes, and the daily amount from then on.
+class _CloseDaySummary extends StatelessWidget {
+  const _CloseDaySummary({required this.allowance, required this.afterClose, required this.main, required this.today});
 
-  final int day;
   final Allowance allowance;
   final Allowance afterClose;
 
@@ -300,56 +301,43 @@ class _CloseDayDialog extends StatefulWidget {
   final int today;
 
   @override
-  State<_CloseDayDialog> createState() => _CloseDayDialogState();
-}
-
-class _CloseDayDialogState extends State<_CloseDayDialog> {
-  @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final remaining = widget.allowance.remaining ?? 0;
-    final after = widget.afterClose;
-    final strong = money(fontSize: 14, fontWeight: FontWeight.w600, color: palette.highlighted);
-    return AlertDialog(
-      title: Text('Fechar o dia ${widget.day}?', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: palette.highlighted)),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text.rich(
-            remaining >= 0
-                ? TextSpan(children: [
-                    const TextSpan(text: 'Sobraram '),
-                    TextSpan(text: formatMoney(remaining, widget.main), style: strong),
-                    const TextSpan(text: '. Eles vão para os dias que faltam.'),
-                  ])
-                : TextSpan(children: [
-                    const TextSpan(text: 'O dia passou '),
-                    TextSpan(text: formatMoney(-remaining, widget.main), style: strong.copyWith(color: palette.error)),
-                    const TextSpan(text: '. Isso sai dos dias que faltam.'),
+    final remaining = allowance.remaining ?? 0;
+    final after = afterClose;
+    final strong = money(fontSize: 15, fontWeight: FontWeight.w600, color: palette.highlighted);
+    final body = TextStyle(fontSize: 15, height: 1.4, color: palette.text);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text.rich(
+          remaining >= 0
+              ? TextSpan(children: [
+                  const TextSpan(text: 'Sobraram '),
+                  TextSpan(text: formatMoney(remaining, main), style: strong),
+                  const TextSpan(text: '. Eles vão para os dias que faltam.'),
+                ])
+              : TextSpan(children: [
+                  const TextSpan(text: 'O dia passou '),
+                  TextSpan(text: formatMoney(-remaining, main), style: strong.copyWith(color: palette.error)),
+                  const TextSpan(text: '. Isso sai dos dias que faltam.'),
+                ]),
+          style: body,
+        ),
+        const SizedBox(height: 12),
+        Panel(
+          padding: const EdgeInsets.all(16),
+          child: after.activeDay != null && after.amount != null
+              ? Text.rich(
+                  TextSpan(children: [
+                    TextSpan(text: 'A partir ${after.activeDay == today ? 'de hoje' : 'do dia ${after.activeDay}'}: '),
+                    TextSpan(text: formatMoney(after.amount, main), style: strong.copyWith(fontSize: 17)),
+                    TextSpan(text: ' por dia, por ${after.days} ${plural(after.days, 'dia', 'dias')}.'),
                   ]),
-            style: TextStyle(fontSize: 14, color: palette.text),
-          ),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: palette.bgElevated, borderRadius: BorderRadius.circular(8)),
-            child: after.activeDay != null && after.amount != null
-                ? Text.rich(
-                    TextSpan(children: [
-                      TextSpan(text: 'A partir ${after.activeDay == widget.today ? 'de hoje' : 'do dia ${after.activeDay}'}: '),
-                      TextSpan(text: formatMoney(after.amount, widget.main), style: strong.copyWith(fontSize: 16)),
-                      TextSpan(text: ' por dia, por ${after.days} ${plural(after.days, 'dia', 'dias')}.'),
-                    ]),
-                    style: TextStyle(fontSize: 14, color: palette.text),
-                  )
-                : Text('Era o último dia do mês.', style: TextStyle(fontSize: 14, color: palette.text)),
-          ),
-        ],
-      ),
-      actions: [
-        OutlinedButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancelar')),
-        ActionButton(label: 'Fechar o dia', icon: LucideIcons.calendarCheck, onPressed: () => Navigator.of(context).pop(true)),
+                  style: body,
+                )
+              : Text('Era o último dia do mês.', style: body),
+        ),
       ],
     );
   }

@@ -8,6 +8,7 @@ import '../format.dart';
 import '../state/currencies_store.dart';
 import '../state/toast.dart';
 import '../theme.dart';
+import 'common.dart';
 import 'fields.dart';
 
 /// How much is still left to spend on the open day, with each spend as a slice of the budget.
@@ -114,11 +115,29 @@ class DayHero extends StatelessWidget {
 /// Enters a spend: currency (when there is more than one to pick from), amount (number or
 /// expression), description, submit.
 class SpendForm extends StatefulWidget {
-  const SpendForm({super.key, required this.day, required this.create, this.autofocus = false});
+  const SpendForm({
+    super.key,
+    required this.day,
+    required this.create,
+    this.autofocus = false,
+    this.currency,
+    this.onCurrencyPicked,
+    this.onCreated,
+  });
 
   final int day;
   final Future<DailySpend?> Function(Json body) create;
   final bool autofocus;
+
+  /// The currency the form starts in, when it is still offered. The main one otherwise.
+  final Currency? currency;
+
+  /// Tells the caller which currency was picked, so the next form can start in it: a run of spends
+  /// usually happens in the same one.
+  final ValueChanged<Currency>? onCurrencyPicked;
+
+  /// Called once a spend was saved. Without it the form clears and waits for the next one.
+  final VoidCallback? onCreated;
 
   @override
   State<SpendForm> createState() => _SpendFormState();
@@ -129,9 +148,13 @@ class _SpendFormState extends State<SpendForm> {
   final _note = TextEditingController();
   final _amountFocus = FocusNode();
 
-  // Kept between entries: a run of spends usually happens in the same currency.
-  Currency? _picked;
+  late Currency? _picked = widget.currency;
   bool _saving = false;
+
+  void _pick(Currency currency) {
+    setState(() => _picked = currency);
+    widget.onCurrencyPicked?.call(currency);
+  }
 
   /// The currency the spend goes in: the picked one while it is still offered, otherwise the main one.
   Currency? get _currency {
@@ -165,11 +188,14 @@ class _SpendFormState extends State<SpendForm> {
     });
     if (!mounted) return;
     setState(() => _saving = false);
-    if (created != null) {
-      _amount.clear();
-      _note.clear();
-      _amountFocus.requestFocus();
+    if (created == null) return;
+    if (widget.onCreated != null) {
+      widget.onCreated!();
+      return;
     }
+    _amount.clear();
+    _note.clear();
+    _amountFocus.requestFocus();
   }
 
   @override
@@ -190,20 +216,27 @@ class _SpendFormState extends State<SpendForm> {
   Widget _currencyButton(BuildContext context, Currency currency, List<Currency> offered) {
     final palette = context.palette;
     final style = FilledButton.styleFrom(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      minimumSize: const Size(52, 48),
-      backgroundColor: palette.bgElevated,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      minimumSize: const Size(56, 52),
+      backgroundColor: palette.bgAccented,
       foregroundColor: palette.text,
-      side: BorderSide(color: palette.borderAccented),
     );
-    final label = Text(currencySymbol(currency), style: money(fontSize: 16, fontWeight: FontWeight.w500));
+    final label = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(currencySymbol(currency), style: money(fontSize: 16, fontWeight: FontWeight.w500)),
+        const SizedBox(width: 4),
+        // Says the button changes something: two currencies swap, more open a list.
+        Icon(offered.length == 2 ? LucideIcons.arrowLeftRight : LucideIcons.chevronDown, size: 14, color: palette.muted),
+      ],
+    );
     final hint = 'Gasto em ${currencyPlural(currency).toLowerCase()} (trocar a moeda)';
     if (offered.length == 2) {
       return Tooltip(
         message: hint,
         child: FilledButton(
           style: style,
-          onPressed: () => setState(() => _picked = offered.firstWhere((other) => other != currency)),
+          onPressed: () => _pick(offered.firstWhere((other) => other != currency)),
           child: label,
         ),
       );
@@ -214,7 +247,7 @@ class _SpendFormState extends State<SpendForm> {
           MenuItemButton(
             leadingIcon: SizedBox(width: 40, child: Text(currencySymbol(option), style: money(fontSize: 14, color: palette.muted))),
             trailingIcon: option == currency ? Icon(LucideIcons.check, size: 16, color: palette.highlighted) : null,
-            onPressed: () => setState(() => _picked = option),
+            onPressed: () => _pick(option),
             child: Text(currencyName(option)),
           ),
       ],
@@ -248,15 +281,15 @@ class _SpendFormState extends State<SpendForm> {
                 controller: _amount,
                 focusNode: _amountFocus,
                 autofocus: widget.autofocus,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
-                style: money(fontSize: 17),
-                decoration: const InputDecoration(hintText: '0,00', contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 14)),
+                keyboardType: amountKeyboard,
+                style: money(fontSize: 20),
+                decoration: const InputDecoration(hintText: '0,00'),
                 textInputAction: TextInputAction.next,
               ),
             ),
             const SizedBox(width: 8),
             SizedBox(
-              height: 48,
+              height: 52,
               child: FilledButton(
                 onPressed: canSubmit ? _submit : null,
                 child: _saving
@@ -270,7 +303,7 @@ class _SpendFormState extends State<SpendForm> {
         TextField(
           controller: _note,
           textCapitalization: TextCapitalization.sentences,
-          decoration: const InputDecoration(hintText: 'Com o quê?', contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 14)),
+          decoration: const InputDecoration(hintText: 'Com o quê?'),
           textInputAction: TextInputAction.send,
           onSubmitted: (_) => canSubmit ? _submit() : null,
         ),
@@ -279,7 +312,30 @@ class _SpendFormState extends State<SpendForm> {
   }
 }
 
-/// One spend: description and amount edited in place, its cost under a spend in another currency, delete.
+/// Opens the sheet that enters a spend on [day]. It closes once the spend is saved.
+Future<void> showSpendSheet(
+  BuildContext context, {
+  required int day,
+  required Future<DailySpend?> Function(Json body) create,
+  Currency? currency,
+  ValueChanged<Currency>? onCurrencyPicked,
+}) {
+  return showSheet<void>(
+    context,
+    title: 'Lançar gasto',
+    body: (context) => SpendForm(
+      day: day,
+      create: create,
+      autofocus: true,
+      currency: currency,
+      onCurrencyPicked: onCurrencyPicked,
+      onCreated: () => Navigator.of(context).pop(),
+    ),
+  );
+}
+
+/// One spend: what it was and how much, with its cost under a spend in another currency. A tap
+/// opens it for editing; swiping it away deletes it.
 class SpendRow extends StatelessWidget {
   const SpendRow({super.key, required this.spend, required this.main, required this.cost, required this.onUpdate, required this.onRemove});
 
@@ -293,49 +349,51 @@ class SpendRow extends StatelessWidget {
   final ValueChanged<Json> onUpdate;
   final VoidCallback onRemove;
 
+  void _open(BuildContext context) {
+    showSheet<void>(
+      context,
+      title: 'Gasto',
+      body: (context) => _SpendEditForm(spend: spend, onUpdate: onUpdate, onRemove: onRemove),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        children: [
-          Expanded(
-            child: InlineTextField(
-              value: spend.note ?? '',
-              hint: 'Gasto',
-              allowEmpty: true,
-              onCommit: (value) => onUpdate({'note': value.isEmpty ? null : value}),
-            ),
-          ),
-          SizedBox(
-            width: 128,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                AmountField(
-                  amount: spend.amount,
-                  expression: spend.expression,
-                  currency: spend.currency,
-                  onCommit: (amount, expression) {
-                    if (amount != null) onUpdate({'amount': amount, 'expression': expression});
-                  },
+    final note = spend.note;
+    return Dismissible(
+      key: ValueKey('spend-${spend.id}'),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        color: palette.error,
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: const Icon(LucideIcons.trash2, size: 20, color: Colors.white),
+      ),
+      onDismissed: (_) => onRemove(),
+      child: InkWell(
+        onTap: () => _open(context),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  note ?? 'Gasto',
+                  style: TextStyle(fontSize: 16, color: note == null ? palette.muted : palette.highlighted),
                 ),
-                if (spend.currency != main)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: Text('≈ ${formatMoney(cost, main)}', style: money(fontSize: 12, color: palette.dimmed)),
-                  ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(formatMoney(spend.amount, spend.currency), style: money(fontSize: 15, color: palette.text)),
+                  if (spend.currency != main) Text('≈ ${formatMoney(cost, main)}', style: money(fontSize: 12, color: palette.dimmed)),
+                ],
+              ),
+            ],
           ),
-          IconButton(
-            icon: const Icon(LucideIcons.x, size: 16),
-            visualDensity: VisualDensity.compact,
-            tooltip: 'Apagar ${spend.note ?? 'gasto'}',
-            onPressed: onRemove,
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -343,7 +401,7 @@ class SpendRow extends StatelessWidget {
 
 /// A divided list of [SpendRow]s.
 class SpendList extends StatelessWidget {
-  const SpendList({super.key, required this.spends, required this.summary, required this.onUpdate, required this.onRemove});
+  const SpendList({super.key, required this.spends, required this.summary, required this.onUpdate, required this.onRemove, this.onRestore});
 
   final List<DailySpend> spends;
 
@@ -352,21 +410,123 @@ class SpendList extends StatelessWidget {
   final void Function(String id, Json patch) onUpdate;
   final void Function(String id) onRemove;
 
+  /// Enters a spend again. With it, deleting one offers to undo.
+  final Future<DailySpend?> Function(Json body)? onRestore;
+
+  void _remove(DailySpend spend) {
+    onRemove(spend.id);
+    final restore = onRestore;
+    if (restore == null) return;
+    toast(
+      'Gasto apagado',
+      description: spend.note,
+      icon: LucideIcons.trash2,
+      duration: const Duration(seconds: 6),
+      actionLabel: 'Desfazer',
+      onAction: () => restore({
+        'day': spend.day,
+        'currency': spend.currency.code,
+        'amount': spend.amount,
+        'expression': spend.expression,
+        'note': spend.note,
+      }),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
         for (final (index, spend) in spends.indexed) ...[
-          if (index > 0) const Divider(),
+          if (index > 0) const RowDivider(),
           SpendRow(
             key: ValueKey(spend.id),
             spend: spend,
             main: summary.main,
             cost: summary.cost(spend),
             onUpdate: (patch) => onUpdate(spend.id, patch),
-            onRemove: () => onRemove(spend.id),
+            onRemove: () => _remove(spend),
           ),
         ],
+      ],
+    );
+  }
+}
+
+/// Changes a spend's description and amount, or deletes it.
+class _SpendEditForm extends StatefulWidget {
+  const _SpendEditForm({required this.spend, required this.onUpdate, required this.onRemove});
+
+  final DailySpend spend;
+  final ValueChanged<Json> onUpdate;
+  final VoidCallback onRemove;
+
+  @override
+  State<_SpendEditForm> createState() => _SpendEditFormState();
+}
+
+class _SpendEditFormState extends State<_SpendEditForm> {
+  late final _note = TextEditingController(text: widget.spend.note ?? '');
+  late final _amount = TextEditingController(text: _initialAmount);
+  String? _amountError;
+
+  String get _initialAmount => amountText(widget.spend.amount, widget.spend.expression);
+
+  void _submit() {
+    final note = _note.text.trim();
+    final text = _amount.text.trim();
+    final amount = evaluateExpression(text);
+    setState(() => _amountError = amount == null ? 'Número ou conta, ex.: 4,50+2' : null);
+    if (amount == null) return;
+    final patch = <String, dynamic>{
+      if (note != (widget.spend.note ?? '')) 'note': note.isEmpty ? null : note,
+      if (text != _initialAmount) ...{'amount': amount, 'expression': expressionOf(text)},
+    };
+    Navigator.of(context).pop();
+    if (patch.isNotEmpty) widget.onUpdate(patch);
+  }
+
+  @override
+  void dispose() {
+    _note.dispose();
+    _amount.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const FieldLabel('Valor'),
+        TextField(
+          controller: _amount,
+          keyboardType: amountKeyboard,
+          style: money(fontSize: 20),
+          textInputAction: TextInputAction.next,
+          decoration: amountDecoration(context, widget.spend.currency, fontSize: 20, errorText: _amountError),
+        ),
+        const SizedBox(height: 16),
+        const FieldLabel('Com o quê?'),
+        TextField(
+          controller: _note,
+          textCapitalization: TextCapitalization.sentences,
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) => _submit(),
+        ),
+        const SizedBox(height: 20),
+        FilledButton(onPressed: _submit, child: const Text('Salvar')),
+        const SizedBox(height: 8),
+        ActionButton(
+          label: 'Apagar gasto',
+          icon: LucideIcons.trash2,
+          style: ActionStyle.subtle,
+          danger: true,
+          onPressed: () {
+            Navigator.of(context).pop();
+            widget.onRemove();
+          },
+        ),
       ],
     );
   }

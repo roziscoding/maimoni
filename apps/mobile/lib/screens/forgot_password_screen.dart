@@ -56,13 +56,14 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     final palette = context.palette;
     final sentTo = _sentTo;
     return Scaffold(
-      appBar: AppBar(),
+      appBar: AppBar(title: const Text('Redefinir senha')),
       body: SafeArea(
-        child: Center(
+        child: Align(
+          alignment: Alignment.topCenter,
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 384),
+              constraints: const BoxConstraints(maxWidth: 480),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: sentTo != null
@@ -77,9 +78,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                         ActionButton(label: 'Voltar para o login', style: ActionStyle.subtle, onPressed: () => Navigator.of(context).pop()),
                       ]
                     : [
-                        Text('Redefinir senha', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: palette.highlighted)),
-                        const SizedBox(height: 4),
-                        Text('Informe seu e-mail para receber um link de redefinição.', style: TextStyle(fontSize: 14, color: palette.muted)),
+                        Text('Informe seu e-mail para receber um link de redefinição.', style: TextStyle(fontSize: 16, color: palette.muted)),
                         const SizedBox(height: 24),
                         if (_failure != null) ...[
                           Callout(icon: LucideIcons.circleAlert, title: _failure!, tone: Tone.error),

@@ -234,8 +234,7 @@ class FlowStrip extends StatelessWidget {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
-          color: palette.bgMuted,
-          border: Border.symmetric(horizontal: BorderSide(color: palette.borderAccented)),
+          color: palette.bgAccented,
         ),
         child: content,
       );
@@ -357,22 +356,19 @@ class RatePanel extends StatelessWidget {
       );
     }
 
-    return Panel(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Cotações', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: palette.muted)),
-                const SizedBox(height: 2),
-                Text('Quanto vale ${formatMoney(1, summary.main)} em cada moeda do mês.', style: small),
-              ],
-            ),
-          ),
-          ...summary.conversions.map(row),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SectionHeader('Cotações'),
+        Panel(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+                child: Text('Quanto vale ${formatMoney(1, summary.main)} em cada moeda do mês.', style: small),
+              ),
+              ...summary.conversions.map(row),
           if (live != null || error != null)
             Container(
               padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
@@ -386,8 +382,10 @@ class RatePanel extends StatelessWidget {
                 ],
               ),
             ),
-        ],
-      ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

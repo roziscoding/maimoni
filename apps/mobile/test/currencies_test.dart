@@ -448,7 +448,7 @@ void main() {
 
     testWidgets('without the list or the rates there is no preview', (tester) async {
       await open(tester, rates: false);
-      expect(find.text('O ponto de partida de todo mês'), findsOneWidget);
+      expect(find.text('Salary'), findsOneWidget);
       expect(find.text('Prévia de um mês novo'), findsNothing);
 
       await tester.pumpWidget(const SizedBox());

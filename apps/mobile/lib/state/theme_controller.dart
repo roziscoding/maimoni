@@ -17,10 +17,10 @@ class ThemeController extends ValueNotifier<ThemeMode> {
     }
   }
 
-  Future<void> toggle(Brightness current) async {
-    value = current == Brightness.dark ? ThemeMode.light : ThemeMode.dark;
+  Future<void> set(ThemeMode mode) async {
+    value = mode;
     try {
-      await (await SharedPreferences.getInstance()).setString(_key, value.name);
+      await (await SharedPreferences.getInstance()).setString(_key, mode.name);
     } catch (_) {
       // Not persisted; the choice still applies for this session.
     }

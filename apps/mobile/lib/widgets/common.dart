@@ -5,7 +5,8 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../routes.dart';
 import '../theme.dart';
 
-/// `UEmpty variant="naked"`: an icon, a title, a description and optional actions, centered.
+/// An icon, a title, a description and optional actions, centered: what a screen shows in place of
+/// content it doesn't have.
 class EmptyState extends StatelessWidget {
   const EmptyState({super.key, required this.icon, required this.title, this.description, this.actions = const []});
 
@@ -18,29 +19,31 @@ class EmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16),
+      padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 16),
       child: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: palette.bgElevated, borderRadius: BorderRadius.circular(999)),
-            child: Icon(icon, size: 24, color: palette.muted),
+          Center(
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(color: palette.bgElevated, shape: BoxShape.circle),
+              child: Icon(icon, size: 28, color: palette.muted),
+            ),
           ),
           const SizedBox(height: 16),
           Text(
             title,
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.highlighted),
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: palette.highlighted),
           ),
           if (description != null) ...[
             const SizedBox(height: 6),
-            Text(description!, textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: palette.muted)),
+            Text(description!, textAlign: TextAlign.center, style: TextStyle(fontSize: 15, color: palette.muted)),
           ],
-          if (actions.isNotEmpty) ...[
-            const SizedBox(height: 20),
-            Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 8, children: actions),
-          ],
+          if (actions.isNotEmpty) const SizedBox(height: 24),
+          // One under the other, each as wide as the screen allows.
+          for (final (index, action) in actions.indexed) Padding(padding: EdgeInsets.only(top: index == 0 ? 0 : 8), child: action),
         ],
       ),
     );
@@ -58,38 +61,36 @@ extension ToneColor on Tone {
       };
 }
 
-/// `UBadge`: a small pill, subtle (tinted fill) or outline.
+/// A small tinted pill.
 class Pill extends StatelessWidget {
-  const Pill({super.key, required this.label, this.icon, this.tone = Tone.neutral, this.outline = false});
+  const Pill({super.key, required this.label, this.icon, this.tone = Tone.neutral});
 
   final String label;
   final IconData? icon;
   final Tone tone;
-  final bool outline;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     final color = tone.color(palette);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: outline ? null : (tone == Tone.neutral ? palette.bgElevated : color.withValues(alpha: 0.12)),
-        border: Border.all(color: outline ? palette.borderAccented : (tone == Tone.neutral ? palette.borderAccented : color.withValues(alpha: 0.25))),
-        borderRadius: BorderRadius.circular(6),
+        color: tone == Tone.neutral ? palette.bgAccented : color.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (icon != null) ...[Icon(icon, size: 12, color: color), const SizedBox(width: 4)],
-          Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: color)),
+          Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color)),
         ],
       ),
     );
   }
 }
 
-/// `UAlert variant="subtle"`.
+/// A tinted notice with an icon, a title, a description and optionally one action.
 class Callout extends StatelessWidget {
   const Callout({super.key, required this.icon, required this.title, this.description, this.tone = Tone.warning, this.action});
 
@@ -104,31 +105,32 @@ class Callout extends StatelessWidget {
     final palette = context.palette;
     final color = tone.color(palette);
     return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        border: Border.all(color: color.withValues(alpha: 0.25)),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(16)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Icon(icon, size: 20, color: color),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: TextStyle(fontWeight: FontWeight.w500, fontSize: 14, color: color)),
-                if (description != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(description!, style: TextStyle(fontSize: 13, color: color.withValues(alpha: 0.85))),
-                  ),
-                if (action != null) Padding(padding: const EdgeInsets.only(top: 8), child: action),
-              ],
-            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, size: 20, color: color),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: color)),
+                    if (description != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(description!, style: TextStyle(fontSize: 14, color: color.withValues(alpha: 0.85))),
+                      ),
+                  ],
+                ),
+              ),
+            ],
           ),
+          if (action != null) Padding(padding: const EdgeInsets.only(top: 12), child: action),
         ],
       ),
     );
@@ -144,13 +146,13 @@ class NoCurrenciesCallout extends StatelessWidget {
     return Callout(
       icon: LucideIcons.coins,
       title: 'Nenhuma moeda ativa',
-      description: 'Itens e gastos são registrados em uma moeda. Adicione uma moeda nas configurações para começar.',
-      action: OutlinedButton(onPressed: () => navigate(context, settingsRoute), child: const Text('Abrir configurações')),
+      description: 'Itens e gastos são registrados em uma moeda. Adicione uma moeda nos ajustes para começar.',
+      action: OutlinedButton(onPressed: () => openTab(context, AppTab.settings), child: const Text('Abrir ajustes')),
     );
   }
 }
 
-/// A bordered, rounded block (`rounded-xl border border-default`).
+/// A filled, rounded group of rows. A [Material], so the rows inside it show their ink.
 class Panel extends StatelessWidget {
   const Panel({super.key, required this.child, this.padding = EdgeInsets.zero, this.color});
 
@@ -160,141 +162,176 @@ class Panel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = context.palette;
-    return Container(
+    return Material(
+      color: color ?? context.palette.bgElevated,
       clipBehavior: Clip.antiAlias,
-      padding: padding,
-      decoration: BoxDecoration(
-        color: color ?? palette.bg,
-        border: Border.all(color: palette.border),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: child,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(padding: padding, child: child),
     );
   }
 }
 
-/// Header row of a [Panel]: a title with an optional currency tag and a trailing widget.
-class PanelHeader extends StatelessWidget {
-  const PanelHeader({super.key, required this.title, this.tag, this.subtitle, this.trailing});
+/// The heading over a [Panel]: a title, an optional tag in the mono face, and a trailing widget.
+class SectionHeader extends StatelessWidget {
+  const SectionHeader(this.title, {super.key, this.tag, this.trailing});
 
   final String title;
   final String? tag;
-  final String? subtitle;
   final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
-      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: palette.border))),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic,
-                  children: [
-                    Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.highlighted)),
-                    if (tag != null) ...[const SizedBox(width: 8), Text(tag!, style: money(fontSize: 12, color: palette.muted))],
-                  ],
+                Flexible(
+                  child: Text(
+                    title,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: palette.muted),
+                  ),
                 ),
-                if (subtitle != null) Text(subtitle!, style: TextStyle(fontSize: 12, color: palette.muted)),
+                if (tag != null) ...[const SizedBox(width: 8), Text(tag!, style: money(fontSize: 12, color: palette.dimmed))],
               ],
             ),
           ),
-          ?trailing,
+          if (trailing != null) ...[const SizedBox(width: 12), trailing!],
         ],
       ),
     );
   }
 }
 
-/// Small muted heading (`text-xs font-medium text-muted`) with an optional trailing figure.
+/// Small muted label inside a [Panel], over a run of rows, with an optional trailing figure.
 class GroupLabel extends StatelessWidget {
-  const GroupLabel(this.label, {super.key, this.trailing, this.padding = const EdgeInsets.fromLTRB(12, 4, 12, 4)});
+  const GroupLabel(this.label, {super.key, this.trailing});
 
   final String label;
   final String? trailing;
-  final EdgeInsetsGeometry padding;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     return Padding(
-      padding: padding,
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
       child: Row(
         children: [
-          Expanded(child: Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: palette.muted))),
-          if (trailing != null) Text(trailing!, style: money(fontSize: 12, color: palette.toned)),
+          Expanded(child: Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: palette.muted))),
+          if (trailing != null) Text(trailing!, style: money(fontSize: 13, color: palette.toned)),
         ],
       ),
     );
   }
 }
 
-/// Two-option segmented control (`UFieldGroup` of solid/outline buttons).
-class Segmented<T> extends StatelessWidget {
-  const Segmented({super.key, required this.value, required this.options, required this.onChanged, this.expand = false, this.small = false});
+/// A label and the figure it names, as one row of a [Panel].
+class FigureRow extends StatelessWidget {
+  const FigureRow({super.key, required this.label, required this.value, this.strong = false, this.color});
 
-  final T value;
-  final List<({T value, String label, IconData? icon})> options;
-  final ValueChanged<T> onChanged;
-  final bool expand;
-  final bool small;
+  final String label;
+  final String value;
+
+  /// For the figure the rows above add up to.
+  final bool strong;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final theme = Theme.of(context).colorScheme;
-    final children = <Widget>[];
-    for (var index = 0; index < options.length; index++) {
-      final option = options[index];
-      final selected = option.value == value;
-      final radius = BorderRadius.horizontal(
-        left: index == 0 ? const Radius.circular(8) : Radius.zero,
-        right: index == options.length - 1 ? const Radius.circular(8) : Radius.zero,
-      );
-      final button = Material(
-        color: selected ? theme.primary : Colors.transparent,
-        shape: RoundedRectangleBorder(borderRadius: radius, side: BorderSide(color: selected ? theme.primary : palette.borderAccented)),
-        child: InkWell(
-          borderRadius: radius,
-          onTap: selected ? null : () => onChanged(option.value),
-          child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: small ? 10 : 14, vertical: small ? 5 : 9),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (option.icon != null) ...[
-                  Icon(option.icon, size: 16, color: selected ? theme.onPrimary : palette.text),
-                  const SizedBox(width: 6),
-                ],
-                Text(
-                  option.label,
-                  style: TextStyle(
-                    fontSize: small ? 12 : 14,
-                    fontWeight: FontWeight.w500,
-                    color: selected ? theme.onPrimary : palette.text,
-                  ),
-                ),
-              ],
-            ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Row(
+        children: [
+          Expanded(child: Text(label, style: TextStyle(fontSize: 15, color: strong ? palette.highlighted : palette.toned))),
+          const SizedBox(width: 12),
+          Text(
+            value,
+            style: money(fontSize: strong ? 17 : 15, fontWeight: strong ? FontWeight.w600 : null, color: color ?? (strong ? palette.highlighted : palette.text)),
           ),
-        ),
-      );
-      children.add(expand ? Expanded(child: button) : button);
-    }
-    return Row(mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min, children: children);
+        ],
+      ),
+    );
   }
 }
 
-/// Bottom sheet scaffold used for the web's modals: title, description, body and footer buttons.
+/// The line between two rows of a [Panel], starting where their text does.
+class RowDivider extends StatelessWidget {
+  const RowDivider({super.key, this.indent = 16});
+
+  final double indent;
+
+  @override
+  Widget build(BuildContext context) => Divider(height: 1, indent: indent);
+}
+
+/// A segmented control: one of a few options, all visible.
+class Segmented<T> extends StatelessWidget {
+  const Segmented({super.key, required this.value, required this.options, required this.onChanged});
+
+  final T value;
+  final List<({T value, String label, IconData? icon})> options;
+  final ValueChanged<T> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(color: palette.bgElevated, borderRadius: BorderRadius.circular(12)),
+      child: Row(
+        children: [
+          for (final option in options)
+            Expanded(
+              child: Material(
+                color: option.value == value ? palette.bg : Colors.transparent,
+                elevation: option.value == value ? 1 : 0,
+                shadowColor: Colors.black38,
+                borderRadius: BorderRadius.circular(9),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(9),
+                  onTap: option.value == value ? null : () => onChanged(option.value),
+                  // A minimum, so the label can grow with the system's text size.
+                  child: Container(
+                    constraints: const BoxConstraints(minHeight: 40),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        if (option.icon != null) ...[
+                          Icon(option.icon, size: 16, color: option.value == value ? palette.highlighted : palette.muted),
+                          const SizedBox(width: 6),
+                        ],
+                        Flexible(
+                          child: Text(
+                            option.label,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: option.value == value ? palette.highlighted : palette.muted,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A bottom sheet with a title, an optional description and a body. It grows with its content,
+/// scrolls when that is taller than the screen, and stays above the keyboard.
 Future<T?> showSheet<T>(
   BuildContext context, {
   required String title,
@@ -310,15 +347,15 @@ Future<T?> showSheet<T>(
       return Padding(
         padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + MediaQuery.viewPaddingOf(context).bottom),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: palette.highlighted)),
+              Text(title, style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, letterSpacing: -0.3, color: palette.highlighted)),
               if (description != null)
                 Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(description, style: TextStyle(fontSize: 14, color: palette.muted)),
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(description, style: TextStyle(fontSize: 15, height: 1.4, color: palette.muted)),
                 ),
               const SizedBox(height: 20),
               body(context),
@@ -330,27 +367,32 @@ Future<T?> showSheet<T>(
   );
 }
 
-/// Right-aligned footer of a sheet: cancel plus the primary action.
-class SheetActions extends StatelessWidget {
-  const SheetActions({super.key, required this.primary, this.cancelLabel = 'Cancelar'});
-
-  final Widget primary;
-  final String cancelLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 24),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          OutlinedButton(onPressed: () => Navigator.of(context).pop(), child: Text(cancelLabel)),
-          const SizedBox(width: 8),
-          primary,
-        ],
-      ),
-    );
-  }
+/// Asks before doing something: a sheet with the action as a full-width button and a way out under
+/// it. Answers whether the action was confirmed.
+Future<bool> showConfirmSheet(
+  BuildContext context, {
+  required String title,
+  String? message,
+  Widget? body,
+  required String confirmLabel,
+  IconData? icon,
+  bool danger = false,
+}) async {
+  final confirmed = await showSheet<bool>(
+    context,
+    title: title,
+    description: message,
+    body: (context) => Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (body != null) ...[body, const SizedBox(height: 20)],
+        ActionButton(label: confirmLabel, icon: icon, danger: danger, onPressed: () => Navigator.of(context).pop(true)),
+        const SizedBox(height: 4),
+        TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancelar')),
+      ],
+    ),
+  );
+  return confirmed ?? false;
 }
 
 /// A button that shows a spinner in place of its icon while [loading].
@@ -399,9 +441,8 @@ class ActionButton extends StatelessWidget {
             : OutlinedButton.icon(onPressed: onTap, style: buttonStyle, icon: leading, label: child);
       case ActionStyle.subtle:
         final buttonStyle = FilledButton.styleFrom(
-          backgroundColor: danger ? palette.error.withValues(alpha: 0.1) : palette.bgElevated,
+          backgroundColor: danger ? palette.error.withValues(alpha: 0.12) : palette.bgAccented,
           foregroundColor: danger ? palette.error : palette.text,
-          side: BorderSide(color: danger ? palette.error.withValues(alpha: 0.25) : palette.borderAccented),
         );
         return leading == null
             ? FilledButton(onPressed: onTap, style: buttonStyle, child: child)
@@ -411,3 +452,45 @@ class ActionButton extends StatelessWidget {
 }
 
 enum ActionStyle { solid, outline, subtle }
+
+/// The screen's main action, floating over its content. Without a hero: the shell keeps several
+/// screens (and so several of these) in one route.
+class AppFab extends StatelessWidget {
+  const AppFab({super.key, required this.label, required this.icon, required this.onPressed});
+
+  final String label;
+  final IconData icon;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return FloatingActionButton.extended(heroTag: null, onPressed: onPressed, icon: Icon(icon, size: 20), label: Text(label));
+  }
+}
+
+/// A row of a sheet that does something: an icon, a label and optionally a line under it.
+class SheetAction extends StatelessWidget {
+  const SheetAction({super.key, required this.icon, required this.label, this.subtitle, this.onTap, this.danger = false});
+
+  final IconData icon;
+  final String label;
+  final String? subtitle;
+
+  /// Null when the action can't be taken; [subtitle] then says why.
+  final VoidCallback? onTap;
+  final bool danger;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final color = danger && onTap != null ? palette.error : null;
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      enabled: onTap != null,
+      leading: Icon(icon, size: 20, color: color ?? (onTap == null ? palette.dimmed : palette.muted)),
+      title: Text(label, style: color == null ? null : TextStyle(color: color)),
+      subtitle: subtitle == null ? null : Text(subtitle!),
+      onTap: onTap,
+    );
+  }
+}
