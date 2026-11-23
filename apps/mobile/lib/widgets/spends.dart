@@ -5,34 +5,39 @@ import '../api/models.dart';
 import '../domain/expression.dart';
 import '../domain/summary.dart';
 import '../format.dart';
+import '../state/currencies_store.dart';
 import '../state/toast.dart';
 import '../theme.dart';
 import 'fields.dart';
 
 /// How much is still left to spend on the open day, with each spend as a slice of the budget.
 class DayHero extends StatelessWidget {
-  const DayHero({super.key, required this.allowance, required this.spends, required this.transfer});
+  const DayHero({super.key, required this.summary, required this.spends, required this.exchange});
 
-  final Allowance allowance;
+  /// The month's summary: the allowance, and the rates that size a spend in another currency by its cost.
+  final MonthSummary summary;
 
   /// The open day's spending, in the order it was recorded.
   final List<DailySpend> spends;
-  final Transfer transfer;
+
+  /// Whether the month has more than one currency, and so equivalents in the others to show.
+  final bool exchange;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final budget = allowance.eur ?? 0;
-    final remaining = allowance.remainingEur ?? 0;
+    final allowance = summary.allowance;
+    final main = summary.main;
+    final budget = allowance.amount ?? 0;
+    final remaining = allowance.remaining ?? 0;
     final over = remaining < 0;
-    final rate = transfer.rate;
 
     // Each spend is a slice of the day's budget; past the budget the bar is full and turns red.
     final segments = <double>[];
     if (budget > 0) {
       var used = 0.0;
       for (final spend in spends) {
-        final value = spendInEurFor(spend, transfer) ?? 0;
+        final value = summary.cost(spend) ?? 0;
         final width = (value.clamp(0, (budget - used).clamp(0, double.infinity)) / budget).toDouble();
         used += value > 0 ? value : 0;
         if (width > 0) segments.add(width);
@@ -41,9 +46,9 @@ class DayHero extends StatelessWidget {
 
     final String caption;
     if (over) {
-      caption = 'Passou ${formatMoney(-remaining, Currency.eur)} do valor de hoje.';
+      caption = 'Passou ${formatMoney(-remaining, main)} do valor de hoje.';
     } else if (allowance.spentToday > 0) {
-      caption = 'Sobrando de ${formatMoney(budget, Currency.eur)} para hoje.';
+      caption = 'Sobrando de ${formatMoney(budget, main)} para hoje.';
     } else {
       caption = 'Para gastar hoje.';
     }
@@ -55,7 +60,7 @@ class DayHero extends StatelessWidget {
           fit: BoxFit.scaleDown,
           alignment: Alignment.centerLeft,
           child: Text(
-            formatMoney(remaining, Currency.eur),
+            formatMoney(remaining, main),
             style: money(fontSize: 60, fontWeight: FontWeight.w600, height: 1, color: over ? palette.error : palette.highlighted),
           ),
         ),
@@ -63,7 +68,11 @@ class DayHero extends StatelessWidget {
         Text.rich(
           TextSpan(children: [
             TextSpan(text: caption),
-            if (rate != null) TextSpan(text: ' ≈ ${formatMoney(remaining * rate, Currency.brl)}', style: money(fontSize: 14)),
+            // What is left today in each other currency of the month that has a rate.
+            if (exchange)
+              for (final conversion in summary.conversions)
+                if (conversion.rate != null)
+                  TextSpan(text: ' ≈ ${formatMoney(remaining * conversion.rate!, conversion.currency)}', style: money(fontSize: 14)),
           ]),
           style: TextStyle(fontSize: 14, color: palette.muted),
         ),
@@ -102,7 +111,8 @@ class DayHero extends StatelessWidget {
   }
 }
 
-/// Port of `SpendForm.vue`: currency toggle, amount (number or expression), description, submit.
+/// Enters a spend: currency (when there is more than one to pick from), amount (number or
+/// expression), description, submit.
 class SpendForm extends StatefulWidget {
   const SpendForm({super.key, required this.day, required this.create, this.autofocus = false});
 
@@ -120,8 +130,14 @@ class _SpendFormState extends State<SpendForm> {
   final _amountFocus = FocusNode();
 
   // Kept between entries: a run of spends usually happens in the same currency.
-  Currency _currency = Currency.eur;
+  Currency? _picked;
   bool _saving = false;
+
+  /// The currency the spend goes in: the picked one while it is still offered, otherwise the main one.
+  Currency? get _currency {
+    final store = CurrenciesStore.instance;
+    return _picked != null && store.offered.contains(_picked) ? _picked : store.main;
+  }
 
   @override
   void initState() {
@@ -130,6 +146,8 @@ class _SpendFormState extends State<SpendForm> {
   }
 
   Future<void> _submit() async {
+    final currency = _currency;
+    if (currency == null) return;
     final text = _amount.text.trim();
     final amount = evaluateExpression(text);
     if (amount == null) {
@@ -140,7 +158,7 @@ class _SpendFormState extends State<SpendForm> {
     final note = _note.text.trim();
     final created = await widget.create({
       'day': widget.day,
-      'currency': _currency.code,
+      'currency': currency.code,
       'amount': amount,
       'expression': expressionOf(text),
       'note': note.isEmpty ? null : note,
@@ -164,27 +182,67 @@ class _SpendFormState extends State<SpendForm> {
 
   @override
   Widget build(BuildContext context) {
+    return ListenableBuilder(listenable: CurrenciesStore.instance, builder: (context, _) => _build(context));
+  }
+
+  /// The button that says which currency the spend goes in. With two currencies a tap swaps them;
+  /// with more it opens the list.
+  Widget _currencyButton(BuildContext context, Currency currency, List<Currency> offered) {
     final palette = context.palette;
+    final style = FilledButton.styleFrom(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      minimumSize: const Size(52, 48),
+      backgroundColor: palette.bgElevated,
+      foregroundColor: palette.text,
+      side: BorderSide(color: palette.borderAccented),
+    );
+    final label = Text(currencySymbol(currency), style: money(fontSize: 16, fontWeight: FontWeight.w500));
+    final hint = 'Gasto em ${currencyPlural(currency).toLowerCase()} (trocar a moeda)';
+    if (offered.length == 2) {
+      return Tooltip(
+        message: hint,
+        child: FilledButton(
+          style: style,
+          onPressed: () => setState(() => _picked = offered.firstWhere((other) => other != currency)),
+          child: label,
+        ),
+      );
+    }
+    return MenuAnchor(
+      menuChildren: [
+        for (final option in offered)
+          MenuItemButton(
+            leadingIcon: SizedBox(width: 40, child: Text(currencySymbol(option), style: money(fontSize: 14, color: palette.muted))),
+            trailingIcon: option == currency ? Icon(LucideIcons.check, size: 16, color: palette.highlighted) : null,
+            onPressed: () => setState(() => _picked = option),
+            child: Text(currencyName(option)),
+          ),
+      ],
+      builder: (context, controller, _) => Tooltip(
+        message: hint,
+        child: FilledButton(
+          style: style,
+          onPressed: () => controller.isOpen ? controller.close() : controller.open(),
+          child: label,
+        ),
+      ),
+    );
+  }
+
+  Widget _build(BuildContext context) {
+    final currency = _currency;
+    // Nothing can be entered without a currency to enter it in; the screen says so above the form.
+    if (currency == null) return const SizedBox();
+    final offered = CurrenciesStore.instance.offered;
     final canSubmit = _amount.text.trim().isNotEmpty && !_saving;
     return Column(
       children: [
         Row(
           children: [
-            SizedBox(
-              width: 52,
-              height: 48,
-              child: FilledButton(
-                style: FilledButton.styleFrom(
-                  padding: EdgeInsets.zero,
-                  backgroundColor: palette.bgElevated,
-                  foregroundColor: palette.text,
-                  side: BorderSide(color: palette.borderAccented),
-                ),
-                onPressed: () => setState(() => _currency = _currency == Currency.eur ? Currency.brl : Currency.eur),
-                child: Text(_currency == Currency.eur ? '€' : r'R$', style: money(fontSize: 16, fontWeight: FontWeight.w500)),
-              ),
-            ),
-            const SizedBox(width: 8),
+            if (offered.length > 1) ...[
+              _currencyButton(context, currency, offered),
+              const SizedBox(width: 8),
+            ],
             Expanded(
               child: TextField(
                 controller: _amount,
@@ -221,14 +279,17 @@ class _SpendFormState extends State<SpendForm> {
   }
 }
 
-/// One spend: description and amount edited in place, the EUR cost under BRL spends, delete.
+/// One spend: description and amount edited in place, its cost under a spend in another currency, delete.
 class SpendRow extends StatelessWidget {
-  const SpendRow({super.key, required this.spend, required this.eur, required this.onUpdate, required this.onRemove});
+  const SpendRow({super.key, required this.spend, required this.main, required this.cost, required this.onUpdate, required this.onRemove});
 
   final DailySpend spend;
 
-  /// What the spend costs the EUR allowance; shown under BRL spends.
-  final double? eur;
+  /// The currency the month is worked out in.
+  final Currency main;
+
+  /// What the spend costs the allowance, in the main currency; shown under spends in another one.
+  final double? cost;
   final ValueChanged<Json> onUpdate;
   final VoidCallback onRemove;
 
@@ -260,10 +321,10 @@ class SpendRow extends StatelessWidget {
                     if (amount != null) onUpdate({'amount': amount, 'expression': expression});
                   },
                 ),
-                if (spend.currency == Currency.brl)
+                if (spend.currency != main)
                   Padding(
                     padding: const EdgeInsets.only(right: 8),
-                    child: Text('≈ ${formatMoney(eur, Currency.eur)}', style: money(fontSize: 12, color: palette.dimmed)),
+                    child: Text('≈ ${formatMoney(cost, main)}', style: money(fontSize: 12, color: palette.dimmed)),
                   ),
               ],
             ),
@@ -282,10 +343,12 @@ class SpendRow extends StatelessWidget {
 
 /// A divided list of [SpendRow]s.
 class SpendList extends StatelessWidget {
-  const SpendList({super.key, required this.spends, required this.inEur, required this.onUpdate, required this.onRemove});
+  const SpendList({super.key, required this.spends, required this.summary, required this.onUpdate, required this.onRemove});
 
   final List<DailySpend> spends;
-  final double? Function(DailySpend) inEur;
+
+  /// The month's summary: its main currency, and the rates a spend in another one is costed with.
+  final MonthSummary summary;
   final void Function(String id, Json patch) onUpdate;
   final void Function(String id) onRemove;
 
@@ -298,7 +361,8 @@ class SpendList extends StatelessWidget {
           SpendRow(
             key: ValueKey(spend.id),
             spend: spend,
-            eur: inEur(spend),
+            main: summary.main,
+            cost: summary.cost(spend),
             onUpdate: (patch) => onUpdate(spend.id, patch),
             onRemove: () => onRemove(spend.id),
           ),

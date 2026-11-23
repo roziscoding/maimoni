@@ -5,6 +5,7 @@ import '../api/models.dart';
 import '../domain/summary.dart';
 import '../format.dart';
 import '../routes.dart';
+import '../state/currencies_store.dart';
 import '../state/month_controller.dart';
 import '../state/months_store.dart';
 import '../state/toast.dart';
@@ -91,25 +92,23 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver, 
   Future<void> _confirmClose(MonthDetail data, Allowance allowance) async {
     final next = nextActiveDay(data.month);
     if (next == null) return;
-    final afterClose = summarizeMonth(
-      data.month.patch({'activeDay': next}),
-      data.items,
-      rate: data.rate?.rate,
-      spends: data.spends,
-      conversions: data.conversions,
-    ).allowance;
+    final main = data.month.mainCurrency;
+    // The allowance as it will look once the day is closed: same data, open day moved forward.
+    final afterClose =
+        summarizeMonth(data.month.patch({'activeDay': next}), data.items, rates: data.rates?.rates, spends: data.spends).allowance;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => _CloseDayDialog(day: allowance.activeDay!, allowance: allowance, afterClose: afterClose, today: _now.day),
+      builder: (context) =>
+          _CloseDayDialog(day: allowance.activeDay!, allowance: allowance, afterClose: afterClose, main: main, today: _now.day),
     );
     if (confirmed != true) return;
     final closedDay = allowance.activeDay;
     final result = await _today.closeDay();
     if (result == null || closedDay == null) return;
-    final eur = _today.summary?.allowance.eur;
+    final amount = _today.summary?.allowance.amount;
     toast(
       'Dia $closedDay fechado',
-      description: eur == null ? null : 'Novo valor diário: ${formatMoney(eur, Currency.eur)}.',
+      description: amount == null ? null : 'Novo valor diário: ${formatMoney(amount, main)}.',
       icon: LucideIcons.calendarCheck,
       // Long enough to notice a misclick and undo it.
       duration: const Duration(seconds: 10),
@@ -130,7 +129,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver, 
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: Listenable.merge([_today, MonthsStore.instance]),
+      listenable: Listenable.merge([_today, MonthsStore.instance, CurrenciesStore.instance]),
       builder: (context, _) {
         final data = _today.data;
         final summary = _today.summary;
@@ -201,22 +200,27 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver, 
     final allowance = summary.allowance;
     final activeDay = allowance.activeDay;
     final lagging = activeDay != null && activeDay < _now.day;
+    // The currency the month is worked out in; every figure here is in it.
+    final main = summary.main;
+    final currencies = CurrenciesStore.instance;
+    // With a single currency in the month there is no equivalent in another one to show.
+    final exchange = currencies.shownInMonth(data).length > 1;
 
     if (activeDay == null) {
       return [
         EmptyState(
           icon: LucideIcons.flag,
           title: 'Todos os dias de ${monthName(_now.month).toLowerCase()} foram fechados',
-          description: 'No mês, os gastos do dia a dia somaram ${formatMoney(allowance.spentTotal, Currency.eur)}.',
+          description: 'No mês, os gastos do dia a dia somaram ${formatMoney(allowance.spentTotal, main)}.',
         ),
       ];
     }
-    if (allowance.eur == null) {
+    if (allowance.amount == null) {
       return [
         EmptyState(
           icon: LucideIcons.hourglass,
           title: 'Ainda não dá para calcular o dia',
-          description: data.rateError != null ? 'A cotação do euro falhou: ${data.rateError}' : 'Falta a cotação do euro.',
+          description: data.rateError != null ? 'A cotação falhou: ${data.rateError}' : 'Falta a cotação de uma das moedas do mês.',
           actions: [
             ActionButton(
               label: 'Tentar novamente',
@@ -243,21 +247,21 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver, 
         ),
         const SizedBox(height: 32),
       ],
-      DayHero(allowance: allowance, spends: spendsToday, transfer: summary.transfer),
+      DayHero(summary: summary, spends: spendsToday, exchange: exchange),
       const SizedBox(height: 32),
-      SpendForm(day: activeDay, create: _today.addSpend),
+      if (currencies.none) const NoCurrenciesCallout() else SpendForm(day: activeDay, create: _today.addSpend),
       if (spendsToday.isNotEmpty) ...[
         const SizedBox(height: 32),
         Row(
           children: [
             Expanded(child: Text('Gastos do dia', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: palette.muted))),
-            Text(formatMoney(allowance.spentToday, Currency.eur), style: money(fontSize: 14, color: palette.muted)),
+            Text(formatMoney(allowance.spentToday, main), style: money(fontSize: 14, color: palette.muted)),
           ],
         ),
         const SizedBox(height: 4),
         SpendList(
           spends: spendsToday,
-          inEur: (spend) => spendInEurFor(spend, summary.transfer),
+          summary: summary,
           onUpdate: _today.updateSpend,
           onRemove: _today.removeSpend,
         ),
@@ -266,16 +270,16 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver, 
       Text.rich(
         TextSpan(children: [
           const TextSpan(text: 'O mês tem '),
-          TextSpan(text: formatMoney(summary.eur.net, Currency.eur), style: toned),
+          TextSpan(text: formatMoney(summary.net, main), style: toned),
           const TextSpan(text: ' livres depois das contas. '),
           if (spentBefore != 0) ...[
             const TextSpan(text: 'Já foram '),
-            TextSpan(text: formatMoney(spentBefore, Currency.eur), style: toned),
+            TextSpan(text: formatMoney(spentBefore, main), style: toned),
             const TextSpan(text: ' nos dias anteriores, '),
           ] else
             const TextSpan(text: 'Isso '),
           TextSpan(text: 'dividido por ${allowance.days} ${plural(allowance.days, 'dia', 'dias')} dá '),
-          TextSpan(text: formatMoney(allowance.eur, Currency.eur), style: toned),
+          TextSpan(text: formatMoney(allowance.amount, main), style: toned),
           const TextSpan(text: ' por dia.'),
         ]),
         style: TextStyle(fontSize: 14, color: palette.muted, height: 1.5),
@@ -285,11 +289,14 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver, 
 }
 
 class _CloseDayDialog extends StatefulWidget {
-  const _CloseDayDialog({required this.day, required this.allowance, required this.afterClose, required this.today});
+  const _CloseDayDialog({required this.day, required this.allowance, required this.afterClose, required this.main, required this.today});
 
   final int day;
   final Allowance allowance;
   final Allowance afterClose;
+
+  /// The currency the month is worked out in.
+  final Currency main;
   final int today;
 
   @override
@@ -300,7 +307,7 @@ class _CloseDayDialogState extends State<_CloseDayDialog> {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final remaining = widget.allowance.remainingEur ?? 0;
+    final remaining = widget.allowance.remaining ?? 0;
     final after = widget.afterClose;
     final strong = money(fontSize: 14, fontWeight: FontWeight.w600, color: palette.highlighted);
     return AlertDialog(
@@ -313,12 +320,12 @@ class _CloseDayDialogState extends State<_CloseDayDialog> {
             remaining >= 0
                 ? TextSpan(children: [
                     const TextSpan(text: 'Sobraram '),
-                    TextSpan(text: formatMoney(remaining, Currency.eur), style: strong),
+                    TextSpan(text: formatMoney(remaining, widget.main), style: strong),
                     const TextSpan(text: '. Eles vão para os dias que faltam.'),
                   ])
                 : TextSpan(children: [
                     const TextSpan(text: 'O dia passou '),
-                    TextSpan(text: formatMoney(-remaining, Currency.eur), style: strong.copyWith(color: palette.error)),
+                    TextSpan(text: formatMoney(-remaining, widget.main), style: strong.copyWith(color: palette.error)),
                     const TextSpan(text: '. Isso sai dos dias que faltam.'),
                   ]),
             style: TextStyle(fontSize: 14, color: palette.text),
@@ -327,11 +334,11 @@ class _CloseDayDialogState extends State<_CloseDayDialog> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(color: palette.bgElevated, borderRadius: BorderRadius.circular(8)),
-            child: after.activeDay != null && after.eur != null
+            child: after.activeDay != null && after.amount != null
                 ? Text.rich(
                     TextSpan(children: [
                       TextSpan(text: 'A partir ${after.activeDay == widget.today ? 'de hoje' : 'do dia ${after.activeDay}'}: '),
-                      TextSpan(text: formatMoney(after.eur, Currency.eur), style: strong.copyWith(fontSize: 16)),
+                      TextSpan(text: formatMoney(after.amount, widget.main), style: strong.copyWith(fontSize: 16)),
                       TextSpan(text: ' por dia, por ${after.days} ${plural(after.days, 'dia', 'dias')}.'),
                     ]),
                     style: TextStyle(fontSize: 14, color: palette.text),

@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import '../api/client.dart';
 import '../api/models.dart';
 import '../domain/summary.dart';
+import 'currencies_store.dart';
 import 'months_store.dart';
 import 'toast.dart';
 
@@ -36,11 +37,34 @@ class MonthController extends ChangeNotifier {
 
   MonthSummary? get summary => _summary;
 
+  /// Counts the month writes the server saved; [_savedAt] holds, per field, the count when it was
+  /// last saved. A [load] compares them with the count it started at.
+  int _monthWrites = 0;
+  final _savedAt = <String, int>{};
+
+  /// Goes up on every [load]; a read that a newer one started after is out of date and dropped.
+  int _loads = 0;
+
   Future<void> load() async {
+    final generation = ++_loads;
     try {
-      data = await _api.month(year, month);
+      final since = _monthWrites;
+      // The screens lay themselves out by the user's currencies, so the first frame waits for them too.
+      final currencies = CurrenciesStore.instance.ensureLoaded();
+      final detail = await _api.month(year, month);
+      await currencies;
+      if (generation != _loads) return;
+      // A month write that saved while this read was in flight is newer than what the read got.
+      final written = [
+        for (final MapEntry(:key, :value) in _savedAt.entries)
+          if (value > since) key,
+      ];
+      final local = data?.month.toJson();
+      if (local != null && written.isNotEmpty) detail.month = detail.month.patch({for (final key in written) key: local[key]});
+      data = detail;
       error = null;
     } on ApiException catch (err) {
+      if (generation != _loads) return;
       data = null;
       error = err;
     }
@@ -54,13 +78,7 @@ class MonthController extends ChangeNotifier {
     final current = data;
     _summary = current == null
         ? null
-        : summarizeMonth(
-            current.month,
-            current.items,
-            rate: current.rate?.rate,
-            spends: current.spends,
-            conversions: current.conversions,
-          );
+        : summarizeMonth(current.month, current.items, rates: current.rates?.rates, spends: current.spends);
     if (current != null && _summary != null) MonthsStore.instance.updateSummary(current.month, _summary!);
     notifyListeners();
   }
@@ -84,12 +102,6 @@ class MonthController extends ChangeNotifier {
   void _setSpends(List<DailySpend> Function(List<DailySpend>) update) {
     if (data == null) return;
     data!.spends = update(data!.spends);
-    _changed();
-  }
-
-  void _setConversions(List<Conversion> Function(List<Conversion>) update) {
-    if (data == null) return;
-    data!.conversions = update(data!.conversions);
     _changed();
   }
 
@@ -136,7 +148,14 @@ class MonthController extends ChangeNotifier {
     }
     final saved = await _persist(() => _api.updateMonth(year, month, patch));
     if (saved != null && data != null) {
-      data!.month = saved.month;
+      _monthWrites++;
+      for (final key in patch.keys) {
+        _savedAt[key] = _monthWrites;
+      }
+      // Only the fields this write changed: the rest of the answer may predate a write that saved
+      // after it (a note answered after a rate lock would otherwise put back the old locked rates).
+      final answered = saved.month.toJson();
+      data!.month = data!.month.patch({for (final key in patch.keys) key: answered[key]});
       _changed();
     }
     return saved != null;
@@ -179,42 +198,43 @@ class MonthController extends ChangeNotifier {
     await _persist(() => _api.deleteSpend(year, month, id));
   }
 
-  /* ------------------------------- Conversions ----------------------------- */
+  /// Freezes [currency]'s rate at [rate], leaving the other locked rates as they are.
+  Future<bool> lockRate(Currency currency, double rate) => _changeLockedRates((locked) => locked..[currency] = rate);
 
-  Future<Conversion?> addConversion(Json body) async {
-    final created = await _persist(() => _api.addConversion(year, month, body));
-    if (created != null) _setConversions((conversions) => [...conversions, created]);
-    return created;
-  }
+  /// Sends [currency] back to the live rate.
+  Future<bool> unlockRate(Currency currency) => _changeLockedRates((locked) => locked..remove(currency));
 
-  Future<Conversion?> updateConversion(String id, Json patch) async {
-    _setConversions((conversions) => [
-          for (final conversion in conversions) conversion.id == id ? conversion.patch(patch) : conversion,
-        ]);
-    final saved = await _persist(() => _api.updateConversion(year, month, id, patch));
-    if (saved != null) {
-      _setConversions((conversions) => [for (final conversion in conversions) conversion.id == id ? saved : conversion]);
-    }
-    return saved;
-  }
+  /// The last locked-rates write; the next one waits for it.
+  Future<bool> _lockedRatesWrite = Future.value(true);
 
-  Future<void> removeConversion(String id) async {
-    _setConversions((conversions) => conversions.where((conversion) => conversion.id != id).toList());
-    await _persist(() => _api.deleteConversion(year, month, id));
+  /// The server replaces the whole map, so each write sends every locked rate again. Writes run one
+  /// after another, each built from the map the previous one saved: overlapping ones would otherwise
+  /// each send a map without the other's change, and the last to land would drop it.
+  Future<bool> _changeLockedRates(Rates Function(Rates locked) update) {
+    final write = _lockedRatesWrite.then<bool>((_) {
+      final current = data;
+      if (current == null || _disposed) return false;
+      return updateMonth({'lockedRates': ratesToJson(update({...current.month.lockedRates}))});
+    });
+    _lockedRatesWrite = write.catchError((_) => false);
+    return write;
   }
 
   /* ---------------------------------- Rate --------------------------------- */
 
-  Future<LiveRate?> refreshRate({bool refreshMonths = true}) async {
+  Future<LiveRates?> refreshRate({bool refreshMonths = true}) async {
+    // Nothing to ask before the month is loaded: the rates are quoted against its main currency.
+    final base = data?.month.mainCurrency;
+    if (base == null) return null;
     refreshingRate = true;
     _changed();
     try {
-      final rate = await _api.liveRate();
+      final rates = await _api.liveRates(base: base);
       data
-        ?..rate = rate
+        ?..rates = rates
         ..rateError = null;
       if (refreshMonths) await MonthsStore.instance.refresh();
-      return rate;
+      return rates;
     } catch (err) {
       data?.rateError = errorMessage(err);
       return null;

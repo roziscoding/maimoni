@@ -16,6 +16,8 @@ class ItemSection extends StatelessWidget {
     required this.currency,
     required this.items,
     required this.totals,
+    required this.offered,
+    required this.alone,
     required this.onUpdate,
     required this.onRemove,
     required this.onPromote,
@@ -25,6 +27,12 @@ class ItemSection extends StatelessWidget {
   final Currency currency;
   final List<MonthItem> items;
   final CurrencyTotals totals;
+
+  /// Whether new items can be added in this currency. A disabled one only lists what it already has.
+  final bool offered;
+
+  /// Whether this is the month's only section, which then needs no currency in its title.
+  final bool alone;
   final void Function(String id, Json patch) onUpdate;
   final ValueChanged<String> onRemove;
   final ValueChanged<String> onPromote;
@@ -33,11 +41,9 @@ class ItemSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final title = currency == Currency.brl ? 'Reais' : 'Euros';
+    final title = alone ? 'Entradas e saídas' : currencyPlural(currency);
     final incomes = items.where((item) => item.kind == EntryKind.income).toList();
     final expenses = items.where((item) => item.kind == EntryKind.expense).toList();
-    // Sum of the listed incomes only: for EUR, `totals.income` also includes the converted BRL.
-    final incomeTotal = incomes.fold<double>(0, (sum, item) => sum + (item.amount ?? 0));
     final paidShare = totals.expenses > 0 ? (totals.paid / totals.expenses).clamp(0, 1).toDouble() : 0.0;
 
     Widget row(MonthItem item) => ItemRow(
@@ -54,7 +60,7 @@ class ItemSection extends StatelessWidget {
         children: [
           PanelHeader(
             title: title,
-            tag: currency.code,
+            tag: alone ? null : currency.code,
             trailing: totals.unresolved > 0
                 ? Pill(
                     label: totals.unresolved == 1 ? '1 valor a confirmar' : '${totals.unresolved} valores a confirmar',
@@ -69,7 +75,7 @@ class ItemSection extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 if (incomes.isNotEmpty) ...[
-                  GroupLabel('Entradas', trailing: formatMoney(incomeTotal, currency)),
+                  GroupLabel('Entradas', trailing: formatMoney(totals.income, currency)),
                   ...incomes.map(row),
                   const SizedBox(height: 8),
                   const GroupLabel('Saídas'),
@@ -79,9 +85,12 @@ class ItemSection extends StatelessWidget {
                 else
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-                    child: Text('Nenhuma saída em ${title.toLowerCase()} ainda.', style: TextStyle(fontSize: 14, color: palette.muted)),
+                    child: Text(
+                      alone ? 'Nenhuma saída ainda.' : 'Nenhuma saída em ${title.toLowerCase()} ainda.',
+                      style: TextStyle(fontSize: 14, color: palette.muted),
+                    ),
                   ),
-                AddItemForm(currency: currency, onAdd: onAdd),
+                if (offered) AddItemForm(currency: currency, onAdd: onAdd),
               ],
             ),
           ),

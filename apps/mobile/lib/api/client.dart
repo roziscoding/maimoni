@@ -150,20 +150,31 @@ class Api {
 
   Future<void> deleteSpend(int year, int month, String id) => _send('DELETE', '${_month(year, month)}/spends/$id');
 
-  /* -------------------------------- Conversions ---------------------------- */
-
-  Future<Conversion> addConversion(int year, int month, Json body) async =>
-      Conversion.fromJson(await _send('POST', '${_month(year, month)}/conversions', body: body) as Json);
-
-  Future<Conversion> updateConversion(int year, int month, String id, Json patch) async =>
-      Conversion.fromJson(await _send('PATCH', '${_month(year, month)}/conversions/$id', body: patch) as Json);
-
-  Future<void> deleteConversion(int year, int month, String id) =>
-      _send('DELETE', '${_month(year, month)}/conversions/$id');
-
   /* ---------------------------------- Rates -------------------------------- */
 
-  Future<LiveRate> liveRate() async => LiveRate.fromJson(await _send('GET', '/rates/live') as Json);
+  /// Live rates quoted against [base]; without one, against the user's main currency.
+  Future<LiveRates> liveRates({Currency? base}) async =>
+      LiveRates.fromJson(await _send('GET', '/rates/live', query: base == null ? null : {'base': base.code}) as Json);
+
+  /* -------------------------------- Currencies ----------------------------- */
+
+  /// The user's currencies, the main one first.
+  Future<List<UserCurrency>> currencies() async =>
+      [for (final row in await _send('GET', '/settings/currencies') as List) UserCurrency.fromJson(row as Json)];
+
+  Future<void> addCurrency(Currency currency) => _send('POST', '/settings/currencies', body: {'currency': currency.code});
+
+  /// [patch] is `{ enabled?, main? }`. Answers with the whole list: making one the main one changes another.
+  Future<List<UserCurrency>> updateCurrency(Currency currency, Json patch) async => [
+        for (final row in await _send('PATCH', '/settings/currencies/${currency.code}', body: patch) as List)
+          UserCurrency.fromJson(row as Json),
+      ];
+
+  Future<void> deleteCurrency(Currency currency) => _send('DELETE', '/settings/currencies/${currency.code}');
+
+  /* ---------------------------------- Flags -------------------------------- */
+
+  Future<Flags> flags() async => Flags.fromJson(await _send('GET', '/flags') as Json);
 
   /* --------------------------------- Template ------------------------------ */
 

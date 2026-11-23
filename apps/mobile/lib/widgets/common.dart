@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import 'package:lucide_icons_flutter/lucide_icons.dart';
+
+import '../routes.dart';
 import '../theme.dart';
 
 /// `UEmpty variant="naked"`: an icon, a title, a description and optional actions, centered.
@@ -128,6 +131,21 @@ class Callout extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Shown where something would be added: nothing can be without a currency to add it in.
+class NoCurrenciesCallout extends StatelessWidget {
+  const NoCurrenciesCallout({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Callout(
+      icon: LucideIcons.coins,
+      title: 'Nenhuma moeda ativa',
+      description: 'Itens e gastos são registrados em uma moeda. Adicione uma moeda nas configurações para começar.',
+      action: OutlinedButton(onPressed: () => navigate(context, settingsRoute), child: const Text('Abrir configurações')),
     );
   }
 }

@@ -3,15 +3,73 @@ import '../domain/summary.dart';
 /// Mirrors the shapes in `@maimoni/shared` (schemas.ts and api.ts). Optimistic updates apply a
 /// JSON patch on top of `toJson()` and parse the result back, like the web's `{ ...item, ...patch }`.
 
-enum Currency {
-  brl('BRL'),
-  eur('EUR');
+/// A currency code. The server picks from a fixed list ([Currency.all], the `currencies` array in
+/// `@maimoni/shared`); a code outside it still parses, so a newer server doesn't break the app.
+///
+/// An extension type over the code, so two of the same code are equal and work as `const` map keys.
+extension type const Currency(String code) {
+  static const brl = Currency('BRL');
+  static const eur = Currency('EUR');
 
-  const Currency(this.code);
-  final String code;
+  /// The currencies a user can pick from, in the order the app lists them.
+  static const all = [
+    Currency('AUD'),
+    brl,
+    Currency('CAD'),
+    Currency('CHF'),
+    Currency('CNY'),
+    Currency('CZK'),
+    Currency('DKK'),
+    eur,
+    Currency('GBP'),
+    Currency('HKD'),
+    Currency('HUF'),
+    Currency('IDR'),
+    Currency('ILS'),
+    Currency('INR'),
+    Currency('ISK'),
+    Currency('JPY'),
+    Currency('KRW'),
+    Currency('MXN'),
+    Currency('MYR'),
+    Currency('NOK'),
+    Currency('NZD'),
+    Currency('PHP'),
+    Currency('PLN'),
+    Currency('RON'),
+    Currency('SEK'),
+    Currency('SGD'),
+    Currency('THB'),
+    Currency('TRY'),
+    Currency('USD'),
+    Currency('ZAR'),
+  ];
 
-  static Currency parse(String value) => values.firstWhere((currency) => currency.code == value);
+  static Currency parse(String value) => Currency(value);
+
+  /// [currencies] without repeats, in the app's order; codes outside [all] come last, by code.
+  static List<Currency> sorted(Iterable<Currency> currencies) {
+    int position(Currency currency) {
+      final index = all.indexOf(currency);
+      return index < 0 ? all.length : index;
+    }
+
+    return currencies.toSet().toList()
+      ..sort((a, b) {
+        final byPosition = position(a).compareTo(position(b));
+        return byPosition != 0 ? byPosition : a.code.compareTo(b.code);
+      });
+  }
 }
+
+/// Exchange rates by currency, all quoted against one other currency (a month's main one): how
+/// many units of the key that one is worth. A currency left out has no rate.
+typedef Rates = Map<Currency, double>;
+
+Rates ratesFromJson(Object? json) =>
+    {for (final MapEntry(:key, :value) in (json as Map).entries) Currency.parse(key as String): (value as num).toDouble()};
+
+Map<String, double> ratesToJson(Rates rates) => {for (final MapEntry(:key, :value) in rates.entries) key.code: value};
 
 enum EntryKind {
   income,
@@ -30,7 +88,8 @@ class Month {
     required this.id,
     required this.year,
     required this.month,
-    required this.exchangeRate,
+    required this.mainCurrency,
+    required this.lockedRates,
     required this.activeDay,
     required this.note,
     required this.createdAt,
@@ -40,7 +99,8 @@ class Month {
         id: json['id'] as String,
         year: json['year'] as int,
         month: json['month'] as int,
-        exchangeRate: _numOrNull(json['exchangeRate']),
+        mainCurrency: Currency.parse(json['mainCurrency'] as String),
+        lockedRates: ratesFromJson(json['lockedRates']),
         activeDay: json['activeDay'] as int?,
         note: json['note'] as String?,
         createdAt: json['createdAt'] as String,
@@ -50,8 +110,11 @@ class Month {
   final int year;
   final int month;
 
-  /// Locked EUR→BRL rate. `null` means the live rate is used.
-  final double? exchangeRate;
+  /// The currency the month is worked out in: the user's main currency when it was created.
+  final Currency mainCurrency;
+
+  /// Rates the month froze, by currency. A currency left out follows the live rate.
+  final Rates lockedRates;
 
   /// Day open for daily spending. `null` means no day was closed yet, so the open day is today.
   final int? activeDay;
@@ -62,7 +125,8 @@ class Month {
         'id': id,
         'year': year,
         'month': month,
-        'exchangeRate': exchangeRate,
+        'mainCurrency': mainCurrency.code,
+        'lockedRates': ratesToJson(lockedRates),
         'activeDay': activeDay,
         'note': note,
         'createdAt': createdAt,
@@ -225,60 +289,7 @@ class DailySpend {
   DailySpend patch(Json patch) => DailySpend.fromJson({...toJson(), ...patch});
 }
 
-class Conversion {
-  Conversion({
-    required this.id,
-    required this.monthId,
-    required this.day,
-    required this.sentBrl,
-    required this.feeBrl,
-    required this.receivedEur,
-    required this.note,
-    required this.createdAt,
-  });
-
-  factory Conversion.fromJson(Json json) => Conversion(
-        id: json['id'] as String,
-        monthId: json['monthId'] as String,
-        day: json['day'] as int,
-        sentBrl: _num(json['sentBrl']),
-        feeBrl: _num(json['feeBrl']),
-        receivedEur: _num(json['receivedEur']),
-        note: json['note'] as String?,
-        createdAt: json['createdAt'] as String,
-      );
-
-  final String id;
-  final String monthId;
-  final int day;
-
-  /// Total BRL sent, including whatever the transfer cost.
-  final double sentBrl;
-
-  /// What the transfer cost: the BRL sent beyond what the EUR received were worth at the exchange
-  /// rate when the conversion was recorded. The server works it out.
-  final double feeBrl;
-  final double receivedEur;
-  final String? note;
-  final String createdAt;
-
-  Json toJson() => {
-        'id': id,
-        'monthId': monthId,
-        'day': day,
-        'sentBrl': sentBrl,
-        'feeBrl': feeBrl,
-        'receivedEur': receivedEur,
-        'note': note,
-        'createdAt': createdAt,
-      };
-
-  Conversion patch(Json patch) => Conversion.fromJson({...toJson(), ...patch});
-}
-
 enum RateSource {
-  // No longer a source. Kept so the app still reads the rate of a server that hasn't been updated.
-  wise('wise', 'Wise'),
   frankfurter('frankfurter', 'Frankfurter (BCE)'),
   openErApi('open-er-api', 'Open Exchange Rates'),
   cache('cache', 'último valor salvo');
@@ -290,23 +301,59 @@ enum RateSource {
   static RateSource parse(String value) => values.firstWhere((source) => source.code == value);
 }
 
-class LiveRate {
-  LiveRate({required this.rate, required this.source, required this.fetchedAt, required this.stale});
+/// `GET /api/rates/live`, and `MonthDetail.rates`.
+class LiveRates {
+  LiveRates({required this.base, required this.rates, required this.source, required this.fetchedAt, required this.stale});
 
-  factory LiveRate.fromJson(Json json) => LiveRate(
-        rate: _num(json['rate']),
+  factory LiveRates.fromJson(Json json) => LiveRates(
+        base: Currency.parse(json['base'] as String),
+        rates: ratesFromJson(json['rates']),
         source: RateSource.parse(json['source'] as String),
         fetchedAt: json['fetchedAt'] as String,
         stale: json['stale'] as bool,
       );
 
-  /// How many BRL one EUR costs.
-  final double rate;
+  /// The currency the rates are quoted against.
+  final Currency base;
+
+  /// How many units of each other currency one unit of [base] costs.
+  final Rates rates;
   final RateSource source;
   final String fetchedAt;
 
-  /// True when every provider failed and the last stored rate is being served.
+  /// True when every provider failed and the last stored rates are being served.
   final bool stale;
+}
+
+/// `GET /api/settings/currencies` row: a currency the user works with. Exactly one is the main one.
+class UserCurrency {
+  UserCurrency({required this.currency, required this.enabled, required this.main, required this.inUse});
+
+  factory UserCurrency.fromJson(Json json) => UserCurrency(
+        currency: Currency.parse(json['currency'] as String),
+        enabled: json['enabled'] as bool,
+        main: json['main'] as bool,
+        inUse: json['inUse'] as bool,
+      );
+
+  final Currency currency;
+
+  /// Whether the app offers it for new items and spends. A disabled one keeps showing where it has history.
+  final bool enabled;
+  final bool main;
+
+  /// Whether a template item, month item or daily spend is in it. One in use can be disabled, not removed.
+  final bool inUse;
+}
+
+/// `GET /api/flags`: what the server has switched on, so the app knows what to offer.
+class Flags {
+  Flags({required this.purge});
+
+  factory Flags.fromJson(Json json) => Flags(purge: json['purge'] as bool);
+
+  /// Whether `DELETE /api/data` is served.
+  final bool purge;
 }
 
 /// `GET /api/sessions` row: one sign in to the account that is still valid.
@@ -350,8 +397,7 @@ class MonthDetail {
     required this.month,
     required this.items,
     required this.spends,
-    required this.conversions,
-    required this.rate,
+    required this.rates,
     required this.rateError,
   });
 
@@ -359,8 +405,7 @@ class MonthDetail {
         month: Month.fromJson(json['month'] as Json),
         items: [for (final item in json['items'] as List) MonthItem.fromJson(item as Json)],
         spends: [for (final spend in json['spends'] as List) DailySpend.fromJson(spend as Json)],
-        conversions: [for (final conversion in json['conversions'] as List) Conversion.fromJson(conversion as Json)],
-        rate: json['rate'] == null ? null : LiveRate.fromJson(json['rate'] as Json),
+        rates: json['rates'] == null ? null : LiveRates.fromJson(json['rates'] as Json),
         rateError: json['rateError'] as String?,
       );
 
@@ -370,11 +415,10 @@ class MonthDetail {
   /// Day-to-day spending, oldest first.
   List<DailySpend> spends;
 
-  /// Completed BRL→EUR conversions, oldest first.
-  List<Conversion> conversions;
-  LiveRate? rate;
+  /// Live rates quoted against the month's main currency.
+  LiveRates? rates;
 
-  /// Why the live providers failed; present with a missing or stale rate.
+  /// Why the live providers failed; present with missing or stale rates.
   String? rateError;
 }
 

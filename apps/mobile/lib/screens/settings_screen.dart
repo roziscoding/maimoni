@@ -11,9 +11,10 @@ import '../state/toast.dart';
 import '../theme.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/common.dart';
+import '../widgets/currency_settings.dart';
 import '../widgets/fields.dart';
 
-/// Port of `pages/settings.vue`: app updates, sessions and the danger zone.
+/// Currencies, app updates, sessions and, when the server allows it, the danger zone.
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -22,6 +23,24 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  /// The danger zone only shows when the server serves `DELETE /api/data`.
+  bool _purge = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFlags();
+  }
+
+  Future<void> _loadFlags() async {
+    try {
+      final flags = await Api.instance.flags();
+      if (mounted) setState(() => _purge = flags.purge);
+    } catch (_) {
+      // Without an answer there is nothing to offer.
+    }
+  }
+
   Future<void> _confirmClear() async {
     final cleared = await showDialog<bool>(context: context, builder: (context) => const _ClearDataDialog());
     if (cleared != true || !mounted) return;
@@ -39,36 +58,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 24, 16, 48),
         children: [
+          const CurrencySettings(),
+          const SizedBox(height: 48),
           const _UpdatesSection(),
           const SizedBox(height: 48),
           const _SessionsSection(),
-          const SizedBox(height: 48),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: palette.error.withValues(alpha: 0.4)),
+          if (_purge) ...[
+            const SizedBox(height: 48),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: palette.error.withValues(alpha: 0.4)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Zona de perigo', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: palette.error)),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Apaga todos os meses e o template. Moedas e sessões são mantidas. Não dá para desfazer.',
+                    style: TextStyle(fontSize: 14, color: palette.muted),
+                  ),
+                  const SizedBox(height: 12),
+                  ActionButton(
+                    label: 'Apagar todos os dados',
+                    icon: LucideIcons.trash2,
+                    style: ActionStyle.subtle,
+                    danger: true,
+                    onPressed: _confirmClear,
+                  ),
+                ],
+              ),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Zona de perigo', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: palette.error)),
-                const SizedBox(height: 4),
-                Text(
-                  'Apaga todos os meses e o template. Não dá para desfazer.',
-                  style: TextStyle(fontSize: 14, color: palette.muted),
-                ),
-                const SizedBox(height: 12),
-                ActionButton(
-                  label: 'Apagar todos os dados',
-                  icon: LucideIcons.trash2,
-                  style: ActionStyle.subtle,
-                  danger: true,
-                  onPressed: _confirmClear,
-                ),
-              ],
-            ),
-          ),
+          ],
         ],
       ),
     );
