@@ -153,6 +153,8 @@ class _MonthScreenState extends State<MonthScreen> {
         for (final currency in sections) ...[
           const SizedBox(height: 24),
           ItemSection(
+            // Keeps each section's add form with its currency when the shown currencies change.
+            key: ValueKey(currency.code),
             currency: currency,
             items: items.where((item) => item.currency == currency).toList(),
             // A currency the month only offers, with no item in it yet, has nothing to total.

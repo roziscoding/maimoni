@@ -197,6 +197,8 @@ class _TemplateScreenState extends State<TemplateScreen> {
         for (final currency in sections) ...[
           const SizedBox(height: 24),
           Panel(
+            // Keeps each section's add form with its currency when the shown currencies change.
+            key: ValueKey(currency.code),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
