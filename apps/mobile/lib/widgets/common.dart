@@ -296,8 +296,10 @@ class Segmented<T> extends StatelessWidget {
                 child: InkWell(
                   borderRadius: BorderRadius.circular(9),
                   onTap: option.value == value ? null : () => onChanged(option.value),
-                  child: SizedBox(
-                    height: 40,
+                  // A minimum, so the label can grow with the system's text size.
+                  child: Container(
+                    constraints: const BoxConstraints(minHeight: 40),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -305,12 +307,15 @@ class Segmented<T> extends StatelessWidget {
                           Icon(option.icon, size: 16, color: option.value == value ? palette.highlighted : palette.muted),
                           const SizedBox(width: 6),
                         ],
-                        Text(
-                          option.label,
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: option.value == value ? palette.highlighted : palette.muted,
+                        Flexible(
+                          child: Text(
+                            option.label,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: option.value == value ? palette.highlighted : palette.muted,
+                            ),
                           ),
                         ),
                       ],
