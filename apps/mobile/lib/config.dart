@@ -1,5 +1,7 @@
 /// Base URL of the maimoni server. Every API call is built from it (`$serverUrl/api/...`).
-/// Override it in local builds with `--dart-define=SERVER_URL=http://10.0.2.2:3001`.
+/// Override it in local builds with `--dart-define=SERVER_URL=...`: on the Android emulator,
+/// `http://10.0.2.2` for the Docker dev stack (`mise run dev`), `http://10.0.2.2:3001` for the
+/// backend run on the host (`mise run dev:backend`).
 const serverUrl = String.fromEnvironment('SERVER_URL', defaultValue: 'https://maimoni.roz.ninja');
 
 /// Google OAuth client IDs. The web one is the audience of the ID tokens the server accepts; the
