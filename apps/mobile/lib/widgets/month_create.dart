@@ -42,8 +42,11 @@ class MonthCurrencyChoice extends StatelessWidget {
   final double spacing;
 
   /// The currency the month goes in: the picked one while it is still offered, otherwise the main one.
+  /// `null` while the user's list isn't in, since [CurrenciesStore.offered] is then every known
+  /// currency: the server falls back to the main one.
   static Currency? resolve(Currency? picked) {
     final store = CurrenciesStore.instance;
+    if (store.list == null) return null;
     return picked != null && store.offered.contains(picked) ? picked : store.main;
   }
 
@@ -53,6 +56,7 @@ class MonthCurrencyChoice extends StatelessWidget {
       listenable: CurrenciesStore.instance,
       builder: (context, _) {
         final store = CurrenciesStore.instance;
+        if (store.list == null) return const SizedBox.shrink();
         final main = store.main;
         final options = [
           if (main != null && store.offered.contains(main)) main,

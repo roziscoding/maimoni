@@ -13,23 +13,32 @@ const props = defineProps<{
 
 const currency = defineModel<Currency | undefined>({ required: true })
 
-const { offered, main } = useCurrencies()
+const { offered, main, ready } = useCurrencies()
+
+/**
+ * Whether the user's list is in. Until then `offered` is every known currency, so there is nothing
+ * to pick from: the model stays empty and the server falls back to the main currency.
+ */
+const loaded = computed(() => ready.data.value != null)
 
 // The main one first, as it is the usual pick; the rest in the app's order.
 const items = computed(() => offered.value
   .toSorted((a, b) => Number(b === main.value) - Number(a === main.value))
   .map(value => ({ value, label: currencyName(value), description: currencySymbol(value) })))
 
-// Follows the main one until the list loads, and whenever the picked one stops being offered.
-watch([offered, main], () => {
-  if (!currency.value || !offered.value.includes(currency.value))
+// Starts on the main one once the list is in, and goes back to it when the form clears the model or
+// the picked one stops being offered.
+watch([loaded, offered, main, currency], () => {
+  if (!loaded.value)
+    currency.value = undefined
+  else if (!currency.value || !offered.value.includes(currency.value))
     currency.value = main.value ?? undefined
 }, { immediate: true })
 </script>
 
 <template>
   <UFormField
-    v-if="offered.length > 1"
+    v-if="loaded && offered.length > 1"
     :name="props.name"
     label="Moeda do mês"
     description="Os totais e o saldo saem nela. As outras moedas entram convertidas pela cotação."

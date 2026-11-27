@@ -67,6 +67,18 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('without the user\'s list the server picks the currency', (tester) async {
+    // The store offers every known currency then, none of them known to be the user's.
+    final created = await openSheet(tester);
+
+    expect(find.text('Moeda do mês'), findsNothing);
+    await tester.tap(find.text('Criar do template'));
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(created.single.containsKey('mainCurrency'), isFalse);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('with a single currency there is nothing to choose', (tester) async {
     CurrenciesStore.instance.replace([currency('BRL', main: true)]);
     final created = await openSheet(tester);
