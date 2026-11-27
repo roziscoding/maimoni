@@ -14,7 +14,7 @@ import { listTemplateItems, toTemplateItem } from './template'
 
 const itemParam = monthKeySchema.extend({ id: z.uuid() })
 
-function toMonth(row: typeof months.$inferSelect): Month {
+export function toMonth(row: typeof months.$inferSelect): Month {
   const { updatedAt: _updatedAt, userId: _userId, ...month } = row
   return { ...month, createdAt: new Date(month.createdAt).toISOString() }
 }
@@ -29,7 +29,7 @@ export async function findMonth(db: Database, userId: string, { year, month }: M
   return row
 }
 
-async function listItems(db: Database, monthId: string) {
+export async function listItems(db: Database, monthId: string) {
   const rows = await db.select().from(monthItems).where(eq(monthItems.monthId, monthId)).orderBy(asc(monthItems.position), asc(monthItems.createdAt))
   return rows.map(toMonthItem)
 }

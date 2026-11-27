@@ -17,7 +17,7 @@ import { log } from './lib/log'
 import { validate } from './lib/validate'
 import { appReleaseRoutes } from './routes/app-releases'
 import { currencyRoutes, mainCurrencyOf } from './routes/currencies'
-import { dataRoutes } from './routes/data'
+import { dataRoutes, exportRoutes } from './routes/data'
 import { monthRoutes } from './routes/months'
 import { sessionRoutes } from './routes/sessions'
 import { spendRoutes } from './routes/spends'
@@ -89,6 +89,7 @@ export function createApp({ db, auth, rates, appReleases = createAppReleaseServi
     .route('/', spendRoutes(db))
     .route('/', currencyRoutes(db))
     .route('/', sessionRoutes(auth))
+    .route('/', exportRoutes(db))
 
   if (enablePurge)
     api.route('/', dataRoutes(db))
