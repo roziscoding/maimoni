@@ -90,7 +90,7 @@ const CONTACT = 'privacidade@roz.ninja'
         </li>
       </ul>
       <p>
-        Nenhum dado é vendido ou repassado a outras empresas.
+        Nenhum dado é vendido. Fora dos serviços acima, nenhum dado é repassado a outras empresas.
       </p>
     </section>
 

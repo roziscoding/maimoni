@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -405,7 +406,12 @@ class _PrivacySection extends StatelessWidget {
   const _PrivacySection();
 
   Future<void> _open() async {
-    final opened = await launchUrl(Uri.parse('$serverUrl/privacy'), mode: LaunchMode.externalApplication);
+    bool opened;
+    try {
+      opened = await launchUrl(Uri.parse('$serverUrl/privacy'), mode: LaunchMode.externalApplication);
+    } on PlatformException {
+      opened = false;
+    }
     if (!opened) toast('Não foi possível abrir a política de privacidade', tone: ToastTone.error);
   }
 
