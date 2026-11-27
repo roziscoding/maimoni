@@ -118,9 +118,13 @@ class Api {
   Future<MonthDetail> month(int year, int month) async =>
       MonthDetail.fromJson(await _send('GET', _month(year, month)) as Json);
 
-  /// [source] is `template` or `previous`.
-  Future<void> createMonth(int year, int month, String source) =>
-      _send('POST', '/months', body: {'year': year, 'month': month, 'source': source});
+  /// [source] is `template` or `previous`. Without [mainCurrency] the month is worked out in the user's main one.
+  Future<void> createMonth(int year, int month, String source, {Currency? mainCurrency}) => _send('POST', '/months', body: {
+        'year': year,
+        'month': month,
+        'source': source,
+        if (mainCurrency != null) 'mainCurrency': mainCurrency.code,
+      });
 
   Future<MonthDetail> updateMonth(int year, int month, Json patch) async =>
       MonthDetail.fromJson(await _send('PATCH', _month(year, month), body: patch) as Json);

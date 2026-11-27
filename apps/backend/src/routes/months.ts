@@ -96,14 +96,16 @@ export function monthRoutes(db: Database, rates: RateService) {
     })
     .post('/months', validate('json', createMonthSchema), async (c) => {
       const userId = c.var.user.id
-      const { source, ...key } = c.req.valid('json')
+      const { source, mainCurrency: picked, ...key } = c.req.valid('json')
       if (await findMonth(db, userId, key))
         return c.json({ error: 'Month already exists' }, 409)
+      if (picked && !await userHasCurrency(db, userId, picked))
+        return c.json(CURRENCY_NOT_ADDED, 400)
       const items = await seedItems(db, userId, key, source)
       if (!items)
         return c.json({ error: 'There is no earlier month to copy from' }, 400)
       // The month keeps this currency: changing the main one later doesn't move it.
-      const mainCurrency = await mainCurrencyOf(db, userId)
+      const mainCurrency = picked ?? await mainCurrencyOf(db, userId)
       if (!mainCurrency)
         return c.json({ error: 'Add a currency before creating a month' }, 409)
       const row = await db.transaction(async (tx) => {

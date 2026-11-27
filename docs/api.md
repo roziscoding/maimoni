@@ -33,7 +33,7 @@ Every route below except `/api/health`, `/api/sign-in-providers`, `/api/password
 | DELETE | `/api/template/items/:id` | | 204 |
 | PUT | `/api/template/items/order` | `{ ids: string[] }` | `TemplateItem[]` |
 | GET | `/api/months` | | `MonthListEntry[]` (newest first) |
-| POST | `/api/months` | `CreateMonth` (`{ year, month, source? }`) | `MonthDetail` (201, 409 if it exists) |
+| POST | `/api/months` | `CreateMonth` (`{ year, month, source?, mainCurrency? }`) | `MonthDetail` (201, 409 if it exists, 400 for a `mainCurrency` that isn't one of the user's) |
 | GET | `/api/months/:year/:month` | | `MonthDetail` |
 | PATCH | `/api/months/:year/:month` | `UpdateMonth` | `MonthDetail` |
 | DELETE | `/api/months/:year/:month` | | 204 |
@@ -58,7 +58,7 @@ Every route below except `/api/health`, `/api/sign-in-providers`, `/api/password
 
 ## Behaviour notes
 
-- **Creating a month** copies every template item into the month (`source: "template"`, default) or every item of the closest earlier month (`source: "previous"`). Items copied from a `variable` template item get `needsReview: true`; template items without an amount are copied with `amount: null`. The month takes the user's main currency as its `mainCurrency` and keeps it from then on; a user with no currency gets 409. `lockedRates` starts as `{}`.
+- **Creating a month** copies every template item into the month (`source: "template"`, default) or every item of the closest earlier month (`source: "previous"`). Items copied from a `variable` template item get `needsReview: true`; template items without an amount are copied with `amount: null`. The month is worked out in the `mainCurrency` sent, or in the user's main currency when it is left out, and keeps it from then on; a user with no currency gets 409. `lockedRates` starts as `{}`.
 - **Editing a month item's `amount`** clears `needsReview` unless the request explicitly sends `needsReview`.
 - **Rates** are quoted against a month's main currency: `rates.BRL` is how many reais one unit of it is worth. `MonthDetail.rates` holds the live ones for that currency.
 - **`lockedRates`** on a month freezes the rate of the currencies in it; any other follows the live rate. `PATCH { lockedRates }` replaces the whole map, so locking one more currency means sending the others again, and `{}` unlocks all.

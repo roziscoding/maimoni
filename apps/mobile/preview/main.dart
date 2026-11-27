@@ -48,17 +48,19 @@ const _onboarding = bool.fromEnvironment('PREVIEW_ONBOARDING');
 String get _main => _currencies.where((entry) => entry['main'] == true).firstOrNull?['currency'] as String? ?? 'EUR';
 
 /// [_rates] quoted against the main currency, which in the setup is whichever the person chose.
-/// Only the three currencies above have a rate; any other goes without one.
-Json get _liveRates {
+Json get _liveRates => _ratesFor(_main);
+
+/// [_rates] quoted against [currency]. Only EUR, BRL and USD have a rate; any other goes without one.
+Json _ratesFor(String currency) {
   const perEuro = {'EUR': 1.0, 'BRL': 6.2134, 'USD': 1.0812};
-  final base = perEuro[_main];
-  if (base == null) return {..._rates, 'base': _main, 'rates': <String, double>{}};
+  final base = perEuro[currency];
+  if (base == null) return {..._rates, 'base': currency, 'rates': <String, double>{}};
   return {
     ..._rates,
-    'base': _main,
+    'base': currency,
     'rates': {
       for (final MapEntry(:key, :value) in perEuro.entries)
-        if (key != _main) key: value / base,
+        if (key != currency) key: value / base,
     },
   };
 }
@@ -205,13 +207,15 @@ Future<http.Response> _serve(http.Request request) async {
     final year = body['year'] as int;
     final month = body['month'] as int;
     final created = _month(DateTime(year, month), activeDay: null);
-    // After the setup, the month is made of what the person entered, in the currency they chose.
+    // The currency picked, or the main one: the setup's choice, EUR outside it.
+    final currency = body['mainCurrency'] as String? ?? (_onboarding ? _main : 'EUR');
+    created['month'] = {...(created['month'] as Json), 'mainCurrency': currency};
+    created['rates'] = _ratesFor(currency);
+    // After the setup, the month is made of what the person entered.
     if (_onboarding) {
-      created['month'] = {...(created['month'] as Json), 'mainCurrency': _main};
       created['items'] = [
         for (final item in _template) {...item, 'id': _id(), 'templateItemId': item['id'], 'paid': false, 'needsReview': item['variable'] == true},
       ];
-      created['rates'] = _liveRates;
     }
     _months['$year/$month'] = created;
     return _json(created, 201);
