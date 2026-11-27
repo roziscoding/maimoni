@@ -24,10 +24,10 @@ docs/             API contract and design decisions
 
 ```sh
 mise install          # tools
-mise run dev          # builds and runs the dev stack on http://localhost:3000
+mise run dev          # builds and runs the dev stack on http://app.maimoni.localhost
 ```
 
-`dev` runs the apps in Docker under [Compose Watch](https://docs.docker.com/compose/how-tos/file-watch/): saved files are synced into the containers, so the backend restarts and Nuxt hot-reloads, and a changed `package.json`, `bun.lock` or Dockerfile rebuilds the image. The individual `dev:backend` and `dev:frontend` tasks remain available for running either app directly on the host.
+`dev` runs the apps in Docker under [Compose Watch](https://docs.docker.com/compose/how-tos/file-watch/): saved files are synced into the containers, so the backend restarts and Nuxt hot-reloads, and a changed `package.json`, `bun.lock` or Dockerfile rebuilds the image. The individual `dev:backend` and `dev:frontend` tasks run the apps directly on the host instead, on ports `3001` and `3000`, with the stack's Postgres. Run them together: the frontend on the host proxies to `localhost:3001`, which the stack's backend doesn't publish.
 
 `mise.toml` holds the local defaults, so a `.env` file is optional; create one from `.env.example` only to override them.
 
@@ -35,7 +35,12 @@ mise run dev          # builds and runs the dev stack on http://localhost:3000
 
 There are two Compose files:
 
-- **`compose.dev.yaml`** is used by the development, database and log tasks. It builds the `dev` targets, which copy `apps/*` and `packages/shared` into the image, and its watch rules keep them in sync with the host. A stack started without watch keeps running the code it was built with. The backend container also reads `apps/backend/.env` when the file exists (gitignored), which is where optional settings such as `RESEND_API_KEY` go; variables set on the host don't reach it. Postgres (`localhost:5434`, user and password `maimoni`), the backend (`3001`), the frontend (`3000`) and [Drizzle Gateway](https://gateway.drizzle.team) (`4984`, master password `maimoni`) are all published; Postgres and Drizzle Gateway only on `127.0.0.1`. A Traefik container on port `80` of `127.0.0.1` also gives them hostnames: `http://app.maimoni.localhost` (frontend), `http://api.maimoni.localhost` (backend) and `http://studio.maimoni.localhost` (Drizzle Gateway, which starts with a connection to the dev database). When another program holds port 80, set `TRAEFIK_PORT` and add it to the URLs.
+- **`compose.dev.yaml`** is used by the development, database and log tasks. It builds the `dev` targets, which copy `apps/*` and `packages/shared` into the image, and its watch rules keep them in sync with the host. A stack started without watch keeps running the code it was built with. The backend container also reads `apps/backend/.env` when the file exists (gitignored), which is where optional settings such as `RESEND_API_KEY` go; variables set on the host don't reach it. Only Postgres (`127.0.0.1:5434`, user and password `maimoni`) is published, for the tasks run on the host. The apps are reached through a Traefik container on port `80` of `127.0.0.1`, by hostname:
+  - `http://app.maimoni.localhost`: the frontend.
+  - `http://api.maimoni.localhost`: the backend. The Android emulator reaches it on `http://10.0.2.2` (`--dart-define=SERVER_URL=http://10.0.2.2`), since it can't resolve `*.localhost`.
+  - `http://studio.maimoni.localhost`: [Drizzle Gateway](https://gateway.drizzle.team), master password `maimoni`, which starts with a connection to the dev database.
+
+  When another program holds port 80, set `TRAEFIK_PORT` and add it to the URLs.
 - **`compose.yaml`** is production. It uses the `runtime` images and runs migrations in a one-shot service before starting the backend. Nothing is published on the host: expose it through a reverse proxy pointed at the frontend's port `3000` on the stack's network (the frontend proxies `/api/**` to the backend), and at the backend's port `3001` for the mobile app. Every setting comes from the environment with a default (listed at the top of `compose.yaml`), so all of them can be replaced from Coolify's UI; `POSTGRES_PASSWORD`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` and `DRIZZLE_GATEWAY_MASTERPASS` are required. It has its own project name (`maimoni-prod`) and volumes, so it never touches the dev database.
 
 Both stacks run Drizzle Gateway, which is Drizzle Studio in the browser. Database connections are added in its UI and kept in its volume: host `postgres`, port `5432`, and the Postgres user, password and database of that stack. In production it listens on port `4983` of the stack's network and has full access to any database connected to it, so only proxy it somewhere private.
@@ -93,7 +98,7 @@ Both Dockerfiles install dependencies in a layer built only from the `package.js
 | `RESEND_FROM` | backend (sender of those emails, on a domain verified in Resend) | `maimoni <onboarding@resend.dev>`, which only reaches the Resend account's own address |
 | `POSTGRES_PASSWORD` | `compose.yaml` (production) | required, no default |
 | `DRIZZLE_GATEWAY_MASTERPASS` | `compose.yaml` (password asked by Drizzle Gateway's UI) | required, no default |
-| `FRONTEND_PORT` / `BACKEND_PORT` / `POSTGRES_PORT` / `DRIZZLE_GATEWAY_PORT` | ports published by `compose.dev.yaml` | `3000` / `3001` / `5434` / `4984` |
+| `POSTGRES_PORT` | Postgres port published by `compose.dev.yaml` | `5434` |
 | `TRAEFIK_PORT` | port of the `*.maimoni.localhost` hostnames in `compose.dev.yaml` | `80` |
 
 See [`docs/decisions.md`](docs/decisions.md) for how the spreadsheet maps to the app and why, and [`docs/api.md`](docs/api.md) for the API.
