@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 
-import '../api/client.dart';
 import '../api/models.dart';
+import '../data/repository.dart';
 
 /// The user's currencies, shared by every screen (the web's `useCurrencies`): what the screens
 /// offer, and what stops making sense with a single currency (choosing one, sections per currency,
@@ -51,7 +51,7 @@ class CurrenciesStore extends ChangeNotifier {
     List<UserCurrency>? result;
     Object? failure;
     try {
-      result = await Api.instance.currencies();
+      result = await repository.currencies();
     } catch (err) {
       failure = err;
     }

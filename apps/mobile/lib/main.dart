@@ -6,9 +6,10 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'api/auth.dart';
 import 'routes.dart';
 import 'screens/home_shell.dart';
-import 'screens/login_screen.dart';
 import 'screens/onboarding_screen.dart';
+import 'screens/welcome_screen.dart';
 import 'state/app_updates.dart';
+import 'state/local_mode.dart';
 import 'state/months_store.dart';
 import 'state/session.dart';
 import 'state/currencies_store.dart';
@@ -20,8 +21,11 @@ final navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Future.wait([initializeDateFormatting('pt_BR'), ThemeController.instance.load(), Session.instance.load()]);
-  if (Session.instance.signedIn) {
+  await Future.wait([initializeDateFormatting('pt_BR'), ThemeController.instance.load(), Session.instance.load(), LocalMode.instance.load()]);
+  if (LocalMode.instance.active) {
+    MonthsStore.instance.refresh();
+    CurrenciesStore.instance.refresh();
+  } else if (Session.instance.signedIn) {
     MonthsStore.instance.refresh();
     CurrenciesStore.instance.refresh();
     checkSession();
@@ -44,7 +48,7 @@ Future<void> _offerUpdate() async {
     actionLabel: 'Ver',
     onAction: () {
       final navigator = navigatorKey.currentState;
-      if (navigator != null && Session.instance.signedIn) openTabWith(navigator, AppTab.settings);
+      if (navigator != null && _Gate.current == _Gate.app) openTabWith(navigator, AppTab.settings);
     },
   );
 }
@@ -56,45 +60,51 @@ class MaimoniApp extends StatefulWidget {
   State<MaimoniApp> createState() => _MaimoniAppState();
 }
 
-/// What the app shows at its root: the login screen, the first-run setup or the shell.
+/// What the app shows at its root: the welcome screen, the first-run setup or the shell.
 enum _Gate {
-  signedOut,
+  welcome,
   onboarding,
   app;
 
-  static _Gate of(Session session) => !session.signedIn ? signedOut : (session.onboarded ? app : onboarding);
+  /// Without an account the device says whether the setup is done; signed in, the server does.
+  static _Gate get current {
+    final local = LocalMode.instance;
+    if (local.active) return local.onboarded ? app : onboarding;
+    final session = Session.instance;
+    return !session.signedIn ? welcome : (session.onboarded ? app : onboarding);
+  }
 }
 
 class _MaimoniAppState extends State<MaimoniApp> {
-  _Gate _gate = _Gate.of(Session.instance);
+  _Gate _gate = _Gate.current;
+  final _gateChanges = Listenable.merge([Session.instance, LocalMode.instance]);
 
   @override
   void initState() {
     super.initState();
-    Session.instance.addListener(_onSession);
+    _gateChanges.addListener(_onGate);
   }
 
   @override
   void dispose() {
-    Session.instance.removeListener(_onSession);
+    _gateChanges.removeListener(_onGate);
     super.dispose();
   }
 
-  /// Swaps the whole navigation stack when a session starts or ends, so no page of one survives
-  /// into the other, and when the user turns out to still have the first-run setup to go through.
-  void _onSession() {
-    final session = Session.instance;
-    final gate = _Gate.of(session);
+  /// Swaps the whole navigation stack when a session or the local mode starts or ends, so no page
+  /// of one survives into the other, and when the user turns out to still have the first-run setup to go through.
+  void _onGate() {
+    final gate = _Gate.current;
     if (gate == _gate) return;
     final previous = _gate;
     _gate = gate;
-    if (previous == _Gate.signedOut) {
+    if (previous == _Gate.welcome) {
       MonthsStore.instance.refresh();
       CurrenciesStore.instance.refresh();
-    } else if (gate == _Gate.signedOut) {
+    } else if (gate == _Gate.welcome) {
       MonthsStore.instance.reset();
       CurrenciesStore.instance.reset();
-      if (session.expired) toast('Sua sessão expirou', description: 'Entre de novo.');
+      if (Session.instance.expired) toast('Sua sessão expirou', description: 'Entre de novo.');
     }
     // The setup ends on a screen of its own, which opens the app when its button is tapped.
     if (previous == _Gate.onboarding && gate == _Gate.app) return;
@@ -118,12 +128,13 @@ class _MaimoniAppState extends State<MaimoniApp> {
         locale: const Locale('pt', 'BR'),
         supportedLocales: const [Locale('pt', 'BR')],
         localizationsDelegates: GlobalMaterialLocalizations.delegates,
-        // The only named route: the login screen without a session, the first-run setup for a user
-        // who hasn't been through it, and the shell otherwise. Everything else is pushed above the shell.
+        // The only named route: the welcome screen with neither a session nor the local mode, the
+        // first-run setup for a user who hasn't been through it, and the shell otherwise. Everything
+        // else is pushed above it.
         onGenerateRoute: (settings) => MaterialPageRoute<void>(
           settings: const RouteSettings(name: '/'),
-          builder: (_) => switch (_Gate.of(Session.instance)) {
-            _Gate.signedOut => const LoginScreen(),
+          builder: (_) => switch (_Gate.current) {
+            _Gate.welcome => const WelcomeScreen(),
             _Gate.onboarding => const OnboardingScreen(),
             _Gate.app => const HomeShell(),
           },

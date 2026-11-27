@@ -1,20 +1,29 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../api/auth.dart';
 import '../api/client.dart';
+import '../data/repository.dart';
 import '../api/models.dart';
+import '../data/export_file.dart';
 import '../format.dart';
+import '../main.dart' show navigatorKey;
 import '../routes.dart';
 import '../state/app_updates.dart';
+import '../state/currencies_store.dart';
+import '../state/local_mode.dart';
 import '../state/months_store.dart';
 import '../state/session.dart';
 import '../state/theme_controller.dart';
 import '../state/toast.dart';
 import '../theme.dart';
+import '../widgets/backup_prompt.dart';
 import '../widgets/common.dart';
 import '../widgets/currency_settings.dart';
 import '../widgets/fields.dart';
+import 'login_screen.dart';
 
 /// The account, the theme, currencies, app updates, sessions and, when the server allows it, the
 /// danger zone.
@@ -26,13 +35,13 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  /// The danger zone only shows when the server serves `DELETE /api/data`.
-  bool _purge = false;
+  /// The danger zone shows without an account, and signed in when the server serves `DELETE /api/data`.
+  bool _purge = LocalMode.instance.active;
 
   @override
   void initState() {
     super.initState();
-    _loadFlags();
+    if (!LocalMode.instance.active) _loadFlags();
   }
 
   Future<void> _loadFlags() async {
@@ -73,8 +82,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const CurrencySettings(),
           const SizedBox(height: 24),
           const _UpdatesSection(),
-          const SizedBox(height: 24),
-          const _SessionsSection(),
+          if (!LocalMode.instance.active) ...[
+            const SizedBox(height: 24),
+            const _SessionsSection(),
+          ],
           if (_purge) ...[
             const SizedBox(height: 24),
             const SectionHeader('Zona de perigo'),
@@ -82,7 +93,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: ListTile(
                 leading: Icon(LucideIcons.trash2, size: 20, color: palette.error),
                 title: Text('Apagar todos os dados', style: TextStyle(color: palette.error)),
-                subtitle: const Text('Meses e template. Moedas e sessões são mantidas. Não dá para desfazer.'),
+                subtitle: Text(LocalMode.instance.active
+                    ? 'Meses e template. As moedas são mantidas. Não dá para desfazer.'
+                    : 'Meses e template. Moedas e sessões são mantidas. Não dá para desfazer.'),
                 onTap: _confirmClear,
               ),
             ),
@@ -93,44 +106,207 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 }
 
-/// Who is signed in, and the way out.
+/// Buttons that close a sheet with the value of the one tapped, the first one being the main action.
+Widget _choices<T>(BuildContext context, List<({String label, T value, bool danger})> choices) => Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final (index, choice) in choices.indexed) ...[
+          if (index > 0) const SizedBox(height: 8),
+          ActionButton(
+            label: choice.label,
+            danger: choice.danger,
+            style: index == 0 || choice.danger ? ActionStyle.solid : ActionStyle.outline,
+            onPressed: () => Navigator.of(context).pop(choice.value),
+          ),
+        ],
+        const SizedBox(height: 4),
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancelar')),
+      ],
+    );
+
+/// Saves an export through the share sheet, with a toast when it failed.
+Future<void> _export(Future<Json> Function() read) async {
+  try {
+    await shareExport(await read());
+  } catch (err) {
+    toast('Não foi possível exportar', description: errorMessage(err), tone: ToastTone.error);
+  }
+}
+
+/// Who is signed in, or that there is no account, and what can be done with the data.
 class _AccountSection extends StatelessWidget {
   const _AccountSection();
 
   @override
   Widget build(BuildContext context) {
-    final palette = context.palette;
     return ListenableBuilder(
-      listenable: Session.instance,
-      builder: (context, _) {
-        final user = Session.instance.user;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const SectionHeader('Conta'),
-            Panel(
-              child: Column(
-                children: [
-                  if (user != null) ...[
-                    ListTile(
-                      leading: const Icon(LucideIcons.circleUserRound, size: 20),
-                      title: Text(user.name.isEmpty ? user.email : user.name),
-                      subtitle: user.name.isEmpty ? null : Text(user.email),
-                    ),
-                    const RowDivider(indent: 56),
-                  ],
-                  // No navigation: the session listener in MaimoniApp replaces the whole stack.
-                  ListTile(
-                    leading: Icon(LucideIcons.logOut, size: 20, color: palette.muted),
-                    title: const Text('Sair'),
-                    onTap: signOut,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        );
-      },
+      listenable: Listenable.merge([Session.instance, LocalMode.instance]),
+      builder: (context, _) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SectionHeader('Conta'),
+          Panel(child: LocalMode.instance.active ? const _LocalAccount() : const _CloudAccount()),
+        ],
+      ),
+    );
+  }
+}
+
+class _CloudAccount extends StatelessWidget {
+  const _CloudAccount();
+
+  /// Offers to keep using the app without an account, with a copy of the account's data.
+  Future<void> _signOut(BuildContext context) async {
+    final choice = await showSheet<String>(
+      context,
+      title: 'Sair da conta?',
+      description: 'Você pode continuar usando o maimoni sem conta, com uma cópia dos seus dados neste aparelho. A conta continua com tudo o que tem.',
+      body: (context) => _choices(context, [
+        (label: 'Sair e usar sem conta', value: 'local', danger: false),
+        (label: 'Só sair', value: 'out', danger: false),
+      ]),
+    );
+    if (choice == 'out') return signOut();
+    if (choice != 'local') return;
+    try {
+      // Read while the session still holds.
+      final data = await Api.instance.exportData();
+      // No navigation: the listener in MaimoniApp replaces the whole stack.
+      signOut();
+      await LocalMode.instance.start(data: data);
+    } catch (err) {
+      return toast('Não foi possível trazer seus dados', description: errorMessage(err), tone: ToastTone.error);
+    }
+    // The setup that asks about the backup is skipped, so the question comes here, over the new stack.
+    await WidgetsBinding.instance.endOfFrame;
+    final root = navigatorKey.currentContext;
+    if (root != null && root.mounted) await askForBackup(root);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final user = Session.instance.user;
+    return Column(
+      children: [
+        if (user != null) ...[
+          ListTile(
+            leading: const Icon(LucideIcons.circleUserRound, size: 20),
+            title: Text(user.name.isEmpty ? user.email : user.name),
+            subtitle: user.name.isEmpty ? null : Text(user.email),
+          ),
+          const RowDivider(indent: 56),
+        ],
+        ListTile(
+          leading: Icon(LucideIcons.download, size: 20, color: palette.muted),
+          title: const Text('Exportar dados'),
+          subtitle: const Text('Salve uma cópia em arquivo, para guardar ou levar para outro aparelho.'),
+          onTap: () => _export(Api.instance.exportData),
+        ),
+        const RowDivider(indent: 56),
+        ListTile(
+          leading: Icon(LucideIcons.logOut, size: 20, color: palette.muted),
+          title: const Text('Sair'),
+          onTap: () => _signOut(context),
+        ),
+      ],
+    );
+  }
+}
+
+class _LocalAccount extends StatelessWidget {
+  const _LocalAccount();
+
+  Future<void> _import(BuildContext context) async {
+    final navigator = Navigator.of(context);
+    final Object? data;
+    try {
+      data = await pickExport();
+    } catch (err) {
+      return toast('Não foi possível ler o arquivo', description: errorMessage(err), tone: ToastTone.error);
+    }
+    if (data == null || !context.mounted) return;
+    final confirmed = await showSheet<bool>(
+      context,
+      title: 'Substituir os dados deste aparelho?',
+      description: 'Os meses, o template e as moedas daqui são trocados pelos do arquivo. Não dá para desfazer.',
+      body: (context) => _choices(context, [(label: 'Importar', value: true, danger: true)]),
+    );
+    if (confirmed != true) return;
+    try {
+      await LocalMode.instance.import(data);
+    } catch (err) {
+      return toast('Não foi possível importar', description: errorMessage(err), tone: ToastTone.error);
+    }
+    await Future.wait([MonthsStore.instance.refresh(), CurrenciesStore.instance.reload()]);
+    toast('Dados importados', icon: LucideIcons.upload);
+    if (navigator.mounted) openTabWith(navigator, AppTab.today);
+  }
+
+  /// Signing in leaves the local mode, and the data on the device goes with it.
+  Future<void> _signIn(BuildContext context) async {
+    final choice = await showSheet<String>(
+      context,
+      title: 'Entrar numa conta?',
+      description: 'Os dados deste aparelho não vão para a conta. Ao entrar, eles são apagados daqui e não dá para recuperar. '
+          'Para guardar uma cópia, exporte antes.',
+      body: (context) => _choices(context, [
+        (label: 'Exportar dados', value: 'export', danger: false),
+        (label: 'Apagar dados e entrar', value: 'sign-in', danger: true),
+      ]),
+    );
+    if (choice == 'export') return _export(LocalMode.instance.repository.export);
+    if (choice != 'sign-in') return;
+    // The listener in MaimoniApp swaps the stack for the welcome screen; the sign in opens above it.
+    await LocalMode.instance.leave();
+    navigatorKey.currentState?.push(MaterialPageRoute<void>(builder: (_) => const LoginScreen()));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Column(
+      children: [
+        const ListTile(
+          leading: Icon(LucideIcons.smartphone, size: 20),
+          title: Text('Sem conta'),
+          subtitle: Text('Seus dados ficam só neste aparelho.'),
+        ),
+        const RowDivider(indent: 56),
+        SwitchListTile(
+          secondary: Icon(LucideIcons.cloudUpload, size: 20, color: palette.muted),
+          title: Text('Backup do ${Platform.isIOS ? 'iCloud' : 'Google'}'),
+          subtitle: const Text('Guarda uma cópia dos dados com o backup do celular, para você não perder nada se trocar de aparelho.'),
+          value: LocalMode.instance.backup,
+          onChanged: (value) async {
+            try {
+              await LocalMode.instance.setBackup(value);
+            } catch (err) {
+              toast('Não foi possível mudar o backup', description: errorMessage(err), tone: ToastTone.error);
+            }
+          },
+        ),
+        const RowDivider(indent: 56),
+        ListTile(
+          leading: Icon(LucideIcons.download, size: 20, color: palette.muted),
+          title: const Text('Exportar dados'),
+          subtitle: const Text('Salve uma cópia em arquivo, para guardar ou levar para outro aparelho.'),
+          onTap: () => _export(LocalMode.instance.repository.export),
+        ),
+        const RowDivider(indent: 56),
+        ListTile(
+          leading: Icon(LucideIcons.upload, size: 20, color: palette.muted),
+          title: const Text('Importar dados'),
+          subtitle: const Text('Traga os dados de um arquivo exportado.'),
+          onTap: () => _import(context),
+        ),
+        const RowDivider(indent: 56),
+        ListTile(
+          leading: Icon(LucideIcons.logIn, size: 20, color: palette.muted),
+          title: const Text('Entrar numa conta'),
+          onTap: () => _signIn(context),
+        ),
+      ],
     );
   }
 }
@@ -470,7 +646,7 @@ class _ClearDataFormState extends State<_ClearDataForm> {
     if (_clearing) return;
     setState(() => _clearing = true);
     try {
-      await Api.instance.clearData();
+      await repository.clearData();
       if (mounted) Navigator.of(context).pop(true);
     } catch (err) {
       toast('Não foi possível apagar os dados', description: errorMessage(err), tone: ToastTone.error);

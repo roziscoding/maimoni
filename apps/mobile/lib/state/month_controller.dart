@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 
 import '../api/client.dart';
 import '../api/models.dart';
+import '../data/repository.dart';
 import '../domain/summary.dart';
 import 'currencies_store.dart';
 import 'months_store.dart';
@@ -25,7 +26,7 @@ class MonthController extends ChangeNotifier {
 
   final int year;
   final int month;
-  final _api = Api.instance;
+  Repository get _api => repository;
 
   MonthDetail? data;
   ApiException? error;

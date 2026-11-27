@@ -10,11 +10,11 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:maimoni/api/client.dart';
 import 'package:maimoni/main.dart';
 import 'package:maimoni/routes.dart';
-import 'package:maimoni/screens/login_screen.dart';
 import 'package:maimoni/screens/month_screen.dart';
 import 'package:maimoni/screens/months_screen.dart';
 import 'package:maimoni/screens/settings_screen.dart';
 import 'package:maimoni/screens/today_screen.dart';
+import 'package:maimoni/screens/welcome_screen.dart';
 import 'package:maimoni/state/months_store.dart';
 import 'package:maimoni/state/session.dart';
 
@@ -98,8 +98,11 @@ void main() {
     await tester.tap(find.text('Sair'));
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
+    await tester.tap(find.text('Só sair'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
     expect(Session.instance.signedIn, isFalse);
-    expect(find.byType(LoginScreen), findsOneWidget);
+    expect(find.byType(WelcomeScreen), findsOneWidget);
     expect(find.text('Sua sessão expirou'), findsNothing);
     expect(requests, contains('/api/sessions/current'));
 

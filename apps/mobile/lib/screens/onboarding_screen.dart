@@ -6,21 +6,24 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../api/auth.dart';
 import '../api/client.dart';
 import '../api/models.dart';
+import '../data/repository.dart';
 import '../domain/expression.dart';
 import '../domain/summary.dart';
 import '../format.dart';
 import '../routes.dart';
 import '../state/currencies_store.dart';
+import '../state/local_mode.dart';
 import '../state/months_store.dart';
 import '../state/session.dart';
 import '../state/toast.dart';
 import '../theme.dart';
+import '../widgets/backup_prompt.dart';
 import '../widgets/common.dart';
 import '../widgets/fields.dart';
 
 /// The screens of the setup, in order. [welcome] comes before the questions and [done] after them;
 /// the progress bar counts what is in between.
-enum _Step { welcome, currencies, main, income, expenses, daily, done }
+enum _Step { welcome, currencies, main, income, expenses, backup, daily, done }
 
 /// Names offered as chips, so the common items take a tap and an amount instead of typing.
 const _suggestions = {
@@ -60,7 +63,7 @@ class OnboardingScreen extends StatefulWidget {
 }
 
 class _OnboardingScreenState extends State<OnboardingScreen> {
-  final _api = Api.instance;
+  Repository get _api => repository;
   final _now = DateTime.now();
 
   bool _loading = true;
@@ -75,6 +78,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   Currency? _main;
   String _query = '';
   bool _savingCurrencies = false;
+  bool _savingBackup = false;
 
   List<TemplateItem> _items = [];
 
@@ -152,8 +156,23 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         if (_picked.length > 1) _Step.main,
         _Step.income,
         _Step.expenses,
+        // Without an account the data is only on the device, so the system's backup is worth asking about.
+        if (LocalMode.instance.active) _Step.backup,
         _Step.daily,
       ];
+
+  /// Turns the system's backup on or off, then goes on to the month.
+  Future<void> _chooseBackup(bool enabled) async {
+    setState(() => _savingBackup = true);
+    try {
+      await LocalMode.instance.setBackup(enabled);
+      if (mounted) _go(_Step.daily);
+    } catch (err) {
+      toast('Não foi possível mudar o backup', description: errorMessage(err), tone: ToastTone.error);
+    } finally {
+      if (mounted) setState(() => _savingBackup = false);
+    }
+  }
 
   void _go(_Step step) {
     FocusManager.instance.primaryFocus?.unfocus();
@@ -166,7 +185,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     _go(index == 0 ? _Step.welcome : _flow[index - 1]);
   }
 
-  bool get _busy => _savingCurrencies || _finishing != null;
+  bool get _busy => _savingCurrencies || _savingBackup || _finishing != null;
 
   /* ------------------------------- Currencies ------------------------------- */
 
@@ -372,7 +391,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               : Text('maimoni', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, letterSpacing: -0.3, color: palette.highlighted)),
           actions: [
             // Once the setup is recorded as finished there is nothing left to walk away from.
-            if (_step != _Step.done) TextButton(onPressed: _busy ? null : signOut, child: const Text('Sair')),
+            // Without an account, leaving goes back to the start and drops what was set up so far.
+            if (_step != _Step.done)
+              LocalMode.instance.active
+                  ? TextButton(onPressed: _busy ? null : LocalMode.instance.leave, child: const Text('Voltar ao início'))
+                  : TextButton(onPressed: _busy ? null : signOut, child: const Text('Sair')),
             const SizedBox(width: 8),
           ],
         ),
@@ -449,7 +472,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           kind: EntryKind.expense,
           title: 'E o que sai todo mês?',
           description: 'As contas fixas, como aluguel e internet. Os gastos do dia a dia ficam de fora: você registra cada um quando acontece.',
-          next: _Step.daily,
+          next: LocalMode.instance.active ? _Step.backup : _Step.daily,
+        ),
+      _Step.backup => _Page(
+          title: backupQuestion,
+          description: backupExplanation,
+          footer: [
+            ActionButton(label: 'Ativar o backup', loading: _savingBackup, onPressed: _busy ? null : () => _chooseBackup(true)),
+            const SizedBox(height: 4),
+            TextButton(onPressed: _busy ? null : () => _chooseBackup(false), child: const Text('Agora não')),
+          ],
         ),
       _Step.daily => _dailyPage(context),
       _Step.done => _donePage(context),

@@ -2,9 +2,12 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <!-- In-app updates: the app downloads the new APK and hands it to the system installer. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
-    <!-- No auto backup: a restored session token can't be decrypted on another install (flutter_secure_storage). -->
+    <!-- Auto backup takes only the local mode's database (res/xml/*_rules.xml). Everything else stays out,
+         such as the session token, which can't be decrypted on another install (flutter_secure_storage). -->
     <application
-        android:allowBackup="false"
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:label="maimoni"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">

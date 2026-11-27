@@ -120,6 +120,18 @@ All the arithmetic lives in one place, `packages/shared/src/summary.ts`, used by
   - Locally, run `mise run db:migrate` yourself; dev never migrates implicitly.
 - **Docker:** both images build from the repo root (they need the workspace lockfile and `packages/shared`). Postgres 18 data lives in the `postgres` named volume.
 
+## Mobile app without an account
+
+- **Two storage modes, never both.** The mobile app keeps the data either on the server (signed in) or in a SQLite database on the device (`apps/mobile/lib/data`, drift). There is no sync between them. The web always needs an account.
+- **One interface for both.** Screens and stores call `repository` (`lib/data/repository.dart`), which is the `Api` when signed in and `LocalRepository` otherwise. `LocalRepository` follows the server's rules for months, items, spends, template and currencies, and fails with the same `ApiException`.
+- **Rates come straight from the providers.** Without an account the app asks Frankfurter, then Open ER API, keeps the last answer per base currency, and serves it as stale when neither answers.
+- **One file format.** `packages/shared/src/export.ts` is what `GET /api/data/export` answers and what the app exports and imports. `export.fixture.json` holds both sides to it: the shared test checks it against the schema, and the app's test imports and re-exports it unchanged.
+- **Moving between modes:**
+  - Device to device: export a file, then import it on the welcome screen or in the settings. Importing replaces everything on the device.
+  - Device to account: signing in deletes the device's data, after offering an export. Nothing is uploaded or merged.
+  - Account to device: signing out offers to bring a copy of the account's data, read from `GET /api/data/export`.
+- **System backup, only for the database.** The database sits in `files/local` while its backup is on and in `files/local-nobackup` otherwise. Android's backup rules include only `local/`. On iOS the other folder is marked excluded from backup. The local setup asks whether to turn it on, and the settings have a switch. A database restored from a backup opens in the local mode.
+
 ## Testing
 
 - **Shared:** calculation and expression tests, including the October sheet as a fixture.

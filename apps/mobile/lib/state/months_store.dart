@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 
-import '../api/client.dart';
 import '../api/models.dart';
+import '../data/repository.dart';
 import '../domain/summary.dart';
 
 /// The month list shown in the drawer (the web's `months` data), shared by every screen.
@@ -22,7 +22,7 @@ class MonthsStore extends ChangeNotifier {
     List<MonthListEntry>? result;
     Object? failure;
     try {
-      result = await Api.instance.months();
+      result = await repository.months();
     } catch (err) {
       failure = err;
     }

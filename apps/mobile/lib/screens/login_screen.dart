@@ -12,7 +12,7 @@ import '../widgets/fields.dart';
 import '../widgets/sign_in_buttons.dart';
 import 'forgot_password_screen.dart';
 
-/// The web's `/login`. Shown for every route while signed out; signing in swaps it for the app.
+/// The web's `/login`, opened from the welcome screen; signing in swaps it for the app.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -114,6 +114,8 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     final palette = context.palette;
     return Scaffold(
+      // Opened from the welcome screen, which it goes back to.
+      appBar: Navigator.of(context).canPop() ? AppBar() : null,
       body: SafeArea(
         // From the top, like any other screen; only a tablet is wide enough to need the limit.
         child: Align(

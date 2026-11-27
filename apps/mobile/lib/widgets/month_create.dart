@@ -3,6 +3,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../api/client.dart';
 import '../api/models.dart';
+import '../data/repository.dart';
 import '../format.dart';
 import '../routes.dart';
 import '../state/currencies_store.dart';
@@ -17,7 +18,7 @@ import 'fields.dart';
 Future<bool> createMonth(BuildContext context, int year, int month, String source, {Currency? mainCurrency}) async {
   final navigator = Navigator.of(context);
   try {
-    await Api.instance.createMonth(year, month, source, mainCurrency: mainCurrency);
+    await repository.createMonth(year, month, source, mainCurrency: mainCurrency);
     await MonthsStore.instance.refresh();
     // Only while the screen that asked for the month is still open: leaving it cancels the visit.
     if (context.mounted) openMonthWith(navigator, year, month);
@@ -249,7 +250,7 @@ class _NewMonthFormState extends State<_NewMonthForm> {
     final year = _year;
     final month = _month;
     try {
-      await Api.instance.createMonth(year, month, source, mainCurrency: MonthCurrencyChoice.resolve(_currency));
+      await repository.createMonth(year, month, source, mainCurrency: MonthCurrencyChoice.resolve(_currency));
       await MonthsStore.instance.refresh();
       navigator.pop();
       openMonthWith(navigator, year, month);
