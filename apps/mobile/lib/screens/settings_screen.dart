@@ -1,12 +1,15 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../api/auth.dart';
 import '../api/client.dart';
 import '../data/repository.dart';
 import '../api/models.dart';
+import '../config.dart';
 import '../data/export_file.dart';
 import '../format.dart';
 import '../main.dart' show navigatorKey;
@@ -25,7 +28,7 @@ import '../widgets/currency_settings.dart';
 import '../widgets/fields.dart';
 import 'login_screen.dart';
 
-/// The account, the theme, currencies, app updates, sessions and, when the server allows it, the
+/// The account, the theme, currencies, app updates, sessions, the privacy policy link and, when the server allows it, the
 /// danger zone.
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -86,6 +89,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 24),
             const _SessionsSection(),
           ],
+          const SizedBox(height: 24),
+          const _PrivacySection(),
           if (_purge) ...[
             const SizedBox(height: 24),
             const SectionHeader('Zona de perigo'),
@@ -392,6 +397,33 @@ class _Value extends StatelessWidget {
         const SizedBox(width: 4),
         Icon(LucideIcons.chevronRight, size: 18, color: palette.dimmed),
       ],
+    );
+  }
+}
+
+/// Link to the privacy policy page the frontend serves at `/privacy`.
+class _PrivacySection extends StatelessWidget {
+  const _PrivacySection();
+
+  Future<void> _open() async {
+    bool opened;
+    try {
+      opened = await launchUrl(Uri.parse('$serverUrl/privacy'), mode: LaunchMode.externalApplication);
+    } on PlatformException {
+      opened = false;
+    }
+    if (!opened) toast('Não foi possível abrir a política de privacidade', tone: ToastTone.error);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Panel(
+      child: ListTile(
+        leading: const Icon(LucideIcons.shieldCheck, size: 20),
+        title: const Text('Política de privacidade'),
+        trailing: Icon(LucideIcons.externalLink, size: 18, color: context.palette.dimmed),
+        onTap: _open,
+      ),
     );
   }
 }

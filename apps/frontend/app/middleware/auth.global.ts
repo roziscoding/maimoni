@@ -1,5 +1,5 @@
 /** Pages that work without a session. */
-const PUBLIC_PATHS = ['/login', '/forgot-password', '/reset-password']
+const PUBLIC_PATHS = ['/login', '/forgot-password', '/reset-password', '/privacy']
 
 /** The first-run setup, which a user sees until they finish or skip it. */
 const ONBOARDING_PATH = '/onboarding'
