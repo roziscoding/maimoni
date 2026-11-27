@@ -3,6 +3,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../api/client.dart';
 import '../api/models.dart';
+import '../data/repository.dart';
 import '../domain/summary.dart';
 import '../format.dart';
 import '../routes.dart';
@@ -22,7 +23,7 @@ class TemplateScreen extends StatefulWidget {
 }
 
 class _TemplateScreenState extends State<TemplateScreen> {
-  final _api = Api.instance;
+  Repository get _api => repository;
   TemplateDetail? _data;
 
   /// Quoted against the user's main currency, which a new month would be worked out in.

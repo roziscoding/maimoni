@@ -12,8 +12,8 @@ import 'package:maimoni/format.dart';
 import 'package:maimoni/main.dart';
 import 'package:maimoni/routes.dart';
 import 'package:maimoni/screens/home_shell.dart';
-import 'package:maimoni/screens/login_screen.dart';
 import 'package:maimoni/screens/onboarding_screen.dart';
+import 'package:maimoni/screens/welcome_screen.dart';
 import 'package:maimoni/state/currencies_store.dart';
 import 'package:maimoni/state/months_store.dart';
 import 'package:maimoni/state/session.dart';
@@ -224,11 +224,11 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('signing out from the setup goes to the login screen', (tester) async {
+  testWidgets('signing out from the setup goes to the welcome screen', (tester) async {
     await open(tester);
     await tap(tester, 'Sair');
     expect(Session.instance.signedIn, isFalse);
-    expect(find.byType(LoginScreen), findsOneWidget);
+    expect(find.byType(WelcomeScreen), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox());
   });

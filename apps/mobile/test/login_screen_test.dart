@@ -10,6 +10,7 @@ import 'package:maimoni/api/client.dart';
 import 'package:maimoni/main.dart';
 import 'package:maimoni/screens/login_screen.dart';
 import 'package:maimoni/screens/today_screen.dart';
+import 'package:maimoni/screens/welcome_screen.dart';
 import 'package:maimoni/state/months_store.dart';
 import 'package:maimoni/state/session.dart';
 import 'package:maimoni/theme.dart';
@@ -66,20 +67,20 @@ void main() {
     });
     await tester.pumpWidget(const MaimoniApp());
     await tester.pump();
-    expect(find.byType(LoginScreen), findsOneWidget);
+    expect(find.byType(WelcomeScreen), findsOneWidget);
 
     Session.instance.setToken('t');
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
     expect(find.byType(TodayScreen), findsOneWidget);
-    expect(find.byType(LoginScreen), findsNothing);
+    expect(find.byType(WelcomeScreen), findsNothing);
     expect(monthRequests, greaterThan(0));
     expect(MonthsStore.instance.loaded, isTrue);
 
     Session.instance.clear();
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
-    expect(find.byType(LoginScreen), findsOneWidget);
+    expect(find.byType(WelcomeScreen), findsOneWidget);
     expect(find.byType(TodayScreen, skipOffstage: false), findsNothing);
     expect(MonthsStore.instance.months, isEmpty);
     expect(MonthsStore.instance.loaded, isFalse);
@@ -87,7 +88,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('an expired session shows the login screen and says so', (tester) async {
+  testWidgets('an expired session shows the welcome screen and says so', (tester) async {
     Api.instance.httpClient = MockClient(
       (request) async => request.url.path == '/api/months' ? json([]) : json({'error': 'Not found'}, status: 404),
     );
@@ -98,7 +99,7 @@ void main() {
     Session.instance.clear(ifToken: 't', expired: true);
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
-    expect(find.byType(LoginScreen), findsOneWidget);
+    expect(find.byType(WelcomeScreen), findsOneWidget);
     expect(find.text('Sua sessão expirou'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox());

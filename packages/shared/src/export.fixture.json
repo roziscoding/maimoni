@@ -1,0 +1,36 @@
+{
+  "format": "maimoni-export",
+  "version": 1,
+  "exportedAt": "2026-11-27T10:00:00.000Z",
+  "currencies": [
+    { "currency": "EUR", "enabled": true, "main": true },
+    { "currency": "BRL", "enabled": true, "main": false },
+    { "currency": "USD", "enabled": false, "main": false }
+  ],
+  "template": [
+    { "id": "6f1c1f8e-3a51-4c41-9c25-0b8f3f1d7a01", "name": "Salário", "currency": "BRL", "kind": "income", "amount": 10000, "expression": null, "variable": false, "position": 0 },
+    { "id": "6f1c1f8e-3a51-4c41-9c25-0b8f3f1d7a02", "name": "Nubank", "currency": "BRL", "kind": "expense", "amount": null, "expression": null, "variable": true, "position": 1 },
+    { "id": "6f1c1f8e-3a51-4c41-9c25-0b8f3f1d7a03", "name": "Apple", "currency": "EUR", "kind": "expense", "amount": 14.98, "expression": "11.99+2.99", "variable": false, "position": 2 }
+  ],
+  "months": [
+    {
+      "id": "0b7e2a64-5d0c-4f7a-8f3e-2c9a1b6d4e01",
+      "year": 2026,
+      "month": 11,
+      "mainCurrency": "EUR",
+      "lockedRates": { "BRL": 6.2134 },
+      "activeDay": 27,
+      "note": "Viagem no fim do mês",
+      "createdAt": "2026-11-01T09:00:00.000Z",
+      "items": [
+        { "id": "9a3d5c2e-7b1f-4e6a-b8c4-1d2e3f4a5b01", "monthId": "0b7e2a64-5d0c-4f7a-8f3e-2c9a1b6d4e01", "templateItemId": "6f1c1f8e-3a51-4c41-9c25-0b8f3f1d7a01", "name": "Salário", "currency": "BRL", "kind": "income", "amount": 10000, "expression": null, "paid": true, "needsReview": false, "position": 0 },
+        { "id": "9a3d5c2e-7b1f-4e6a-b8c4-1d2e3f4a5b02", "monthId": "0b7e2a64-5d0c-4f7a-8f3e-2c9a1b6d4e01", "templateItemId": "6f1c1f8e-3a51-4c41-9c25-0b8f3f1d7a02", "name": "Nubank", "currency": "BRL", "kind": "expense", "amount": 1234.56, "expression": null, "paid": false, "needsReview": false, "position": 1 },
+        { "id": "9a3d5c2e-7b1f-4e6a-b8c4-1d2e3f4a5b03", "monthId": "0b7e2a64-5d0c-4f7a-8f3e-2c9a1b6d4e01", "templateItemId": null, "name": "Presente", "currency": "EUR", "kind": "expense", "amount": 40, "expression": null, "paid": false, "needsReview": false, "position": 2 }
+      ],
+      "spends": [
+        { "id": "c4e8a1b2-3d5f-4a6b-9c7d-8e9f0a1b2c01", "monthId": "0b7e2a64-5d0c-4f7a-8f3e-2c9a1b6d4e01", "day": 26, "currency": "EUR", "amount": 12.5, "expression": "10+2.5", "note": "Mercado", "createdAt": "2026-11-26T18:30:00.000Z" },
+        { "id": "c4e8a1b2-3d5f-4a6b-9c7d-8e9f0a1b2c02", "monthId": "0b7e2a64-5d0c-4f7a-8f3e-2c9a1b6d4e01", "day": 27, "currency": "BRL", "amount": 30, "expression": null, "note": null, "createdAt": "2026-11-27T08:15:00.000Z" }
+      ]
+    }
+  ]
+}

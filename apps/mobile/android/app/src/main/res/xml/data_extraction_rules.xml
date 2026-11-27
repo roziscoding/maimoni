@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12 and later. Only the local mode's database, and only while its backup is on: lib/data/backup.dart
+     moves it between files/local (backed up) and files/local-nobackup. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="file" path="local/"/>
+    </cloud-backup>
+    <device-transfer>
+        <include domain="file" path="local/"/>
+    </device-transfer>
+</data-extraction-rules>

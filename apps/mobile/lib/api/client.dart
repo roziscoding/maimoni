@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../config.dart';
+import '../data/repository.dart';
 import '../state/session.dart';
 import 'models.dart';
 
@@ -27,7 +28,7 @@ class ApiException implements Exception {
 String errorMessage(Object error) => error is ApiException ? error.message : 'Erro inesperado';
 
 /// HTTP client for the maimoni server. Every path is resolved against [serverUrl].
-class Api {
+class Api implements Repository {
   Api._();
 
   static final instance = Api._();
@@ -112,13 +113,15 @@ class Api {
 
   /* --------------------------------- Months -------------------------------- */
 
+  @override
   Future<List<MonthListEntry>> months() async =>
       [for (final row in await _send('GET', '/months') as List) MonthListEntry.fromJson(row as Json)];
 
+  @override
   Future<MonthDetail> month(int year, int month) async =>
       MonthDetail.fromJson(await _send('GET', _month(year, month)) as Json);
 
-  /// [source] is `template` or `previous`. Without [mainCurrency] the month is worked out in the user's main one.
+  @override
   Future<void> createMonth(int year, int month, String source, {Currency? mainCurrency}) => _send('POST', '/months', body: {
         'year': year,
         'month': month,
@@ -126,56 +129,65 @@ class Api {
         if (mainCurrency != null) 'mainCurrency': mainCurrency.code,
       });
 
+  @override
   Future<MonthDetail> updateMonth(int year, int month, Json patch) async =>
       MonthDetail.fromJson(await _send('PATCH', _month(year, month), body: patch) as Json);
 
+  @override
   Future<void> deleteMonth(int year, int month) => _send('DELETE', _month(year, month));
 
   /* ------------------------------- Month items ----------------------------- */
 
+  @override
   Future<MonthItem> addItem(int year, int month, Json body) async =>
       MonthItem.fromJson(await _send('POST', '${_month(year, month)}/items', body: body) as Json);
 
+  @override
   Future<MonthItem> updateItem(int year, int month, String id, Json patch) async =>
       MonthItem.fromJson(await _send('PATCH', '${_month(year, month)}/items/$id', body: patch) as Json);
 
+  @override
   Future<void> deleteItem(int year, int month, String id) => _send('DELETE', '${_month(year, month)}/items/$id');
 
+  @override
   Future<TemplateItem> promoteItem(int year, int month, String id) async =>
       TemplateItem.fromJson(await _send('POST', '${_month(year, month)}/items/$id/promote') as Json);
 
   /* ------------------------------- Daily spends ---------------------------- */
 
+  @override
   Future<DailySpend> addSpend(int year, int month, Json body) async =>
       DailySpend.fromJson(await _send('POST', '${_month(year, month)}/spends', body: body) as Json);
 
+  @override
   Future<DailySpend> updateSpend(int year, int month, String id, Json patch) async =>
       DailySpend.fromJson(await _send('PATCH', '${_month(year, month)}/spends/$id', body: patch) as Json);
 
+  @override
   Future<void> deleteSpend(int year, int month, String id) => _send('DELETE', '${_month(year, month)}/spends/$id');
 
   /* ---------------------------------- Rates -------------------------------- */
 
-  /// Live rates quoted against [base]; without one, against the user's main currency.
+  @override
   Future<LiveRates> liveRates({Currency? base}) async =>
       LiveRates.fromJson(await _send('GET', '/rates/live', query: base == null ? null : {'base': base.code}) as Json);
 
   /* -------------------------------- Currencies ----------------------------- */
 
-  /// The user's currencies, the main one first.
+  @override
   Future<List<UserCurrency>> currencies() async =>
       [for (final row in await _send('GET', '/settings/currencies') as List) UserCurrency.fromJson(row as Json)];
 
+  @override
   Future<void> addCurrency(Currency currency) => _send('POST', '/settings/currencies', body: {'currency': currency.code});
 
-  /// [patch] is `{ enabled?, main? }`. Answers with the whole list: making one the main one changes another.
+  @override
   Future<List<UserCurrency>> updateCurrency(Currency currency, Json patch) async => [
         for (final row in await _send('PATCH', '/settings/currencies/${currency.code}', body: patch) as List)
           UserCurrency.fromJson(row as Json),
       ];
 
-  /// Replaces the whole list with [enabled] and [disabled], [main] being one of the enabled. A
-  /// currency left out is removed, which the server refuses for one that is in use.
+  @override
   Future<List<UserCurrency>> replaceCurrencies({
     required List<Currency> enabled,
     List<Currency> disabled = const [],
@@ -191,6 +203,7 @@ class Api {
     return [for (final row in await _send('PUT', '/settings/currencies', body: body) as List) UserCurrency.fromJson(row as Json)];
   }
 
+  @override
   Future<void> deleteCurrency(Currency currency) => _send('DELETE', '/settings/currencies/${currency.code}');
 
   /* ---------------------------------- Flags -------------------------------- */
@@ -199,16 +212,21 @@ class Api {
 
   /* --------------------------------- Template ------------------------------ */
 
+  @override
   Future<TemplateDetail> template() async => TemplateDetail.fromJson(await _send('GET', '/template') as Json);
 
+  @override
   Future<TemplateItem> addTemplateItem(Json body) async =>
       TemplateItem.fromJson(await _send('POST', '/template/items', body: body) as Json);
 
+  @override
   Future<TemplateItem> updateTemplateItem(String id, Json patch) async =>
       TemplateItem.fromJson(await _send('PATCH', '/template/items/$id', body: patch) as Json);
 
+  @override
   Future<void> deleteTemplateItem(String id) => _send('DELETE', '/template/items/$id');
 
+  @override
   Future<List<TemplateItem>> reorderTemplate(List<String> ids) async => [
         for (final row in await _send('PUT', '/template/items/order', body: {'ids': ids}) as List)
           TemplateItem.fromJson(row as Json),
@@ -216,7 +234,11 @@ class Api {
 
   /* ----------------------------------- Data -------------------------------- */
 
+  @override
   Future<void> clearData() => _send('DELETE', '/data');
+
+  /// Everything the account keeps, in the file format the local mode imports (`packages/shared/src/export.ts`).
+  Future<Json> exportData() async => await _send('GET', '/data/export') as Json;
 
   /* --------------------------------- Sessions ------------------------------ */
 

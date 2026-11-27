@@ -1,5 +1,5 @@
-import type { DailySpend, MonthDetail, MonthItem, MonthListEntry, TemplateDetail, TemplateItem, UserCurrency } from '@maimoni/shared'
-import { daysInMonth } from '@maimoni/shared'
+import type { DailySpend, DataExport, MonthDetail, MonthItem, MonthListEntry, TemplateDetail, TemplateItem, UserCurrency } from '@maimoni/shared'
+import { dataExportSchema, daysInMonth } from '@maimoni/shared'
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { setup } from './setup'
 
@@ -229,6 +229,22 @@ test('clearing data wipes months and template', async () => {
   expect((await request<MonthListEntry[]>('GET', '/months')).body).toEqual([])
   const { body: template } = await request<TemplateDetail>('GET', '/template')
   expect(template.items).toEqual([])
+})
+
+test('exporting data answers everything in the file format the app imports', async () => {
+  await seedTemplate()
+  await request('POST', '/months', { year: 2026, month: 10 })
+  await request('POST', '/months/2026/10/spends', { day: 3, amount: 12.5 })
+
+  const { status, body } = await request<DataExport>('GET', '/data/export')
+
+  expect(status).toBe(200)
+  expect(dataExportSchema.parse(body)).toEqual(body)
+  expect(body.currencies).toEqual([{ currency: 'EUR', enabled: true, main: true }, { currency: 'BRL', enabled: true, main: false }])
+  expect(body.template.map(item => item.name)).toEqual(['Salário', 'Carro', 'Nubank', 'Aluguel', 'Apple'])
+  expect(body.months).toHaveLength(1)
+  expect(body.months[0]!.items).toHaveLength(5)
+  expect(body.months[0]!.spends.map(spend => spend.amount)).toEqual([12.5])
 })
 
 describe('currencies', () => {

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:http/http.dart' show HeadersWithSplitValues;
 
 import '../config.dart';
+import '../state/local_mode.dart';
 import '../state/session.dart';
 import 'client.dart';
 import 'providers.dart';
@@ -137,9 +138,10 @@ Future<void> checkSession() async {
   }
 }
 
-/// Records on the server that the first-run setup was finished or skipped, so neither this app nor
-/// the web shows it again. Throws when the server couldn't be told.
+/// Records that the first-run setup was finished or skipped: on the device in the local mode, on
+/// the server otherwise, so neither this app nor the web shows it again. Throws when that failed.
 Future<void> finishOnboarding() async {
+  if (LocalMode.instance.active) return LocalMode.instance.setOnboarded();
   await Api.instance.request('POST', '/auth/update-user', body: {'onboarded': true});
   Session.instance.setOnboarded();
 }

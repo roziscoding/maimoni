@@ -3,6 +3,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../api/client.dart';
 import '../api/models.dart';
+import '../data/repository.dart';
 import '../format.dart';
 import '../state/currencies_store.dart';
 import '../state/toast.dart';
@@ -66,15 +67,15 @@ class _CurrencySettingsState extends State<CurrencySettings> {
   }
 
   Future<bool> _add(Currency currency) => _change(currency, 'Não foi possível adicionar a moeda', () async {
-        await Api.instance.addCurrency(currency);
+        await repository.addCurrency(currency);
         return null;
       });
 
   Future<bool> _update(Currency currency, Json patch, String failure) =>
-      _change(currency, failure, () => Api.instance.updateCurrency(currency, patch));
+      _change(currency, failure, () => repository.updateCurrency(currency, patch));
 
   Future<bool> _remove(Currency currency) => _change(currency, 'Não foi possível remover a moeda', () async {
-        await Api.instance.deleteCurrency(currency);
+        await repository.deleteCurrency(currency);
         return null;
       });
 
