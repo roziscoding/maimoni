@@ -52,7 +52,10 @@ class LocalRates {
     final now = _now().toUtc();
     if (stored != null && _sameUtcDay(DateTime.parse(stored.fetchedAt), now)) return _toLive(stored, stale: false);
     final failedAt = _failedAt[base];
-    if (stored != null && failedAt != null && now.difference(failedAt) < _retryAfterFailure) return _toLive(stored, stale: true);
+    if (failedAt != null && now.difference(failedAt) < _retryAfterFailure) {
+      if (stored != null) return _toLive(stored, stale: true);
+      throw ApiException('Nenhuma cotação disponível. Tente de novo em alguns minutos.');
+    }
 
     final errors = <String>[];
     for (final provider in _providers) {

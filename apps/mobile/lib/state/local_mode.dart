@@ -117,8 +117,11 @@ class LocalMode extends ChangeNotifier {
     _active = false;
     await _persist(false);
     // An empty database has nothing to back up, and the next start asks again.
-    await setBackup(false);
-    notifyListeners();
+    try {
+      await setBackup(false);
+    } finally {
+      notifyListeners();
+    }
   }
 
   Future<void> _persist(bool value) async {

@@ -258,7 +258,12 @@ class _LocalAccount extends StatelessWidget {
     if (choice == 'export') return _export(LocalMode.instance.repository.export);
     if (choice != 'sign-in') return;
     // The listener in MaimoniApp swaps the stack for the welcome screen; the sign in opens above it.
-    await LocalMode.instance.leave();
+    try {
+      await LocalMode.instance.leave();
+    } catch (err) {
+      toast('Não foi possível sair do modo sem conta', description: errorMessage(err), tone: ToastTone.error);
+      return;
+    }
     navigatorKey.currentState?.push(MaterialPageRoute<void>(builder: (_) => const LoginScreen()));
   }
 

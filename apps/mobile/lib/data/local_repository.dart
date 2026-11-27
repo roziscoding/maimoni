@@ -575,6 +575,10 @@ class LocalRepository implements Repository {
     } catch (_) {
       throw _invalid('Esse arquivo não é um export do maimoni');
     }
+    final mains = parsed.currencies.where((currency) => currency.main).toList();
+    if (parsed.currencies.isNotEmpty && (mains.length != 1 || !mains.single.enabled)) {
+      throw _invalid('Esse arquivo precisa ter exatamente uma moeda principal ativa');
+    }
     try {
       await _replace(parsed);
     } catch (_) {

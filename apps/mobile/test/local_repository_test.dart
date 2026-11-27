@@ -60,6 +60,18 @@ void main() {
 
       expect((await repository.currencies()).map((row) => row.currency), [eur]);
     });
+
+    test('a file without exactly one enabled main currency is refused and leaves the data as it was', () async {
+      await repository.addCurrency(eur);
+      final currencies = (fixture['currencies'] as List).cast<Map<String, dynamic>>();
+
+      final twoMains = [for (final row in currencies) {...row, 'main': row['enabled']}];
+      final disabledMain = [for (final row in currencies) {...row, 'enabled': row['main'] == true ? false : row['enabled']}];
+      await expectLater(repository.replaceAll({...fixture, 'currencies': twoMains}), throwsA(isA<ApiException>()));
+      await expectLater(repository.replaceAll({...fixture, 'currencies': disabledMain}), throwsA(isA<ApiException>()));
+
+      expect((await repository.currencies()).map((row) => row.currency), [eur]);
+    });
   });
 
   test('the first currency is the main one, and one in use cannot be removed', () async {
@@ -113,5 +125,24 @@ void main() {
     final rates = await LocalRates(db, client: client, now: () => now).get(eur);
 
     expect((rates.stale, rates.source, rates.rates[brl]), (true, RateSource.cache, 6));
+  });
+
+  test('without stored rates, a failure is not retried for five minutes', () async {
+    var calls = 0;
+    var now = DateTime.now();
+    final client = MockClient((_) async {
+      calls++;
+      throw const SocketException('offline');
+    });
+    final rates = LocalRates(db, client: client, now: () => now);
+
+    await expectLater(rates.get(eur), throwsA(isA<ApiException>()));
+    final afterFirst = calls;
+    await expectLater(rates.get(eur), throwsA(isA<ApiException>()));
+    expect(calls, afterFirst);
+
+    now = now.add(const Duration(minutes: 6));
+    await expectLater(rates.get(eur), throwsA(isA<ApiException>()));
+    expect(calls, greaterThan(afterFirst));
   });
 }
