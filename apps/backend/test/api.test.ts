@@ -64,6 +64,19 @@ describe('months', () => {
     expect((await request('POST', '/months', { year: 2026, month: 10 })).status).toBe(409)
   })
 
+  test('creates a month in a currency other than the main one', async () => {
+    await seedTemplate()
+    const { status, body } = await request<MonthDetail>('POST', '/months', { year: 2026, month: 10, mainCurrency: 'BRL' })
+    expect(status).toBe(201)
+    expect(body.month.mainCurrency).toBe('BRL')
+    // The euros are converted into reais now, at the same rate the other way round.
+    expect(body.summary.main).toBe('BRL')
+    expect(body.summary.conversions.map(conversion => conversion.currency)).toEqual(['EUR'])
+
+    // Only one of the user's currencies.
+    expect((await request('POST', '/months', { year: 2026, month: 11, mainCurrency: 'USD' })).status).toBe(400)
+  })
+
   test('editing an amount confirms it and updates totals', async () => {
     await seedTemplate()
     const { body: created } = await request<MonthDetail>('POST', '/months', { year: 2026, month: 10 })

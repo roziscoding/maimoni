@@ -219,8 +219,8 @@ export const monthSchema = z.object({
   year: z.number().int(),
   month: z.number().int(),
   /**
-   * The currency the month is worked out in: the user's main currency when it was created. Changing
-   * the main currency later leaves existing months as they were.
+   * The currency the month is worked out in: the one picked when it was created, or the user's main
+   * currency then. Changing the main currency later leaves existing months as they were.
    */
   mainCurrency: currencySchema,
   /** Rates the month froze, by currency. A currency left out follows the live rate. */
@@ -240,6 +240,8 @@ export const createMonthSchema = z.object({
   month: z.number().int().min(1).max(12),
   /** Where the items come from: the template (default) or the latest existing month before this one. */
   source: z.enum(['template', 'previous']).default('template'),
+  /** The currency the month is worked out in, one of the user's. The user's main currency when left out. */
+  mainCurrency: currencySchema.optional(),
 })
 export type CreateMonth = z.input<typeof createMonthSchema>
 

@@ -205,6 +205,7 @@ Future<http.Response> _serve(http.Request request) async {
     final year = body['year'] as int;
     final month = body['month'] as int;
     final created = _month(DateTime(year, month), activeDay: null);
+    if (body['mainCurrency'] case final String currency) created['month'] = {...(created['month'] as Json), 'mainCurrency': currency};
     // After the setup, the month is made of what the person entered, in the currency they chose.
     if (_onboarding) {
       created['month'] = {...(created['month'] as Json), 'mainCurrency': _main};

@@ -32,7 +32,7 @@ watch(open, (value) => {
   let index = now.getFullYear() * 12 + now.getMonth()
   while (props.months.some(entry => entry.year * 12 + entry.month - 1 === index))
     index++
-  Object.assign(state, { year: Math.floor(index / 12), month: (index % 12) + 1, source: 'template' })
+  Object.assign(state, { year: Math.floor(index / 12), month: (index % 12) + 1, source: 'template', mainCurrency: undefined })
 }, { immediate: true })
 
 async function submit(event: FormSubmitEvent<NewMonth>) {
@@ -78,6 +78,8 @@ async function submit(event: FormSubmitEvent<NewMonth>) {
         <UFormField name="source" label="Itens">
           <URadioGroup v-model="state.source" :items="sourceOptions" variant="table" />
         </UFormField>
+
+        <MonthCurrencyChoice v-model="state.mainCurrency" name="mainCurrency" />
       </UForm>
     </template>
 

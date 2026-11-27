@@ -188,8 +188,8 @@ class _CurrencySettingsState extends State<CurrencySettings> {
 }
 
 /// The sign a currency's amounts are written with, in a tile.
-class _SymbolTile extends StatelessWidget {
-  const _SymbolTile(this.currency);
+class CurrencySymbolTile extends StatelessWidget {
+  const CurrencySymbolTile(this.currency, {super.key});
 
   final Currency currency;
 
@@ -234,7 +234,7 @@ class _CurrencyRow extends StatelessWidget {
                 opacity: entry.enabled ? 1 : 0.5,
                 child: Row(
                   children: [
-                    _SymbolTile(entry.currency),
+                    CurrencySymbolTile(entry.currency),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
@@ -403,7 +403,7 @@ class _CurrencyPickerState extends State<_CurrencyPicker> {
         for (final currency in found)
           ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: _SymbolTile(currency),
+            leading: CurrencySymbolTile(currency),
             title: Text(currencyName(currency)),
             trailing: Text(currency.code, style: money(fontSize: 12, color: palette.muted)),
             onTap: () => Navigator.of(context).pop(currency),
