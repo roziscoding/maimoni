@@ -27,7 +27,7 @@ mise install          # tools
 mise run dev          # builds and runs the dev stack on http://app.maimoni.localhost
 ```
 
-`dev` runs the apps in Docker under [Compose Watch](https://docs.docker.com/compose/how-tos/file-watch/): saved files are synced into the containers, so the backend restarts and Nuxt hot-reloads, and a changed `package.json`, `bun.lock` or Dockerfile rebuilds the image. The individual `dev:backend` and `dev:frontend` tasks remain available for running either app directly on the host.
+`dev` runs the apps in Docker under [Compose Watch](https://docs.docker.com/compose/how-tos/file-watch/): saved files are synced into the containers, so the backend restarts and Nuxt hot-reloads, and a changed `package.json`, `bun.lock` or Dockerfile rebuilds the image. The individual `dev:backend` and `dev:frontend` tasks run the apps directly on the host instead, on ports `3001` and `3000`, with the stack's Postgres. Run them together: the frontend on the host proxies to `localhost:3001`, which the stack's backend doesn't publish.
 
 `mise.toml` holds the local defaults, so a `.env` file is optional; create one from `.env.example` only to override them.
 
